@@ -397,11 +397,12 @@ export default async function handler(req, res) {
     console.error('semantic dedupe skipped', e.message);
   }
 
-  // Author + link backfill (the core "who published it, where" hop): for
-  // relevant items shown in the bulletin whose primary instance has no RSS
-  // byline, resolve the (usually Google-News-wrapped) URL to the real publisher
-  // link, then fetch the article and extract the author. Bounded to shown items,
-  // parallel, fail-soft (a miss leaves author null → "—"). The resolved URL is
+  // Author + link backfill (the core "who published it, where" hop): for every
+  // relevant board item whose primary instance has no RSS byline, resolve the
+  // (usually Google-News-wrapped) URL to the real publisher link, then fetch the
+  // article and extract the author. Covers ALL relevant items (cap 30, highest-
+  // severity first) so the board isn't left with "—" on lower-severity cards.
+  // Parallel, fail-soft (a miss leaves author null → "—"). The resolved URL is
   // cached onto the item so the insert below populates resolved_url — making
   // /api/go shares instant from day one — and the card's primary link becomes the
   // clean publisher URL, not the un-tappable Google wrapper. Skipped on the
@@ -409,7 +410,9 @@ export default async function handler(req, res) {
   if (!dry && !urgentOnly) {
     await Promise.all(
       classified
-        .filter((i) => i.is_relevant && i.importance >= 2)
+        .filter((i) => i.is_relevant)
+        .sort((a, b) => (b.importance || 0) - (a.importance || 0))
+        .slice(0, 30)
         .map(async (it) => {
           const insts = it._instances || [];
           const primary = insts[0] || { url: it.url, author: it.author };
