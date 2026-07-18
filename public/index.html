@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PR Radar — Brand &amp; Reputation Board</title>
+<meta name="description" content="Daily brand &amp; reputation monitor for Vodafone Egypt — Vodafone, Orange, WE and e& in the Egyptian mobile market, with sentiment, author and coverage.">
+<meta name="robots" content="noindex,nofollow">
+<style>
+  :root{
+    --red:#e60000; --red-deep:#b30000; --oxblood:#4a0a0a;
+    --ink:#1a1214; --ink-soft:#3a2b28; --muted:#6d605d; --muted-2:#9a8d8a; --faint:#b7aca9;
+    --paper:#faf8f7; --canvas:#ece7e5; --card:#ffffff; --hair:#e7dcd9; --hair-2:#efe1de;
+    --neg:#e60000; --neg-bg:#fdf2f0; --pos:#1a9455; --pos-bg:#eef8f1; --neu:#7a8694; --neu-bg:#f3f5f7;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--canvas);color:var(--ink);font-family:var(--font);-webkit-font-smoothing:antialiased}
+  a{color:var(--red)}
+  .wrap{max-width:760px;margin:0 auto;background:var(--paper);min-height:100vh}
+
+  /* header */
+  .brand{position:sticky;top:0;z-index:20;background:var(--red);padding:14px 18px 12px}
+  .brand-row{display:flex;align-items:center;gap:12px}
+  .mark{flex:none;width:38px;height:38px;border-radius:10px;background:#fff;color:var(--red);
+        font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center}
+  .brand .title{flex:1;min-width:0}
+  .brand .h1{font-weight:800;font-size:18px;color:#fff;letter-spacing:-.01em;line-height:1}
+  .brand .eyebrow{font-family:var(--mono);font-size:9.5px;color:#ffd0d0;letter-spacing:.16em;
+                  text-transform:uppercase;margin-top:5px}
+  .brand .clock{text-align:right;flex:none;font-family:var(--mono)}
+  .brand .clock .lbl{font-size:9px;color:#ffb0b0;letter-spacing:.12em}
+  .brand .clock .t{font-size:13px;color:#fff;font-weight:700;margin-top:2px}
+  .stats{margin-top:12px;padding-top:11px;border-top:3px solid #fff;font-family:var(--mono);
+         font-size:12px;color:#ffc9c9;letter-spacing:.03em}
+  .stats b{color:#fff}
+
+  /* filters */
+  .filters{position:sticky;top:76px;z-index:15;background:var(--paper);border-bottom:1px solid var(--hair);
+           padding:9px 14px}
+  .frow{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+  .frow::-webkit-scrollbar{display:none}
+  .frow:last-child{padding-bottom:0}
+  .chip{flex:none;cursor:pointer;border:1px solid rgba(74,10,10,.16);background:#fff;color:var(--muted);
+        font-size:12px;font-weight:600;padding:5px 11px;border-radius:20px;white-space:nowrap;font-family:var(--font)}
+  .chip:hover{color:var(--oxblood)}
+  .chip[aria-pressed=true]{background:var(--oxblood);color:#fff;border-color:var(--oxblood)}
+  .chip.neg[aria-pressed=true]{background:var(--red);border-color:var(--red)}
+
+  /* list */
+  .list{padding:12px 14px 60px}
+  .empty{text-align:center;color:var(--muted);padding:60px 20px;font-size:14px;line-height:1.6}
+  .sechead{font-size:12px;font-weight:800;letter-spacing:.02em;padding:16px 2px 8px;
+           border-bottom:1px solid var(--hair);margin-bottom:2px}
+  .sechead .n{font-weight:500;color:var(--faint);font-size:11px}
+
+  /* card */
+  .card{background:var(--card);border:1px solid var(--hair-2);border-left:4px solid var(--neu);
+        border-radius:9px;padding:13px 15px;margin:10px 0;box-shadow:0 1px 2px rgba(74,10,10,.04)}
+  .card.negative{border-left-color:var(--neg);background:linear-gradient(90deg,var(--neg-bg),#fff 42%)}
+  .card.positive{border-left-color:var(--pos)}
+  .card.neutral{border-left-color:var(--neu)}
+  .c-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .metas{font-size:11px;color:var(--muted-2);display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+  .bchip{color:#fff;font-weight:700;padding:2px 7px;border-radius:4px;font-size:10px;letter-spacing:.02em}
+  .cat{background:#f0e6e4;color:var(--oxblood);padding:2px 6px;border-radius:4px;font-size:10px}
+  .dots{white-space:nowrap;letter-spacing:2px;font-size:12px}
+  .headline{font-size:16px;font-weight:700;line-height:1.34;margin-top:9px}
+  .headline a{color:var(--ink);text-decoration:none}
+  .headline a:hover{color:var(--red-deep)}
+  .subrow{margin-top:7px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:11.5px}
+  .sent{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:4px;color:#fff}
+  .by{color:var(--ink-soft)} .by.none{color:var(--muted-2)}
+  .summary{font-size:13.5px;line-height:1.5;color:var(--muted);margin-top:8px}
+  .angle{margin-top:11px;border-left:3px solid var(--neu);border-radius:0 6px 6px 0;padding:8px 12px;background:var(--neu-bg)}
+  .angle.negative{border-left-color:var(--neg);background:var(--neg-bg)}
+  .angle.positive{border-left-color:var(--pos);background:var(--pos-bg)}
+  .angle .lab{font-size:10px;font-weight:800;letter-spacing:.14em;color:var(--red)}
+  .angle table{margin-top:3px;border-collapse:collapse}
+  .angle td{vertical-align:top;padding:3px 0;font-size:12.5px;line-height:1.45;color:var(--ink-soft)}
+  .angle td.k{width:76px;padding-right:10px;font-size:9px;font-weight:800;letter-spacing:.1em;
+              color:var(--red);text-transform:uppercase;white-space:nowrap}
+  .cov{margin-top:11px;background:#f6f0ee;border-radius:7px;padding:8px 11px}
+  .cov .h{font-size:9px;font-weight:800;letter-spacing:.12em;color:var(--oxblood);text-transform:uppercase;margin-bottom:4px}
+  .cov .row{font-size:11.5px;line-height:1.5;color:var(--ink-soft);padding:1px 0}
+  .cov .row a{color:var(--ink-soft);text-decoration:none;font-weight:600}
+  .cov .row a:hover{color:var(--red)}
+  .cov .row .au{color:var(--muted-2)}
+  .foot{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:11px}
+  .fb{cursor:pointer;border:1px solid var(--hair);background:#fff;color:var(--muted);font-size:13px;
+      width:30px;height:26px;border-radius:6px;line-height:1;font-family:var(--font)}
+  .fb:hover{border-color:var(--muted-2)}
+  .fb.up[aria-pressed=true]{background:var(--pos);color:#fff;border-color:var(--pos)}
+  .fb.down[aria-pressed=true]{background:var(--red);color:#fff;border-color:var(--red)}
+  .open{font-size:11px;color:var(--red);text-decoration:none;font-weight:700;margin-left:4px}
+  .gate{padding:70px 24px;text-align:center;color:var(--muted);line-height:1.7}
+  .gate code{background:#f0e6e4;padding:2px 6px;border-radius:4px;color:var(--oxblood)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="brand">
+    <div class="brand-row">
+      <div class="mark">PR</div>
+      <div class="title">
+        <div class="h1">PR Radar</div>
+        <div class="eyebrow">Brand &amp; Reputation · Vodafone Egypt</div>
+      </div>
+      <div class="clock">
+        <div class="lbl" id="clockDate">—</div>
+        <div class="t" id="clockTime">—</div>
+      </div>
+    </div>
+    <div class="stats" id="stats">Loading…</div>
+  </header>
+
+  <div class="filters" id="filters" hidden>
+    <div class="frow" id="brandRow"></div>
+    <div class="frow" id="sentRow"></div>
+    <div class="frow" id="winRow"></div>
+  </div>
+
+  <main class="list" id="list">
+    <div class="empty">Loading the board…</div>
+  </main>
+</div>
+
+<script>
+const $ = (s, r=document) => r.querySelector(s);
+const esc = (s) => String(s==null?'':s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+const params = new URLSearchParams(location.search);
+const token = params.get('t') || localStorage.getItem('pr_token') || '';
+if (params.get('t')) localStorage.setItem('pr_token', params.get('t'));
+
+const BRAND_COLOR = { Vodafone:'#e60000', Orange:'#ff7900', WE:'#6a1b9a', 'e&':'#00857b', market:'#6d605d' };
+const SENT = {
+  negative:{ label:'Negative', color:'#b30000' },
+  positive:{ label:'Positive', color:'#137a45' },
+  neutral :{ label:'Neutral',  color:'#4f5a67' },
+};
+const IMP = {5:'#e60000',4:'#f27100',3:'#e2a900',2:'#3a7ac2',1:'#8a807d'};
+
+let ITEMS = [];
+let fBrand = 'all', fSent = 'all', fWin = Number(localStorage.getItem('pr_win')) || 2; // days
+
+function clock(){
+  const now = new Date();
+  $('#clockDate').textContent = now.toLocaleDateString('en-GB',{day:'2-digit',month:'short',timeZone:'Africa/Cairo'}).toUpperCase();
+  $('#clockTime').textContent = now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Africa/Cairo'}) + ' CAIRO';
+}
+clock(); setInterval(clock, 30000);
+
+function dots(imp){
+  const n = Math.max(1, Math.min(5, imp||1));
+  let out = '';
+  for (let i=1;i<=5;i++) out += `<span style="color:${i<=n?IMP[n]:'#dcd0cd'}">&#9679;</span>`;
+  return out;
+}
+function ageLabel(it){
+  const t = it.published_at || it.seen_at; if(!t) return '';
+  const h = Math.max(0,(Date.now()-new Date(t).getTime())/36e5);
+  if(h<1) return 'just now'; if(h<24) return Math.round(h)+'h ago'; return Math.round(h/24)+'d ago';
+}
+function angleHtml(text, sent){
+  const src = String(text||'').trim(); if(!src) return '';
+  const lines = [];
+  for (const raw of src.split(/\r?\n+/)){
+    const m = raw.trim().match(/^([A-Za-z][A-Za-z \/&]*?)\s*[·:\-–—]\s*(.*)$/);
+    if(!m) continue; const v=m[2].trim(); if(!v||/^[—–\-·.\s]*$/.test(v)) continue;
+    lines.push([m[1].trim(), v]);
+  }
+  const body = lines.length
+    ? `<table>${lines.map(([k,v])=>`<tr><td class="k">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`
+    : `<div style="font-size:12.5px;line-height:1.45;color:var(--ink-soft);margin-top:3px">${esc(src)}</div>`;
+  return `<div class="angle ${sent}"><div class="lab">REPUTATIONAL READ</div>${body}</div>`;
+}
+function coverageHtml(insts){
+  const list = Array.isArray(insts) ? insts.filter(x=>x && (x.outlet||x.url)) : [];
+  if (list.length < 2) return '';
+  const rows = list.slice(0,14).map(x=>{
+    const name = esc(x.outlet||'—');
+    const link = x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${name}</a>` : `<span style="font-weight:600">${name}</span>`;
+    const by = x.author ? ` <span class="au">· ${esc(x.author)}</span>` : '';
+    return `<div class="row">${link}${by}</div>`;
+  }).join('');
+  const more = list.length>14 ? `<div class="row au">+${list.length-14} more</div>` : '';
+  return `<div class="cov"><div class="h">Coverage · ${list.length} outlets</div>${rows}${more}</div>`;
+}
+
+function cardHtml(it){
+  const sent = SENT[it.sentiment] ? it.sentiment : 'neutral';
+  const s = SENT[sent];
+  const brand = it.brand ? `<span class="bchip" style="background:${BRAND_COLOR[it.brand]||'#6d605d'}">${esc(it.brand)}</span>` : '';
+  const cat = it.category ? `<span class="cat">${esc(String(it.category).replace(/_/g,' '))}</span>` : '';
+  const age = ageLabel(it);
+  const outlet = it.source ? `<span>${esc(it.source)}${age?' · '+esc(age):''}</span>` : (age?`<span>${esc(age)}</span>`:'');
+  const href = it.id ? `/api/go?id=${it.id}` : (it.url||'#');
+  const by = it.author ? `<span class="by">By ${esc(it.author)}</span>` : `<span class="by none">Author —</span>`;
+  const fb = it.feedback;
+  return `<article class="card ${sent}" id="item-${it.id}">
+    <div class="c-top">
+      <div class="metas">${brand}${cat}${outlet}</div>
+      <div class="dots" title="Severity ${it.importance||1}/5">${dots(it.importance)}</div>
+    </div>
+    <div class="headline"><a href="${esc(href)}" target="_blank" rel="noopener">${esc(it.headline)}</a></div>
+    <div class="subrow">
+      <span class="sent" style="background:${s.color}">${s.label}</span>${by}
+    </div>
+    ${it.summary?`<div class="summary">${esc(it.summary)}</div>`:''}
+    ${angleHtml(it.pr_angle, sent)}
+    ${coverageHtml(it.instances)}
+    <div class="foot">
+      <button class="fb up"   aria-pressed="${fb===1}"  title="Useful"     onclick="vote(${it.id},1,this)">▲</button>
+      <button class="fb down" aria-pressed="${fb===-1}" title="Not useful" onclick="vote(${it.id},-1,this)">▼</button>
+      <a class="open" href="${esc(href)}" target="_blank" rel="noopener">Open source ↗</a>
+    </div>
+  </article>`;
+}
+
+async function vote(id, val, btn){
+  const cur = btn.getAttribute('aria-pressed')==='true';
+  const next = cur ? null : val;
+  const card = btn.closest('.card');
+  card.querySelectorAll('.fb').forEach(b=>b.setAttribute('aria-pressed','false'));
+  if(next!==null) btn.setAttribute('aria-pressed','true');
+  const it = ITEMS.find(x=>x.id===id); if(it) it.feedback = next;
+  try{
+    await fetch(`/api/items?t=${encodeURIComponent(token)}`,{
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id, feedback: next===null?0:next })
+    });
+  }catch(e){ /* best-effort */ }
+}
+
+function pass(it){
+  if(fBrand!=='all' && (it.brand||'')!==fBrand) return false;
+  if(fSent!=='all' && (it.sentiment||'neutral')!==fSent) return false;
+  return true;
+}
+function render(){
+  const shown = ITEMS.filter(pass).sort((a,b)=>{
+    const rank = s=>s==='negative'?0:s==='neutral'?1:2;
+    return rank(a.sentiment)-rank(b.sentiment)
+      || (b.importance||0)-(a.importance||0)
+      || new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0);
+  });
+  const neg = ITEMS.filter(i=>i.sentiment==='negative').length;
+  $('#stats').innerHTML = `<b>${ITEMS.length}</b> item${ITEMS.length===1?'':'s'} &nbsp;·&nbsp; <b>${neg}</b> negative &nbsp;·&nbsp; ${shown.length} shown`;
+  const list = $('#list');
+  if(!shown.length){ list.innerHTML = `<div class="empty">No items match this filter.<br>Try widening the brand, sentiment or time window.</div>`; return; }
+  const SEC = [['negative','Negative — reputational risk'],['positive','Positive — brand wins'],['neutral','Neutral — market &amp; announcements']];
+  let html = '';
+  for(const [key,label] of SEC){
+    const rows = shown.filter(i=>(i.sentiment||'neutral')===key);
+    if(!rows.length) continue;
+    html += `<div class="sechead" style="color:${SENT[key].color}">${label} <span class="n">· ${rows.length}</span></div>`;
+    html += rows.map(cardHtml).join('');
+  }
+  list.innerHTML = html;
+  if(location.hash){ const el = document.getElementById(location.hash.slice(1)); if(el) el.scrollIntoView(); }
+}
+
+function buildFilters(){
+  const mk = (host, opts, get, set) => {
+    host.innerHTML = opts.map(([v,l])=>`<button class="chip ${v==='negative'?'neg':''}" data-v="${v}" aria-pressed="${get()===v}">${l}</button>`).join('');
+    host.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ set(c.dataset.v);
+      host.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed', x.dataset.v===String(get())));
+    });
+  };
+  mk($('#brandRow'), [['all','All brands'],['Vodafone','Vodafone'],['Orange','Orange'],['WE','WE'],['e&','e&'],['market','Market']],
+     ()=>fBrand, v=>{fBrand=v; render();});
+  mk($('#sentRow'), [['all','All sentiment'],['negative','⚠ Negative'],['neutral','Neutral'],['positive','Positive']],
+     ()=>fSent, v=>{fSent=v; render();});
+  mk($('#winRow'), [['1','Today'],['2','48 hours'],['7','Week'],['30','Month']],
+     ()=>String(fWin), v=>{fWin=Number(v); localStorage.setItem('pr_win',v); load();});
+  $('#filters').hidden = false;
+}
+
+async function load(){
+  if(!token){ $('#list').innerHTML = `<div class="gate">This board is private.<br>Open it with your access link: <code>?t=YOUR_TOKEN</code></div>`; $('#stats').textContent=''; return; }
+  try{
+    const r = await fetch(`/api/items?t=${encodeURIComponent(token)}&days=${fWin}`);
+    if(r.status===401){ $('#list').innerHTML = `<div class="gate">That access token was rejected.<br>Check your link and try again.</div>`; $('#stats').textContent=''; return; }
+    ITEMS = await r.json();
+    if(!Array.isArray(ITEMS)) ITEMS = [];
+    render();
+  }catch(e){
+    $('#list').innerHTML = `<div class="empty">Couldn't load the board.<br>${esc(e.message||e)}</div>`;
+  }
+}
+
+buildFilters();
+load();
+</script>
+</body>
+</html>
