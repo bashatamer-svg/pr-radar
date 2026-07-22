@@ -99,6 +99,7 @@
   .badge{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:5px;
          background:var(--neg-bg);color:var(--red-deep);box-shadow:inset 0 0 0 1px var(--neg-line);vertical-align:1px;margin-left:5px}
   .badge.lean{background:#fff5e6;color:var(--amber);box-shadow:inset 0 0 0 1px #f5dcb0}
+  .badge.rise{background:#e9f1fb;color:#1c5cab;box-shadow:inset 0 0 0 1px #cfe0f5}
 
   /* table view — the accessible twin of every chart */
   .tbl{display:none;margin-top:8px;overflow-x:auto}
@@ -405,6 +406,33 @@ function categoryRows(){
   return {rows,table};
 }
 
+/* Narratives — same-theme stories grouped into named threads, sorted rising
+   first. Bar length = volume vs the biggest narrative, split by sentiment; the
+   sparkline is the narrative's volume over the window; the representative
+   headline rides underneath as context. */
+function narrativeRows(list){
+  if(!list||!list.length) return {rows:`<div class="empty" style="padding:22px">No multi-story narratives in this window yet.<br>They form as several stories share a theme.</div>`,table:()=>''};
+  const max=Math.max(...list.map(n=>n.total));
+  const rows=list.map(n=>{
+    const rise=n.rising?`<span class="badge rise">rising${(n.risingScore&&n.risingScore>=2)?` ${n.risingScore}×`:''}</span>`:'';
+    const seg=(v,c,op)=>v?`<i style="width:${pct(v,max)}%;background:${c}${op?`;opacity:${op}`:''}"></i>`:'';
+    const bar=seg(n.negative,NEG)+seg(n.neutral,'var(--neu)','.35')+seg(n.positive,POS);
+    const sub=n.headline?`<span class="sub">${esc(n.headline)}</span>`:'';
+    return `<div class="lrow">
+      <span class="nm" title="${esc(n.name)}">${esc(n.name)}${rise}${sub}</span>
+      <span class="spark">${sparkSvg(n.series,72,20)}</span>
+      <span class="bar" aria-hidden="true">${bar}</span>
+      <span class="val"><b>${n.total}</b> stor${n.total===1?'y':'ies'}</span>
+    </div>`;
+  }).join('');
+  const table=()=>{
+    let h='<table><thead><tr><th scope="col">Narrative</th><th scope="col">Brand</th><th scope="col">Stories</th><th scope="col">Neg</th><th scope="col">Neu</th><th scope="col">Pos</th><th scope="col">Rising</th></tr></thead><tbody>';
+    list.forEach(n=>{ h+=`<tr><td>${esc(n.name)}</td><td>${esc(n.brand)}</td><td>${n.total}</td><td>${n.negative}</td><td>${n.neutral}</td><td>${n.positive}</td><td>${n.rising?('▲'+(n.risingScore?' '+n.risingScore+'×':'')):'—'}</td></tr>`; });
+    return h+'</tbody></table>';
+  };
+  return {rows,table};
+}
+
 /* Outlet / author intelligence — one row per journalist/outlet: bar length is
    VOLUME (mentions vs the busiest), split into their own negative/neutral/
    positive SENTIMENT mix; a sparkline shows their activity over the window; and
@@ -488,15 +516,18 @@ function render(){
     return;
   }
   const cats=categoryRows();
+  const narr=narrativeRows(DATA.narratives);
   const outs=leaderboardRows(DATA.outlets,'outlet');
   const auth=leaderboardRows(DATA.authors,'author');
   c.innerHTML=kpiHtml()
     +CHARTS.map(x=>cardHtml(x.id,x.title,x.sub)).join('')
+    +cardHtml('c-narr','Narratives','same-theme stories grouped · rising flagged')
     +cardHtml('c-cat','Categories','volume · trend · negative share')
     +cardHtml('c-out','Outlet intelligence','volume · sentiment split · trend · negative-leaning flagged')
     +cardHtml('c-auth','Journalist intelligence','volume · sentiment split · trend · repeat critics flagged')
-    +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
+    +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Narratives group distinct stories that share a theme (same category + overlapping wording); outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
   renderCharts();
+  $('#c-narr .cbody').innerHTML=`<div class="rows">${narr.rows}</div>`; $('#c-narr .tbl').innerHTML=narr.table();
   $('#c-cat .cbody').innerHTML=`<div class="rows">${cats.rows}</div>`; $('#c-cat .tbl').innerHTML=cats.table();
   $('#c-out .cbody').innerHTML=`<div class="rows">${outs.rows}</div>`; $('#c-out .tbl').innerHTML=outs.table();
   $('#c-auth .cbody').innerHTML=`<div class="rows">${auth.rows}</div>`; $('#c-auth .tbl').innerHTML=auth.table();
