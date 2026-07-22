@@ -6,7 +6,7 @@ import { classify } from '../lib/classify.js';
 import { semanticDedupe } from '../lib/dedupe-semantic.js';
 import { postUrgentWebhook } from '../lib/notify.js';
 import { renderBulletin, renderUrgent, sendBulletin } from '../lib/email.js';
-import { authorFromEntry, fetchAuthor } from '../lib/author.js';
+import { authorFromEntry, fetchAuthor, isOutletName } from '../lib/author.js';
 import { resolveUrl, isGoogleNews } from '../lib/resolve.js';
 
 export const config = { maxDuration: 60 };
@@ -425,13 +425,16 @@ export default async function handler(req, res) {
             if (insts[0]) insts[0].url = resolved; // primary instance gets the clean link
           }
 
-          // An instance byline from RSS wins — no fetch needed.
-          const withAuthor = insts.find((x) => x.author) || (primary.author ? primary : null);
+          // An instance byline from RSS wins — no fetch needed. Skip bylines that
+          // are really the outlet's own name (feeds often put the site name in
+          // <dc:creator>), so a publication is never shown as if it were a person.
+          const withAuthor = insts.find((x) => x.author && !isOutletName(x.author, x.outlet))
+            || (primary.author && !isOutletName(primary.author, primary.outlet || it.source) ? primary : null);
           if (withAuthor && withAuthor.author) { it.author = it.author || withAuthor.author; return; }
 
           // Otherwise fetch the resolved article and extract the byline.
           const got = await fetchAuthor(resolved);
-          if (got) {
+          if (got && !isOutletName(got, (insts[0] && insts[0].outlet) || it.source)) {
             it.author = got;
             if (insts[0]) insts[0].author = got;
           }
@@ -463,7 +466,7 @@ export default async function handler(req, res) {
         instanceRows.push({
           item_id: id,
           outlet: inst.outlet,
-          author: inst.author,
+          author: inst.author && !isOutletName(inst.author, inst.outlet) ? inst.author : null,
           url: inst.url,
           published_at: inst.published_at,
         });
