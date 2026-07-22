@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PR Radar — Living Knowledge</title>
+<meta name="description" content="Admin-maintained living PR knowledge injected into every classification.">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#f1f2f5">
+<style>
+  /* Same design tokens as the board / trends — one visual system. */
+  :root{
+    --red:#e60000; --red-deep:#b60009; --red-glow:rgba(230,0,0,.28);
+    --bg:#f1f2f5; --card:#ffffff; --raise:#f6f7f9;
+    --ink:#16191f; --ink-2:#3b434e; --muted:#6c7480; --faint:#9aa2ad; --hair:#e7e9ee; --hair-2:#eef0f3;
+    --pos:#0f9d58; --pos-bg:#edfaf1; --amber:#d97706;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --mh:56px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  a{color:var(--red)}
+  .wrap{max-width:840px;margin:0 auto;min-height:100vh;padding-bottom:70px}
+  :focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:8px}
+
+  .top{position:sticky;top:0;z-index:40;height:var(--mh);display:flex;align-items:center;gap:11px;padding:0 16px;
+       background:rgba(255,255,255,.82);backdrop-filter:blur(16px);border-bottom:1px solid var(--hair)}
+  .back{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--ink);
+        color:#fff;text-decoration:none;font-size:15px;font-weight:800}
+  .ttl{flex:1;min-width:0}
+  .ttl .h1{font-size:16px;font-weight:800;letter-spacing:-.02em;line-height:1}
+  .ttl .sub{font-size:10.5px;color:var(--muted);margin-top:3px;font-weight:500}
+  .save{flex:none;cursor:pointer;border:0;background:var(--red);color:#fff;font-family:var(--sans);font-size:13px;
+        font-weight:700;padding:9px 16px;border-radius:10px}
+  .save:disabled{opacity:.5;cursor:default}
+  .save.saved{background:var(--pos)}
+
+  .content{padding:16px}
+  .gate{text-align:center;color:var(--muted);padding:64px 26px;font-size:14px;line-height:1.7}
+  .gate code{background:var(--card);border:1px solid var(--hair);padding:2px 8px;border-radius:6px;color:var(--ink);font-family:var(--mono)}
+
+  .note{background:#fbf0d9;border:1px solid #ecd9a6;border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.55;color:#6b5836;margin-bottom:13px}
+  .note b{color:#8a5a00}
+  .card{background:var(--card);border:1px solid var(--hair);border-radius:16px;padding:14px;box-shadow:0 2px 12px -8px rgba(20,23,28,.18)}
+  textarea{width:100%;min-height:52vh;resize:vertical;border:1px solid var(--hair);border-radius:11px;padding:13px 14px;
+           font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--ink);background:var(--raise);outline:none}
+  textarea:focus{border-color:var(--faint);background:var(--card)}
+  .meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:11.5px;color:var(--muted)}
+  .meta .dot{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+  .meta .count{font-family:var(--mono)}
+  .meta .count.over{color:var(--red-deep);font-weight:700}
+  .meta .msg{margin-left:auto;font-weight:700}
+  .meta .msg.ok{color:var(--pos)} .meta .msg.err{color:var(--red-deep)}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="back" id="backLink" href="/" title="Back to the board" aria-label="Back to the board">‹</a>
+    <div class="ttl"><div class="h1">Living Knowledge</div><div class="sub">Injected into every classification · Vodafone Egypt</div></div>
+    <button class="save" id="saveBtn" type="button" disabled>Save</button>
+  </header>
+
+  <main class="content" id="content"><div class="gate">Loading…</div></main>
+</div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s);
+const esc=(s)=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+const params=new URLSearchParams(location.search);
+const token=params.get('t')||localStorage.getItem('pr_token')||'';
+if(params.get('t')) localStorage.setItem('pr_token',params.get('t'));
+$('#backLink').href=token?`/?t=${encodeURIComponent(token)}`:'/';
+
+let MAX=20000, saved='', updatedAt=null;
+
+function fmtWhen(t){ if(!t) return 'never edited'; try{ const d=new Date(t); return 'last edited '+d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Africa/Cairo'})+' Cairo'; }catch(e){ return ''; } }
+
+function shell(){
+  $('#content').innerHTML=`
+    <div class="note"><b>This text is authoritative.</b> It is prepended to every batch the classifier judges — a live issue, a running campaign, a spokesperson change go here and take effect on the next run, no redeploy. Keep it to <b>public market facts</b>; never paste confidential figures, draft crisis lines, or unannounced plans.</div>
+    <div class="card">
+      <textarea id="ta" spellcheck="false" placeholder="e.g. LIVE ISSUE (24 Jul): Vodafone Cash intermittent outages since 06:00 — treat wallet-failure stories as high severity…"></textarea>
+      <div class="meta">
+        <span class="dot"></span><span id="when">—</span>
+        <span class="dot"></span><span class="count" id="count">0 / ${MAX}</span>
+        <span class="msg" id="msg"></span>
+      </div>
+    </div>`;
+  const ta=$('#ta'); ta.value=saved;
+  ta.addEventListener('input',onChange);
+  $('#when').textContent=fmtWhen(updatedAt);
+  onChange();
+}
+
+function onChange(){
+  const ta=$('#ta'); const n=ta.value.length;
+  const count=$('#count'); count.textContent=`${n.toLocaleString()} / ${MAX.toLocaleString()}`;
+  count.classList.toggle('over',n>MAX);
+  const dirty=ta.value!==saved;
+  const btn=$('#saveBtn'); btn.disabled=!dirty||n>MAX; btn.classList.remove('saved'); if(dirty) btn.textContent='Save';
+  const msg=$('#msg'); if(dirty){ msg.textContent='unsaved changes'; msg.className='msg'; }
+}
+
+async function save(){
+  const ta=$('#ta'); const content=ta.value; const btn=$('#saveBtn'); const msg=$('#msg');
+  btn.disabled=true; btn.textContent='Saving…';
+  try{
+    const r=await fetch(`/api/context?t=${encodeURIComponent(token)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+    if(r.status===401){ msg.textContent='access rejected'; msg.className='msg err'; btn.textContent='Save'; return; }
+    if(!r.ok){ const e=await r.json().catch(()=>({})); msg.textContent=e.error||'save failed'; msg.className='msg err'; btn.textContent='Save'; btn.disabled=false; return; }
+    const d=await r.json(); saved=content; updatedAt=d.updated_at||new Date().toISOString();
+    $('#when').textContent=fmtWhen(updatedAt);
+    btn.textContent='Saved ✓'; btn.classList.add('saved'); msg.textContent=''; msg.className='msg ok';
+    setTimeout(()=>{ btn.textContent='Save'; btn.classList.remove('saved'); onChange(); },1400);
+  }catch(e){ msg.textContent='network error'; msg.className='msg err'; btn.textContent='Save'; btn.disabled=false; }
+}
+$('#saveBtn').onclick=save;
+// Cmd/Ctrl-S saves
+addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){ e.preventDefault(); if(!$('#saveBtn').disabled) save(); } });
+
+async function load(){
+  if(!token){ $('#content').innerHTML=`<div class="gate">This page is private.<br>Open it with your access link: <code>/context.html?t=YOUR_TOKEN</code></div>`; $('#saveBtn').style.display='none'; return; }
+  try{
+    const r=await fetch(`/api/context?t=${encodeURIComponent(token)}`);
+    if(r.status===401){ $('#content').innerHTML=`<div class="gate">That access link was rejected.<br>Check the token and try again.</div>`; $('#saveBtn').style.display='none'; return; }
+    const d=await r.json(); saved=d.content||''; updatedAt=d.updated_at||null; if(d.max) MAX=d.max;
+    shell();
+  }catch(e){ $('#content').innerHTML=`<div class="gate">Couldn't load the knowledge doc.<br>${esc(e.message||e)}</div>`; }
+}
+load();
+</script>
+</body>
+</html>

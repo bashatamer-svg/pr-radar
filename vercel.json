@@ -7,7 +7,8 @@
     { "path": "/api/geo?send=1", "schedule": "0 7 * * 1" }
   ],
   "rewrites": [
-    { "source": "/stats", "destination": "/stats.html" }
+    { "source": "/stats", "destination": "/stats.html" },
+    { "source": "/context", "destination": "/context.html" }
   ],
   "functions": {
     "api/radar.js": { "maxDuration": 60 }
