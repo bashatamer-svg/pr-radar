@@ -3,6 +3,9 @@
   "crons": [
     { "path": "/api/radar", "schedule": "0 5 * * *" }
   ],
+  "rewrites": [
+    { "source": "/stats", "destination": "/stats.html" }
+  ],
   "functions": {
     "api/radar.js": { "maxDuration": 60 }
   }
