@@ -7,7 +7,7 @@ import { semanticDedupe } from '../lib/dedupe-semantic.js';
 import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
 import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
 import { renderBulletin, renderUrgent, sendBulletin } from '../lib/email.js';
-import { authorFromEntry, fetchAuthor, isOutletName } from '../lib/author.js';
+import { authorFromEntry, fetchAuthor, cleanAuthor } from '../lib/author.js';
 import { resolveUrl, isGoogleNews } from '../lib/resolve.js';
 
 export const config = { maxDuration: 60 };
@@ -440,18 +440,27 @@ export default async function handler(req, res) {
             if (insts[0]) insts[0].url = resolved; // primary instance gets the clean link
           }
 
-          // An instance byline from RSS wins — no fetch needed. Skip bylines that
-          // are really the outlet's own name (feeds often put the site name in
-          // <dc:creator>), so a publication is never shown as if it were a person.
-          const withAuthor = insts.find((x) => x.author && !isOutletName(x.author, x.outlet))
-            || (primary.author && !isOutletName(primary.author, primary.outlet || it.source) ? primary : null);
-          if (withAuthor && withAuthor.author) { it.author = it.author || withAuthor.author; return; }
+          // An instance byline from RSS wins — no fetch needed. cleanAuthor()
+          // rejects outlet-as-author values (feeds often put the site name in
+          // <dc:creator>) and salvages the person from compound desk bylines
+          // ("محمد علي - خاص"), so a publication is never shown as a person but
+          // a real name attached to one isn't thrown away either.
+          let rssAuthor = null;
+          for (const x of insts) {
+            rssAuthor = cleanAuthor(x.author, x.outlet);
+            if (rssAuthor) break;
+          }
+          if (rssAuthor) { it.author = it.author || rssAuthor; return; }
 
-          // Otherwise fetch the resolved article and extract the byline.
-          const got = await fetchAuthor(resolved);
-          if (got && !isOutletName(got, (insts[0] && insts[0].outlet) || it.source)) {
-            it.author = got;
-            if (insts[0]) insts[0].author = got;
+          // Otherwise fetch — try the primary resolved URL, then fall back to the
+          // OTHER outlets' direct (non-Google) URLs, since a story often ran in
+          // several places and only some resolve or expose a byline.
+          const urls = [...new Set(
+            [resolved, ...insts.map((x) => x.url)].filter((u) => u && !isGoogleNews(u))
+          )];
+          for (const u of urls) {
+            const person = cleanAuthor(await fetchAuthor(u), (insts[0] && insts[0].outlet) || it.source);
+            if (person) { it.author = person; if (insts[0]) insts[0].author = person; break; }
           }
         })
     );
@@ -481,7 +490,7 @@ export default async function handler(req, res) {
         instanceRows.push({
           item_id: id,
           outlet: inst.outlet,
-          author: inst.author && !isOutletName(inst.author, inst.outlet) ? inst.author : null,
+          author: cleanAuthor(inst.author, inst.outlet),
           url: inst.url,
           published_at: inst.published_at,
         });

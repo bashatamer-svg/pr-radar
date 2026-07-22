@@ -154,6 +154,18 @@
   .due.hot{background:var(--neg-bg);color:var(--red-deep);box-shadow:inset 0 0 0 1px var(--neg-line)}
   .summary{font-size:14px;line-height:1.58;color:var(--ink-2);margin-top:10px}
 
+  /* ── bidi: mixed Arabic/English text ──
+     Headlines and summaries freely mix Arabic with Latin brand tokens
+     ("Vodafone Cash", "5G", numbers). With the page's LTR base direction the
+     Unicode bidi algorithm scrambles their ordering and drops punctuation to
+     the wrong end. unicode-bidi:plaintext makes each block take its base
+     direction from its OWN first strong character (like dir="auto"), and
+     text-align:start aligns it to the matching side — Arabic headlines read
+     right-to-left from the right, English ones exactly as before. */
+  .headline,.summary,.angle td:not(.k),.angle .plain,.cov .row,#spotlightText{
+    unicode-bidi:plaintext;text-align:start}
+  .by{unicode-bidi:plaintext}
+
   .angle{margin-top:13px;border-radius:14px;padding:13px 14px;background:var(--neu-bg)}
   .card.negative .angle{background:var(--neg-bg);box-shadow:inset 0 0 0 1px var(--neg-line)}
   .card.positive .angle{background:var(--pos-bg);box-shadow:inset 0 0 0 1px var(--pos-line)}
@@ -307,7 +319,10 @@ function buildSpotlight(){
   const spread=worst?spreadOf(worst):0;
   if(worst&&((worst.importance||0)>=4||spread>=4)){
     const where=spread>1?` · ${spread} outlets`:'';
-    $('#spotlightText').innerHTML=`<b>${esc(worst.brand||'Market')}${where}</b> — ${esc(worst.headline)}`;
+    // <bdi> isolates the headline's direction from the Latin "Brand · N outlets"
+    // prefix — otherwise an Arabic headline inherits the span's LTR base and
+    // scrambles (5G splits, trailing ! jumps to the wrong end).
+    $('#spotlightText').innerHTML=`<b>${esc(worst.brand||'Market')}${where}</b> — <bdi>${esc(worst.headline)}</bdi>`;
     el.classList.add('on');
     el.onclick=()=>{ const c=document.getElementById('item-'+worst.id); if(c){ c.scrollIntoView({behavior:'smooth',block:'center'}); c.style.transition='box-shadow .3s'; c.style.boxShadow='0 0 0 3px var(--red-glow)'; setTimeout(()=>c.style.boxShadow='',1500);} };
   } else el.classList.remove('on');
