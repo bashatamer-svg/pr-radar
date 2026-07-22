@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import crypto from 'node:crypto';
-import { ALL_FEEDS } from '../lib/sources.js';
+import { ALL_FEEDS, BRAND_FEEDS } from '../lib/sources.js';
 import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState } from '../lib/db.js';
 import { classify } from '../lib/classify.js';
 import { semanticDedupe } from '../lib/dedupe-semantic.js';
@@ -280,8 +280,14 @@ export default async function handler(req, res) {
   const previewTo = req.query?.to || null;
   const previewName = req.query?.name || null;
 
-  // 1. Fetch every feed in parallel. A dead feed yields [] and is logged.
-  const results = await Promise.allSettled(ALL_FEEDS.map(fetchFeed));
+  // 1. Fetch feeds in parallel. A dead feed yields [] and is logged.
+  //    Urgent-only crisis polls (every 15–30 min) hit ONLY the brand-targeted
+  //    queries — a tight, fast net over the four operators — so the poll stays
+  //    cheap. The daily full run sweeps ALL_FEEDS (brands + market + outlets).
+  //    Cross-run hash dedupe (existingHashes below) means a story the poll
+  //    already ingested/alerted never re-alerts on the next poll or the daily run.
+  const feedSet = urgentOnly ? BRAND_FEEDS : ALL_FEEDS;
+  const results = await Promise.allSettled(feedSet.map(fetchFeed));
   const raw = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
 
   // 2. Drop anything older than 48h.
@@ -657,6 +663,7 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     scanned: raw.length,
+    feeds: feedSet.length,
     candidates: candidates.length,
     crossRunHeadlineDropped,
     crossRunSummaryDropped,
