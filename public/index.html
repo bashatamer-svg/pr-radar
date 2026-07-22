@@ -201,6 +201,16 @@
   .fb.up[aria-pressed=true]{background:var(--pos);color:#fff;border-color:var(--pos)}
   .fb.down[aria-pressed=true]{background:var(--red);color:#fff;border-color:var(--red)}
 
+  /* ── team_share pin / hide (admin) ── */
+  .fb.pin[aria-pressed=true]{background:var(--amber);color:#fff;border-color:var(--amber)}
+  .fb.hide[aria-pressed=true]{background:var(--ink-2);color:#fff;border-color:var(--ink-2)}
+  .card.pinned{box-shadow:0 2px 12px -8px rgba(20,23,28,.18),inset 3px 0 0 0 var(--amber)}
+  .card.hidden{opacity:.5}
+  .card.hidden:hover{opacity:1}
+  .pinmark{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.03em;padding:2px 7px;border-radius:7px;white-space:nowrap}
+  .pinmark.pin{background:#fff5e6;color:var(--amber);box-shadow:inset 0 0 0 1px #f5dcb0}
+  .pinmark.hide{background:var(--hair-2);color:var(--muted);box-shadow:inset 0 0 0 1px var(--hair)}
+
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -249,7 +259,14 @@ const SENT = {
 };
 const IMP = {5:'#e60000',4:'#f27100',3:'#e2a900',2:'#3a7ac2',1:'#9aa2ad'};
 
-let ITEMS=[]; let fBrand='all', fSent='all', fWin=Number(localStorage.getItem('pr_win'))||2;
+let ITEMS=[]; let fBrand='all', fSent='all', fWin=Number(localStorage.getItem('pr_win'))||2, fPin='all';
+
+// team_share pins are SERVER state (shared with the team view), but pinned
+// items can be older than the current window — so we also remember pinned ids
+// locally and fetch them by id for the Pinned filter (the API supports ?ids=).
+function pinnedSet(){ try{ return new Set(JSON.parse(localStorage.getItem('pr_pinned')||'[]').map(Number)); }catch(e){ return new Set(); } }
+function savePinned(set){ try{ localStorage.setItem('pr_pinned',JSON.stringify([...set])); }catch(e){} }
+const isPinned=it=>it.team_share===true||pinnedSet().has(it.id);
 
 function clock(){
   const now=new Date();
@@ -353,8 +370,10 @@ function cardHtml(it){
   const by=it.author?`<span class="by">By ${esc(it.author)}</span>`:`<span class="by none">Author —</span>`;
   const due=dueLabel(it); const dueEl=due?`<span class="due ${sent==='negative'?'hot':''}">⧗ ${esc(due)}</span>`:'';
   const fb=it.feedback;
-  return `<article class="card ${sent}${crit?' crit':''}" id="item-${it.id}">
-    <div class="c-top"><div class="metas">${brand}${spreadBadge}${cat}${ageEl}</div>
+  const pinned=it.team_share===true, hidden=it.team_share===false;
+  const pinMark=pinned?`<span class="pinmark pin" title="Pinned for the team">📌 Pinned</span>`:hidden?`<span class="pinmark hide" title="Hidden from the team view">🙈 Hidden</span>`:'';
+  return `<article class="card ${sent}${crit?' crit':''}${pinned?' pinned':''}${hidden?' hidden':''}" id="item-${it.id}">
+    <div class="c-top"><div class="metas">${brand}${spreadBadge}${cat}${ageEl}${pinMark}</div>
       <div class="dots" title="Reach/impact ${it.importance||1}/5">${dots(it.importance)}</div></div>
     <h3 class="headline"><a href="${esc(href)}" target="_blank" rel="noopener">${esc(it.headline)}</a></h3>
     <div class="subrow"><span class="sent ${sent}">${s.label}</span>${by}${dueEl}</div>
@@ -363,6 +382,8 @@ function cardHtml(it){
     ${coverageHtml(it.instances)}
     <div class="foot">
       <button class="btn copy" type="button" onclick="copyBrief(${it.id},this)">⧉ Copy brief</button>
+      <button class="fb pin" aria-pressed="${pinned}" title="Pin for the team" onclick="togglePin(${it.id},'pin',this)">📌</button>
+      <button class="fb hide" aria-pressed="${hidden}" title="Hide from the team view" onclick="togglePin(${it.id},'hide',this)">🙈</button>
       <button class="fb up" aria-pressed="${fb===1}" title="Useful" onclick="vote(${it.id},1,this)">▲</button>
       <button class="fb down" aria-pressed="${fb===-1}" title="Not useful" onclick="vote(${it.id},-1,this)">▼</button>
       <a class="btn open" href="${esc(href)}" target="_blank" rel="noopener">Open source ↗</a>
@@ -387,7 +408,29 @@ async function vote(id,val,btn){
   try{ await fetch(`/api/items?t=${encodeURIComponent(token)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,feedback:next===null?0:next})}); }catch(e){}
 }
 
-function pass(it){ if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&sentOf(it)!==fSent) return false; return true; }
+// Admin pin (team_share=true) / hide (false) / clear (null). Pin and hide are
+// mutually exclusive; clicking the active one clears it. Optimistic: update the
+// card + local pinned set, PATCH, and if the Pinned filter is on, re-render so
+// an un-pinned card drops out.
+async function togglePin(id,mode,btn){
+  const it=ITEMS.find(x=>x.id===id); if(!it) return;
+  const cur=it.team_share===true?true:it.team_share===false?false:null;
+  const next=mode==='pin'?(cur===true?null:true):(cur===false?null:false);
+  it.team_share=next;
+  const set=pinnedSet(); if(next===true) set.add(id); else set.delete(id); savePinned(set);
+  const card=btn.closest('.card');
+  card.classList.toggle('pinned',next===true); card.classList.toggle('hidden',next===false);
+  const pb=card.querySelector('.fb.pin'), hb=card.querySelector('.fb.hide');
+  if(pb) pb.setAttribute('aria-pressed',String(next===true));
+  if(hb) hb.setAttribute('aria-pressed',String(next===false));
+  // refresh the little "Pinned/Hidden" marker in the metas row
+  const metas=card.querySelector('.metas .pinmark'); if(metas) metas.remove();
+  if(next!==null){ const m=document.createElement('span'); m.className='pinmark '+(next===true?'pin':'hide'); m.textContent=next===true?'📌 Pinned':'🙈 Hidden'; card.querySelector('.metas').appendChild(m); }
+  try{ await fetch(`/api/items?t=${encodeURIComponent(token)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,team_share:next})}); }catch(e){}
+  if(fPin==='pinned'&&!isPinned(it)) render();
+}
+
+function pass(it){ if(fPin==='pinned'&&!isPinned(it)) return false; if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&sentOf(it)!==fSent) return false; return true; }
 function render(){
   buildPulse(); buildSpotlight();
   const shown=ITEMS.filter(pass).sort((a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(sentOf(a))-rank(sentOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0); });
@@ -408,13 +451,17 @@ function render(){
 function syncControls(){
   const p=$('#pulse'); const h=p.querySelector('.hero'); if(h) h.setAttribute('aria-pressed',String(fBrand==='Vodafone'));
   p.querySelectorAll('.tile').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.b===fBrand)));
-  $('#sentRow').querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===fSent)));
+  $('#sentRow').querySelectorAll('.chip[data-v]').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===fSent)));
+  const pc=$('#sentRow .chip[data-pin]'); if(pc) pc.setAttribute('aria-pressed',String(fPin==='pinned'));
 }
 function buildFilters(){
   const sent=$('#sentRow');
   const opts=[['all','All'],['negative','⚠ Needs response'],['positive','Wins'],['neutral','Market']];
-  sent.innerHTML=`<span class="flabel">Show</span>`+opts.map(([v,l])=>`<button class="chip ${v==='negative'?'alert':''}" type="button" data-v="${v}" aria-pressed="${fSent===v}">${l}</button>`).join('');
-  sent.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ fSent=c.dataset.v; syncControls(); render(); });
+  sent.innerHTML=`<span class="flabel">Show</span>`+opts.map(([v,l])=>`<button class="chip ${v==='negative'?'alert':''}" type="button" data-v="${v}" aria-pressed="${fSent===v}">${l}</button>`).join('')
+    +`<span class="flabel" style="padding-left:6px">·</span><button class="chip" type="button" data-pin="1" aria-pressed="${fPin==='pinned'}">📌 Pinned</button>`;
+  sent.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{ fSent=c.dataset.v; syncControls(); render(); });
+  const pin=sent.querySelector('.chip[data-pin]');
+  pin.onclick=async()=>{ fPin=fPin==='pinned'?'all':'pinned'; syncControls(); if(fPin==='pinned') await loadPinnedExtras(); render(); };
   const win=$('#winRow');
   const wopts=[['1','Today'],['2','48 hours'],['7','Week'],['30','Month']];
   win.innerHTML=`<span class="flabel">Since</span>`+wopts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fWin)===v}">${l}</button>`).join('');
@@ -422,12 +469,30 @@ function buildFilters(){
   $('#bar2').hidden=false;
 }
 
+// Pull any pinned items that fall OUTSIDE the current window (older than the
+// selected days) so the Pinned filter shows the full saved set, not just the
+// pins that happen to be in view. Uses the API's fetch-by-ids.
+async function loadPinnedExtras(){
+  const missing=[...pinnedSet()].filter(id=>!ITEMS.some(x=>x.id===id));
+  if(!missing.length) return;
+  try{
+    const r=await fetch(`/api/items?t=${encodeURIComponent(token)}&ids=${missing.join(',')}`);
+    if(!r.ok) return; const extra=await r.json(); if(!Array.isArray(extra)) return;
+    const have=new Set(ITEMS.map(i=>i.id)); for(const e of extra) if(!have.has(e.id)) ITEMS.push(e);
+  }catch(e){}
+}
+
 async function load(){
   if(!token){ $('#list').innerHTML=`<div class="gate">This board is private.<br>Open it with your access link: <code>?t=YOUR_TOKEN</code></div>`; return; }
   try{
     const r=await fetch(`/api/items?t=${encodeURIComponent(token)}&days=${fWin}`);
     if(r.status===401){ $('#list').innerHTML=`<div class="gate">That access link was rejected.<br>Check the token and open the board again.</div>`; return; }
-    ITEMS=await r.json(); if(!Array.isArray(ITEMS)) ITEMS=[]; render();
+    ITEMS=await r.json(); if(!Array.isArray(ITEMS)) ITEMS=[];
+    // Sync local pinned set with server pins visible in this window (covers a
+    // pin made on another device), then top up out-of-window pins if filtering.
+    const set=pinnedSet(); for(const it of ITEMS) if(it.team_share===true) set.add(it.id); savePinned(set);
+    if(fPin==='pinned') await loadPinnedExtras();
+    render();
   }catch(e){ $('#list').innerHTML=`<div class="empty">Couldn't load the board.<br>${esc(e.message||e)}</div>`; }
 }
 
