@@ -1,0 +1,270 @@
+From 05064b20135091ff4cb4ccf7c58b022a2e1ecf74 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 22 Jul 2026 18:54:05 +0000
+Subject: [PATCH] Fix urgent webhook field mismatch; make classifier batch
+ failures recoverable
+
+lib/notify.js: the urgent Slack/Teams/WhatsApp push read so_what/regulator/tier
+(leftover Regulatory-Radar fields that don't exist on pr_items), so every
+severity-5 alert went out with a blank action line and undefined payload fields.
+Now derives the Action line from pr_angle and builds the payload from the real
+PR fields (brand, sentiment, importance, category, coverage spread, deep link).
+
+lib/classify.js: a batch that returned unparseable JSON marked all 25 stories
+is_relevant:false, silently burying real coverage. classifyChunk() now splits a
+failed batch in half and retries recursively down to a single item, isolating a
+poison item to itself. Items the model still never scores are stored as
+category:'unclassified' (greppable, counted in logs) rather than as 'other'.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01F4kHoHuaxE7u6WCww7y4VN
+---
+ lib/classify.js | 150 ++++++++++++++++++++++++++++++------------------
+ lib/notify.js   |  43 ++++++++++----
+ 2 files changed, 127 insertions(+), 66 deletions(-)
+
+diff --git a/lib/classify.js b/lib/classify.js
+index 1569d59..44e8d50 100644
+--- a/lib/classify.js
++++ b/lib/classify.js
+@@ -241,6 +241,84 @@ function parseArray(text) {
+   throw new Error(`no JSON array in model output: ${text.slice(0, 80)}`);
+ }
+ 
++// Build a pr_items record from a source item + the model's verdict. Both this
++// and unclassifiedRecord() MUST emit the identical key set — a Supabase batch
++// INSERT rejects arrays whose objects have different keys wholesale (PGRST102).
++function classifiedRecord(src, v) {
++  return {
++    hash: src.hash,
++    headline: src.headline,
++    url: src.url,
++    source: src.source,
++    author: src.author ?? null,
++    published_at: src.published_at,
++    brand: v.brand ?? src.brand ?? null,
++    sentiment: v.sentiment || null,
++    country: v.country || src.country || 'Egypt',
++    category: v.category || 'other',
++    summary: v.summary || null,
++    pr_angle: v.pr_angle || null,
++    importance: v.importance ?? 1,
++    confidence: v.confidence ?? 0.5,
++    is_relevant: !!v.is_relevant,
++    deadline: cleanDate(v.deadline),
++  };
++}
++
++// Fallback for an item the model never returned a verdict for (a batch that
++// stayed unparseable even after splitting, or an index the model omitted).
++// Marked category:'unclassified' + confidence:0 and is_relevant:false so it
++// never spams the board, but is greppable in the DB and counted in the logs —
++// unlike the old path, which buried such items indistinguishably as 'other'.
++function unclassifiedRecord(src) {
++  return {
++    hash: src.hash,
++    headline: src.headline,
++    url: src.url,
++    source: src.source,
++    author: src.author ?? null,
++    published_at: src.published_at,
++    brand: src.brand ?? null,
++    sentiment: null,
++    country: src.country ?? 'Egypt',
++    category: 'unclassified',
++    summary: null,
++    pr_angle: null,
++    importance: 1,
++    confidence: 0,
++    is_relevant: false,
++    deadline: null,
++  };
++}
++
++// Classify one chunk, returning an array aligned 1:1 with `chunk` — each slot is
++// the item's verdict object, or null if the model didn't return one for it.
++// On a hard failure (unparseable JSON, network) the chunk is SPLIT IN HALF and
++// each half retried, recursively down to a single item. A single poison item
++// then isolates to just itself instead of dropping all 25 stories in its batch.
++async function classifyChunk(chunk, extraSystem) {
++  try {
++    const verdicts = await callClaude(chunk, extraSystem);
++    const byIndex = new Map();
++    for (const v of verdicts || []) {
++      if (v && Number.isInteger(v.i)) byIndex.set(v.i, v);
++    }
++    return chunk.map((_, i) => byIndex.get(i) ?? null);
++  } catch (e) {
++    if (chunk.length <= 1) {
++      console.error('classify item failed after retries:', (chunk[0]?.headline || '').slice(0, 80), '—', e.message);
++      return [null];
++    }
++    const mid = Math.ceil(chunk.length / 2);
++    console.warn(`classify batch of ${chunk.length} failed (${e.message}); splitting ${mid}/${chunk.length - mid} and retrying`);
++    const [a, b] = await Promise.all([
++      classifyChunk(chunk.slice(0, mid), extraSystem),
++      classifyChunk(chunk.slice(mid), extraSystem),
++    ]);
++    return [...a, ...b];
++  }
++}
++
+ export async function classify(items) {
+   const chunks = [];
+   for (let i = 0; i < items.length; i += BATCH) chunks.push(items.slice(i, i + BATCH));
+@@ -249,65 +327,25 @@ export async function classify(items) {
+   // batch's system prompt. Fail-open inside livingKnowledgeBlock().
+   const extraSystem = await livingKnowledgeBlock();
+ 
+-  const results = await Promise.all(chunks.map(async (chunk) => {
+-    try {
+-      return { chunk, verdicts: await callClaude(chunk, extraSystem) };
+-    } catch (e) {
+-      console.error('classify batch failed', e.message);
+-      return { chunk, verdicts: null };
+-    }
+-  }));
++  const perChunk = await Promise.all(chunks.map((chunk) => classifyChunk(chunk, extraSystem)));
+ 
+   const out = [];
+-  for (const { chunk, verdicts } of results) {
+-    if (!verdicts) {
+-      // A bad batch must not lose the run. Store unclassified, flag for review.
+-      // Emit the SAME field set as the success path — Supabase batch INSERT
+-      // rejects arrays whose objects have different key sets (PGRST102).
+-      for (const src of chunk) {
+-        out.push({
+-          hash: src.hash,
+-          headline: src.headline,
+-          url: src.url,
+-          source: src.source,
+-          author: src.author ?? null,
+-          published_at: src.published_at,
+-          brand: src.brand ?? null,
+-          sentiment: null,
+-          country: src.country ?? 'Egypt',
+-          category: 'other',
+-          summary: null,
+-          pr_angle: null,
+-          importance: 1,
+-          confidence: 0,
+-          is_relevant: false,
+-          deadline: null,
+-        });
++  let unclassified = 0;
++  chunks.forEach((chunk, ci) => {
++    const verdicts = perChunk[ci];
++    chunk.forEach((src, i) => {
++      const v = verdicts[i];
++      if (v) {
++        out.push(classifiedRecord(src, v));
++      } else {
++        unclassified++;
++        out.push(unclassifiedRecord(src));
+       }
+-      continue;
+-    }
+-    for (const v of verdicts) {
+-      const src = chunk[v.i];
+-      if (!src) continue;
+-      out.push({
+-        hash: src.hash,
+-        headline: src.headline,
+-        url: src.url,
+-        source: src.source,
+-        author: src.author ?? null,
+-        published_at: src.published_at,
+-        brand: v.brand ?? src.brand ?? null,
+-        sentiment: v.sentiment || null,
+-        country: v.country || src.country || 'Egypt',
+-        category: v.category || 'other',
+-        summary: v.summary || null,
+-        pr_angle: v.pr_angle || null,
+-        importance: v.importance ?? 1,
+-        confidence: v.confidence ?? 0.5,
+-        is_relevant: !!v.is_relevant,
+-        deadline: cleanDate(v.deadline),
+-      });
+-    }
++    });
++  });
++
++  if (unclassified) {
++    console.warn(`classify: ${unclassified}/${items.length} item(s) unclassified after retries — stored is_relevant:false, category:'unclassified'`);
+   }
+   return out;
+ }
+diff --git a/lib/notify.js b/lib/notify.js
+index 04c2c94..cb0fa9d 100644
+--- a/lib/notify.js
++++ b/lib/notify.js
+@@ -9,9 +9,19 @@
+ // swallowed so a webhook can never delay or block the urgent email or the
+ // daily bulletin.
+ 
+-const actionLine = (soWhat) => {
+-  const first = String(soWhat || '').split(/\r?\n/).map((s) => s.trim()).find(Boolean) || '';
+-  return first.replace(/^Action\s*[·:\-–—]\s*/i, '').trim();
++// Pull the "Action · …" line out of the classifier's 3-line pr_angle
++// (Read / Audience / Action). We want the ACTION specifically — the step the
++// comms team should take — not the first line (which is the "Read"). Returns ''
++// when there is no usable Action line.
++const actionFromAngle = (prAngle) => {
++  for (const raw of String(prAngle || '').split(/\r?\n+/)) {
++    const m = raw.trim().match(/^action\s*[·:\-–—]\s*(.*)$/i);
++    if (m) {
++      const v = m[1].trim();
++      if (v && !/^[—–\-·.\s]*$/.test(v)) return v;
++    }
++  }
++  return '';
+ };
+ 
+ export async function postUrgentWebhook(item, boardUrl) {
+@@ -21,10 +31,19 @@ export async function postUrgentWebhook(item, boardUrl) {
+   const token = process.env.RADAR_TOKEN;
+   const deep = boardUrl
+     ? `${boardUrl}${token ? `?t=${encodeURIComponent(token)}` : ''}${item.id ? `#item-${item.id}` : ''}`
+-    : (item.url || '');
+-  const act = actionLine(item.so_what);
++    : (item.resolved_url || item.url || '');
++
++  // PR Radar items carry pr_angle / brand / sentiment / importance — NOT the
++  // Regulatory Radar's so_what / regulator / tier this was ported from. Build
++  // the alert from the fields that actually exist on a pr_items row.
++  const brand = item.brand || 'Market';
++  const spread = Array.isArray(item._instances)
++    ? item._instances.filter((x) => x && (x.outlet || x.url)).length
++    : 0;
++  const act = actionFromAngle(item.pr_angle);
++
+   const text = [
+-    `🚨 URGENT — ${item.headline}`,
++    `🚨 URGENT · ${brand}${spread > 1 ? ` · ${spread} outlets` : ''} — ${item.headline}`,
+     act ? `→ ${act}` : '',
+     deep,
+   ].filter(Boolean).join('\n');
+@@ -37,12 +56,16 @@ export async function postUrgentWebhook(item, boardUrl) {
+         text, // Slack / Teams / Discord render this directly
+         item: {
+           headline: item.headline,
+-          url: item.url,
++          url: item.resolved_url || item.url,
++          brand: item.brand,
++          sentiment: item.sentiment,
+           importance: item.importance,
+-          tier: item.tier,
++          category: item.category,
+           country: item.country,
+-          regulator: item.regulator,
+-          so_what: item.so_what,
++          summary: item.summary,
++          pr_angle: item.pr_angle,
++          action: act,
++          outlets: spread || undefined,
+           board_url: deep,
+         },
+       }),
+-- 
+2.43.0
+
