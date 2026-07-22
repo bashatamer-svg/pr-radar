@@ -336,6 +336,14 @@ export default async function handler(req, res) {
   // 4. Classify. Fixed call count: ceil(n / 25).
   const rawClassified = await classify(candidates);
 
+  // Items the classifier gave up on (unparseable batch even after splitting, or
+  // an index the model omitted) — stored is_relevant:false so they never reach
+  // the board, but surfaced in the bulletin footer + run stats so a silent
+  // classifier failure is visible instead of reading as "a quiet news day".
+  const unclassifiedCount = rawClassified.filter(
+    (i) => i.is_relevant === false && i.category === 'unclassified'
+  ).length;
+
   // 4a. Post-classify dedup on the classifier's paraphrased summary.
   //     Exact-hash collapse first (works cross-language when Claude
   //     paraphrases the same story into similar wording), then a
@@ -581,7 +589,7 @@ export default async function handler(req, res) {
       : parseNamedRecipients(process.env.RADAR_TO);
     let adminCount = 0;
     for (const r of adminRecipients) {
-      const html = renderBulletin({ items: digest, broken, scanned: raw.length, variant: 'admin', greetingName: r.name || null });
+      const html = renderBulletin({ items: digest, broken, scanned: raw.length, variant: 'admin', greetingName: r.name || null, unclassified: unclassifiedCount });
       if (!dry) {
         try {
           await sendBulletin(html, adminSubject, r.email, { bcc: previewTo ? undefined : process.env.RADAR_BCC });
@@ -653,6 +661,7 @@ export default async function handler(req, res) {
     crossRunHeadlineDropped,
     crossRunSummaryDropped,
     classified: rawClassified.length,
+    unclassified: unclassifiedCount,
     afterSummaryDedup: classified.length,
     droppedAsDupe: rawClassified.length - classified.length,
     semanticDropped,
