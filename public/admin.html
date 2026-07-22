@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PR Radar — Admin</title>
+<meta name="description" content="Manage watchlist subscribers and triage board feedback.">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#f1f2f5">
+<style>
+  :root{
+    --red:#e60000; --red-deep:#b60009;
+    --bg:#f1f2f5; --card:#ffffff; --raise:#f6f7f9;
+    --ink:#16191f; --ink-2:#3b434e; --muted:#6c7480; --faint:#9aa2ad; --hair:#e7e9ee; --hair-2:#eef0f3;
+    --pos:#0f9d58; --pos-bg:#edfaf1; --amber:#d97706; --neg-bg:#fff2f0; --neg-line:#ffd4cf;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --mh:56px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  a{color:var(--red)}
+  .wrap{max-width:840px;margin:0 auto;min-height:100vh;padding-bottom:70px}
+  :focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:8px}
+
+  .top{position:sticky;top:0;z-index:40;height:var(--mh);display:flex;align-items:center;gap:11px;padding:0 16px;
+       background:rgba(255,255,255,.82);backdrop-filter:blur(16px);border-bottom:1px solid var(--hair)}
+  .back{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--ink);color:#fff;text-decoration:none;font-size:15px;font-weight:800}
+  .ttl{flex:1;min-width:0}
+  .ttl .h1{font-size:16px;font-weight:800;letter-spacing:-.02em;line-height:1}
+  .ttl .sub{font-size:10.5px;color:var(--muted);margin-top:3px;font-weight:500}
+
+  .tabs{display:flex;gap:7px;padding:12px 16px 0}
+  .tab{cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--ink-2);font-family:var(--sans);
+       font-size:13px;font-weight:700;padding:8px 15px;border-radius:11px}
+  .tab[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .tab .n{font-family:var(--mono);font-size:10px;opacity:.7;margin-left:5px}
+
+  .content{padding:14px 16px 0}
+  .gate,.empty{text-align:center;color:var(--muted);padding:56px 26px;font-size:14px;line-height:1.7}
+  .gate code{background:var(--card);border:1px solid var(--hair);padding:2px 8px;border-radius:6px;color:var(--ink);font-family:var(--mono)}
+
+  .card{background:var(--card);border:1px solid var(--hair);border-radius:16px;padding:14px;margin:12px 0;box-shadow:0 2px 12px -8px rgba(20,23,28,.18)}
+  .card h2{margin:0 0 11px;font-size:13px;font-weight:800;letter-spacing:-.01em}
+
+  .form{display:flex;flex-wrap:wrap;gap:8px}
+  .form input{flex:1 1 150px;min-width:0;border:1px solid var(--hair);border-radius:10px;padding:9px 11px;font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--raise)}
+  .form input:focus{outline:none;border-color:var(--faint);background:var(--card)}
+  .btn{cursor:pointer;border:0;background:var(--red);color:#fff;font-family:var(--sans);font-size:13px;font-weight:700;padding:9px 15px;border-radius:10px;white-space:nowrap}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:var(--card);color:var(--ink-2);border:1px solid var(--hair)}
+  .btn.ghost:hover{border-color:var(--faint)}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .formmsg{width:100%;font-size:11.5px;font-weight:700;margin-top:2px}
+  .formmsg.ok{color:var(--pos)} .formmsg.err{color:var(--red-deep)}
+
+  .row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--hair-2)}
+  .row:first-child{border-top:none}
+  .row .who{flex:1;min-width:0}
+  .row .who .em{font-size:13px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .who .nm{font-size:11.5px;color:var(--muted)}
+  .cats{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  .cat{font-size:10px;font-family:var(--mono);background:var(--hair-2);color:var(--ink-2);padding:2px 7px;border-radius:6px}
+  .cat.all{background:var(--pos-bg);color:var(--pos)}
+  .row .acts{flex:none;display:flex;gap:6px;align-items:center}
+  .toggle{cursor:pointer;border:1px solid var(--hair);background:var(--card);border-radius:20px;width:42px;height:24px;position:relative;flex:none}
+  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--faint);transition:all .15s}
+  .toggle[aria-pressed=true]{background:var(--pos);border-color:var(--pos)}
+  .toggle[aria-pressed=true]::after{left:20px;background:#fff}
+  .x{cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--muted);width:32px;height:30px;border-radius:9px;font-size:14px;line-height:1}
+  .x:hover{border-color:var(--neg-line);color:var(--red-deep);background:var(--neg-bg)}
+
+  /* feedback */
+  .fb{padding:12px 0;border-top:1px solid var(--hair-2)}
+  .fb:first-child{border-top:none}
+  .fb.resolved{opacity:.55}
+  .fb-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--faint)}
+  .kind{font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:6px;background:var(--hair-2);color:var(--ink-2)}
+  .kind.bug{background:var(--neg-bg);color:var(--red-deep)} .kind.idea{background:#fff5e6;color:var(--amber)} .kind.question{background:#e9f1fb;color:#1c5cab}
+  .fb .msg{font-size:13.5px;line-height:1.5;color:var(--ink);margin:6px 0 0}
+  .fb .meta{font-size:11px;color:var(--muted);margin-top:5px}
+  .fb .acts{margin-top:8px}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="back" id="backLink" href="/" title="Back to the board" aria-label="Back to the board">‹</a>
+    <div class="ttl"><div class="h1">Admin</div><div class="sub">Subscribers &amp; feedback · Vodafone Egypt</div></div>
+  </header>
+  <div class="tabs" id="tabs" hidden>
+    <button class="tab" type="button" data-tab="subs" aria-pressed="true">Subscribers <span class="n" id="nSubs"></span></button>
+    <button class="tab" type="button" data-tab="fb" aria-pressed="false">Feedback <span class="n" id="nFb"></span></button>
+  </div>
+  <main class="content" id="content"><div class="gate">Loading…</div></main>
+</div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s);
+const esc=(s)=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+const params=new URLSearchParams(location.search);
+const token=params.get('t')||localStorage.getItem('pr_token')||'';
+if(params.get('t')) localStorage.setItem('pr_token',params.get('t'));
+$('#backLink').href=token?`/?t=${encodeURIComponent(token)}`:'/';
+
+let TAB='subs', SUBS=[], FB=[];
+const api=(opts)=>fetch(`/api/admin?t=${encodeURIComponent(token)}${opts.q||''}`,{method:opts.method||'GET',headers:opts.body?{'Content-Type':'application/json'}:undefined,body:opts.body?JSON.stringify(opts.body):undefined});
+const when=(t)=>{ try{ return new Date(t).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit',timeZone:'Africa/Cairo'}); }catch(e){ return ''; } };
+
+/* ── Subscribers ── */
+function subRow(s){
+  const cats=Array.isArray(s.categories)&&s.categories.length
+    ? s.categories.map(c=>`<span class="cat">${esc(c)}</span>`).join('')
+    : `<span class="cat all">all categories</span>`;
+  return `<div class="row" data-id="${s.id}">
+    <div class="who">
+      <div class="em">${esc(s.email)}</div>
+      <div class="nm">${s.name?esc(s.name):'—'} · added ${when(s.created_at)}</div>
+      <div class="cats">${cats}</div>
+    </div>
+    <div class="acts">
+      <button class="toggle" type="button" aria-pressed="${!!s.active}" title="${s.active?'Active — click to pause':'Paused — click to activate'}" onclick="toggleSub(${s.id},this)"></button>
+      <button class="x" type="button" title="Remove subscriber" onclick="removeSub(${s.id})">✕</button>
+    </div>
+  </div>`;
+}
+function renderSubs(){
+  const active=SUBS.filter(s=>s.active).length;
+  $('#content').innerHTML=`
+    <div class="card">
+      <h2>Add a subscriber</h2>
+      <div class="form">
+        <input id="fEmail" type="email" placeholder="email@vodafone.com" autocomplete="off">
+        <input id="fName" type="text" placeholder="Name (optional)" autocomplete="off">
+        <input id="fCats" type="text" placeholder="Categories, comma-sep (blank = all)" autocomplete="off">
+        <button class="btn" id="addBtn" type="button">Add</button>
+        <div class="formmsg" id="fMsg"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Subscribers · ${active} active / ${SUBS.length} total</h2>
+      ${SUBS.length?SUBS.map(subRow).join(''):`<div class="empty">No subscribers yet.<br>Add one above — a subscriber with no categories gets the full daily brief.</div>`}
+    </div>`;
+  $('#addBtn').onclick=addSub;
+  $('#fEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') addSub(); });
+}
+async function addSub(){
+  const email=$('#fEmail').value.trim(), name=$('#fName').value.trim(), categories=$('#fCats').value.trim();
+  const msg=$('#fMsg'), btn=$('#addBtn');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent='Enter a valid email.'; msg.className='formmsg err'; return; }
+  btn.disabled=true;
+  try{
+    const r=await api({method:'POST',body:{email,name,categories}});
+    if(!r.ok){ const e=await r.json().catch(()=>({})); msg.textContent=e.error||'Failed to add.'; msg.className='formmsg err'; btn.disabled=false; return; }
+    msg.textContent='Added ✓'; msg.className='formmsg ok';
+    await loadSubs();
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; btn.disabled=false; }
+}
+async function toggleSub(id,btn){
+  const next=btn.getAttribute('aria-pressed')!=='true';
+  btn.setAttribute('aria-pressed',String(next));
+  const s=SUBS.find(x=>x.id===id); if(s) s.active=next;
+  try{ await api({method:'PATCH',body:{id,active:next}}); }catch(e){}
+  // refresh the "N active" header count without a full reload
+  const active=SUBS.filter(x=>x.active).length; const h=$('.card:last-child h2'); if(h) h.textContent=`Subscribers · ${active} active / ${SUBS.length} total`;
+  $('#nSubs').textContent=SUBS.length;
+}
+async function removeSub(id){
+  if(!confirm('Remove this subscriber?')) return;
+  try{ await api({method:'DELETE',q:`&id=${id}`}); }catch(e){}
+  SUBS=SUBS.filter(s=>s.id!==id); $('#nSubs').textContent=SUBS.length; renderSubs();
+}
+
+/* ── Feedback ── */
+function fbRow(f){
+  return `<div class="fb ${f.resolved?'resolved':''}" data-id="${f.id}">
+    <div class="fb-top">
+      ${f.kind?`<span class="kind ${esc(f.kind)}">${esc(f.kind)}</span>`:'<span class="kind">note</span>'}
+      <span>${when(f.created_at)}</span>${f.page?`<span>· ${esc(f.page)}</span>`:''}
+    </div>
+    <p class="msg" dir="auto">${esc(f.message)}</p>
+    <div class="meta">${f.name?esc(f.name):'Anonymous'}${f.email?` · <a href="mailto:${esc(f.email)}">${esc(f.email)}</a>`:''}</div>
+    <div class="acts">
+      <button class="btn ghost sm" type="button" onclick="toggleFb(${f.id},${f.resolved?'true':'false'},this)">${f.resolved?'Re-open':'Mark resolved'}</button>
+    </div>
+  </div>`;
+}
+function renderFb(){
+  const open=FB.filter(f=>!f.resolved).length;
+  $('#content').innerHTML=`<div class="card">
+    <h2>Feedback · ${open} open / ${FB.length} total</h2>
+    ${FB.length?FB.map(fbRow).join(''):`<div class="empty">No feedback yet.<br>Messages from the board's feedback form land here.</div>`}
+  </div>`;
+}
+async function toggleFb(id,resolved,btn){
+  const next=!resolved;
+  const f=FB.find(x=>x.id===id); if(f) f.resolved=next;
+  btn.closest('.fb').classList.toggle('resolved',next); btn.textContent=next?'Re-open':'Mark resolved';
+  btn.setAttribute('onclick',`toggleFb(${id},${next},this)`);
+  const open=FB.filter(x=>!x.resolved).length; const h=$('#content h2'); if(h) h.textContent=`Feedback · ${open} open / ${FB.length} total`; $('#nFb').textContent=FB.length;
+  try{ await api({method:'PATCH',q:'&resource=feedback',body:{id,resolved:next}}); }catch(e){}
+}
+
+/* ── shell ── */
+async function loadSubs(){ const r=await api({q:'&view=subscribers'}); SUBS=await r.json(); if(!Array.isArray(SUBS)) SUBS=[]; $('#nSubs').textContent=SUBS.length; if(TAB==='subs') renderSubs(); }
+async function loadFb(){ const r=await api({q:'&view=feedback'}); FB=await r.json(); if(!Array.isArray(FB)) FB=[]; $('#nFb').textContent=FB.length; if(TAB==='fb') renderFb(); }
+function selectTab(t){ TAB=t; $('#tabs').querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===t))); if(t==='subs') renderSubs(); else renderFb(); }
+
+async function boot(){
+  if(!token){ $('#content').innerHTML=`<div class="gate">This page is private.<br>Open it with your access link: <code>/admin.html?t=YOUR_TOKEN</code></div>`; return; }
+  try{
+    const probe=await api({q:'&view=subscribers'});
+    if(probe.status===401){ $('#content').innerHTML=`<div class="gate">That access link was rejected.<br>Check the token and try again.</div>`; return; }
+    SUBS=await probe.json(); if(!Array.isArray(SUBS)) SUBS=[];
+    $('#tabs').hidden=false; $('#nSubs').textContent=SUBS.length;
+    $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>selectTab(b.dataset.tab));
+    renderSubs();
+    loadFb();   // warm the feedback tab in the background
+  }catch(e){ $('#content').innerHTML=`<div class="gate">Couldn't load admin.<br>${esc(e.message||e)}</div>`; }
+}
+boot();
+</script>
+</body>
+</html>
