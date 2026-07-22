@@ -3,7 +3,8 @@
   "crons": [
     { "path": "/api/radar", "schedule": "0 5 * * *" },
     { "path": "/api/radar?urgentOnly=1", "schedule": "*/30 * * * *" },
-    { "path": "/api/report?period=week&send=1", "schedule": "0 6 * * 1" }
+    { "path": "/api/report?period=week&send=1", "schedule": "0 6 * * 1" },
+    { "path": "/api/geo?send=1", "schedule": "0 7 * * 1" }
   ],
   "rewrites": [
     { "source": "/stats", "destination": "/stats.html" }
