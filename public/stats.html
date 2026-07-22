@@ -16,6 +16,7 @@
     --neg:#e60000; --neg-bg:#fff2f0; --neg-line:#ffd4cf;
     --pos:#0f9d58; --pos-bg:#edfaf1;
     --neu:#5b6675; --neu-bg:#f0f3f7;
+    --amber:#d97706;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     --mh:56px;
@@ -96,7 +97,8 @@
   .lrow .val b.neg{color:var(--red-deep)}
   .lrow .spark{flex:none;width:72px}
   .badge{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:5px;
-         background:var(--neg-bg);color:var(--red-deep);box-shadow:inset 0 0 0 1px var(--neg-line);vertical-align:1px}
+         background:var(--neg-bg);color:var(--red-deep);box-shadow:inset 0 0 0 1px var(--neg-line);vertical-align:1px;margin-left:5px}
+  .badge.lean{background:#fff5e6;color:var(--amber);box-shadow:inset 0 0 0 1px #f5dcb0}
 
   /* table view — the accessible twin of every chart */
   .tbl{display:none;margin-top:8px;overflow-x:auto}
@@ -403,25 +405,36 @@ function categoryRows(){
   return {rows,table};
 }
 
-/* Outlet / author leaderboards — emphasis bars: Vodafone-negative in red is
-   the point, the rest of the mentions recede in gray. */
+/* Outlet / author intelligence — one row per journalist/outlet: bar length is
+   VOLUME (mentions vs the busiest), split into their own negative/neutral/
+   positive SENTIMENT mix; a sparkline shows their activity over the window; and
+   repeat-negative behaviour is flagged. "Repeat critic" = 2+ Vodafone-negative
+   stories; "negative-leaning" = ≥3 stories and majority negative. */
 function leaderboardRows(list,kind){
   if(!list.length) return {rows:`<div class="empty" style="padding:22px">No ${kind} data in this window.</div>`,table:()=>''};
   const max=Math.max(...list.map(o=>o.mentions));
   const rows=list.map(o=>{
     const name=kind==='outlet'?o.outlet:o.author;
-    const vw=pct(o.vodNeg,max), rw=pct(o.mentions-o.vodNeg,max);
+    const negShare=pct(o.negative,o.mentions);
+    const critic=kind==='author'&&o.vodNeg>=2;
+    const leaning=o.mentions>=3&&negShare>=50;
+    const flags=`${critic?`<span class="badge">repeat critic</span>`:''}${leaning?`<span class="badge lean">negative-leaning</span>`:''}`;
     const sub=kind==='author'&&o.outlets&&o.outlets.length?`<span class="sub">${esc(o.outlets.join(' · '))}</span>`:'';
-    const flag=kind==='author'&&o.vodNeg>=2?` <span class="badge">repeat critic</span>`:'';
+    // Volume-scaled sentiment bar: segment widths are % of the busiest row, so
+    // bar LENGTH reads as volume and the colour split reads as sentiment mix.
+    const seg=(n,c,op)=>n?`<i style="width:${pct(n,max)}%;background:${c}${op?`;opacity:${op}`:''}"></i>`:'';
+    const bar=seg(o.negative,NEG)+seg(o.neutral,'var(--neu)','.35')+seg(o.positive,POS);
+    const spark=o.series?sparkSvg(o.series,72,20):'';
     return `<div class="lrow">
-      <span class="nm" title="${esc(name)}">${esc(name)}${flag}${sub}</span>
-      <span class="bar" aria-hidden="true">${o.vodNeg?`<i style="width:${vw}%;background:${NEG}"></i>`:''}${o.mentions-o.vodNeg?`<i style="width:${rw}%;background:var(--neu);opacity:.35"></i>`:''}</span>
-      <span class="val"><b>${o.mentions}</b>${o.vodNeg?` · <b class="neg">${o.vodNeg} Vod-neg</b>`:o.negative?` · ${o.negative} neg`:''}</span>
+      <span class="nm" title="${esc(name)}">${esc(name)}${flags}${sub}</span>
+      <span class="spark">${spark}</span>
+      <span class="bar" aria-hidden="true">${bar}</span>
+      <span class="val"><b>${o.mentions}</b> · ${negShare}% neg${o.vodNeg?` · <b class="neg">${o.vodNeg} Vod</b>`:''}</span>
     </div>`;
   }).join('');
   const table=()=>{
-    let h=`<table><thead><tr><th scope="col">${kind==='outlet'?'Outlet':'Author'}</th><th scope="col">Stories</th><th scope="col">Negative</th><th scope="col">Vodafone-negative</th></tr></thead><tbody>`;
-    list.forEach(o=>{ h+=`<tr><td>${esc(kind==='outlet'?o.outlet:o.author)}</td><td>${o.mentions}</td><td>${o.negative}</td><td>${o.vodNeg}</td></tr>`; });
+    let h=`<table><thead><tr><th scope="col">${kind==='outlet'?'Outlet':'Author'}</th><th scope="col">Stories</th><th scope="col">Neg</th><th scope="col">Neu</th><th scope="col">Pos</th><th scope="col">Vod-neg</th></tr></thead><tbody>`;
+    list.forEach(o=>{ h+=`<tr><td>${esc(kind==='outlet'?o.outlet:o.author)}</td><td>${o.mentions}</td><td>${o.negative}</td><td>${o.neutral}</td><td>${o.positive}</td><td>${o.vodNeg}</td></tr>`; });
     return h+'</tbody></table>';
   };
   return {rows,table};
@@ -480,8 +493,8 @@ function render(){
   c.innerHTML=kpiHtml()
     +CHARTS.map(x=>cardHtml(x.id,x.title,x.sub)).join('')
     +cardHtml('c-cat','Categories','volume · trend · negative share')
-    +cardHtml('c-out','Outlet leaderboard','stories run · Vodafone-negative highlighted')
-    +cardHtml('c-auth','Author leaderboard','bylines · repeat critics flagged')
+    +cardHtml('c-out','Outlet intelligence','volume · sentiment split · trend · negative-leaning flagged')
+    +cardHtml('c-auth','Journalist intelligence','volume · sentiment split · trend · repeat critics flagged')
     +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
   renderCharts();
   $('#c-cat .cbody').innerHTML=`<div class="rows">${cats.rows}</div>`; $('#c-cat .tbl').innerHTML=cats.table();

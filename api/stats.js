@@ -107,20 +107,24 @@ export default async function handler(req, res) {
       const outlet = String(r.outlet || '').trim();
       if (outlet && !seenOutlet.has(outlet.toLowerCase())) {
         seenOutlet.add(outlet.toLowerCase());
-        if (!outletAgg.has(outlet.toLowerCase())) outletAgg.set(outlet.toLowerCase(), { outlet, mentions: 0, negative: 0, vodNeg: 0 });
+        if (!outletAgg.has(outlet.toLowerCase())) outletAgg.set(outlet.toLowerCase(), { outlet, mentions: 0, negative: 0, neutral: 0, positive: 0, vodNeg: 0, series: zeros() });
         const o = outletAgg.get(outlet.toLowerCase());
         o.mentions++;
-        if (neg) { o.negative++; if (b === 'Vodafone') o.vodNeg++; }
+        o[s]++;                                     // sentiment-by-outlet split
+        if (neg && b === 'Vodafone') o.vodNeg++;
+        if (idx !== undefined) o.series[idx]++;     // activity over time
       }
       const author = String(r.author || '').trim();
       // Skip empty bylines and outlet-names-as-bylines — a publication is not a person.
       if (!author || author === '—' || isOutletName(author, outlet || it.source)) continue;
       if (seenAuthor.has(author.toLowerCase())) continue;
       seenAuthor.add(author.toLowerCase());
-      if (!authorAgg.has(author.toLowerCase())) authorAgg.set(author.toLowerCase(), { author, mentions: 0, negative: 0, vodNeg: 0, outlets: new Set() });
+      if (!authorAgg.has(author.toLowerCase())) authorAgg.set(author.toLowerCase(), { author, mentions: 0, negative: 0, neutral: 0, positive: 0, vodNeg: 0, outlets: new Set(), series: zeros() });
       const a = authorAgg.get(author.toLowerCase());
       a.mentions++;
-      if (neg) { a.negative++; if (b === 'Vodafone') a.vodNeg++; }
+      a[s]++;                                        // sentiment-by-author split
+      if (neg && b === 'Vodafone') a.vodNeg++;
+      if (idx !== undefined) a.series[idx]++;
       if (outlet) a.outlets.add(outlet);
     }
   }
