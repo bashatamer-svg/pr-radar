@@ -211,6 +211,14 @@
   .pinmark.pin{background:#fff5e6;color:var(--amber);box-shadow:inset 0 0 0 1px #f5dcb0}
   .pinmark.hide{background:var(--hair-2);color:var(--muted);box-shadow:inset 0 0 0 1px var(--hair)}
 
+  /* ── classifier confidence cue (subtle 3-bar meter) ── */
+  .cpip{display:inline-flex;align-items:flex-end;gap:1.5px;height:9px;cursor:help}
+  .cpip i{width:2.5px;border-radius:1px;background:var(--hair-2)}
+  .cpip i:nth-child(1){height:4px}.cpip i:nth-child(2){height:6px}.cpip i:nth-child(3){height:9px}
+  .cpip i.on{background:var(--faint)}
+  .cpip.low i.on{background:var(--amber)}
+  .cpip.low{outline:none}
+
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -259,7 +267,7 @@ const SENT = {
 };
 const IMP = {5:'#e60000',4:'#f27100',3:'#e2a900',2:'#3a7ac2',1:'#9aa2ad'};
 
-let ITEMS=[]; let fBrand='all', fSent='all', fWin=Number(localStorage.getItem('pr_win'))||2, fPin='all';
+let ITEMS=[]; let fBrand='all', fSent='all', fWin=Number(localStorage.getItem('pr_win'))||2, fPin='all', fLowConf='all';
 
 // team_share pins are SERVER state (shared with the team view), but pinned
 // items can be older than the current window — so we also remember pinned ids
@@ -281,6 +289,13 @@ const linkOf = it => it.resolved_url || it.url || (it.id?`/api/go?id=${it.id}`:'
 const isCrit = it => sentOf(it)==='negative' && ((it.importance||0)>=5 || (it.brand==='Vodafone'&&(it.importance||0)>=4));
 
 function dots(imp){ const n=Math.max(1,Math.min(5,imp||1)); let o=''; for(let i=1;i<=5;i++) o+=`<span style="color:${i<=n?IMP[n]:'#dfe3e8'}">&#9679;</span>`; return o; }
+// Subtle provenance cue: how confident the classifier was in this read. 3-bar
+// meter, amber when low (<50%) so an uncertain classification is worth a second
+// look. Hidden when confidence wasn't stored.
+const confTier=c=>c>=0.75?3:c>=0.5?2:1;
+function confPip(it){ const c=it.confidence; if(c==null) return ''; const t=confTier(c),low=c<0.5;
+  return `<span class="cpip ${low?'low':''}" title="Classifier confidence: ${Math.round(c*100)}%${low?' — low, double-check':''}">${[1,2,3].map(n=>`<i class="${n<=t?'on':''}"></i>`).join('')}</span>`; }
+const isLowConf=it=>it.confidence!=null&&it.confidence<0.5;
 function ageLabel(it){ const t=it.published_at||it.seen_at; if(!t) return ''; const h=Math.max(0,(Date.now()-new Date(t).getTime())/36e5); if(h<1) return 'just now'; if(h<24) return Math.round(h)+'h ago'; return Math.round(h/24)+'d ago'; }
 function dueLabel(it){ if(!it.deadline) return ''; const h=(new Date(it.deadline)-Date.now())/36e5; if(h<0) return 'overdue'; if(h<1) return 'due <1h'; if(h<48) return 'due '+Math.round(h)+'h'; return 'due '+Math.round(h/24)+'d'; }
 function animateBars(root=document){ const els=root.querySelectorAll('[data-w]'); if(RM){els.forEach(i=>i.style.width=i.dataset.w);return;} requestAnimationFrame(()=>els.forEach(i=>i.style.width=i.dataset.w)); }
@@ -373,7 +388,7 @@ function cardHtml(it){
   const pinned=it.team_share===true, hidden=it.team_share===false;
   const pinMark=pinned?`<span class="pinmark pin" title="Pinned for the team">📌 Pinned</span>`:hidden?`<span class="pinmark hide" title="Hidden from the team view">🙈 Hidden</span>`:'';
   return `<article class="card ${sent}${crit?' crit':''}${pinned?' pinned':''}${hidden?' hidden':''}" id="item-${it.id}">
-    <div class="c-top"><div class="metas">${brand}${spreadBadge}${cat}${ageEl}${pinMark}</div>
+    <div class="c-top"><div class="metas">${brand}${spreadBadge}${cat}${ageEl}${confPip(it)}${pinMark}</div>
       <div class="dots" title="Reach/impact ${it.importance||1}/5">${dots(it.importance)}</div></div>
     <h3 class="headline"><a href="${esc(href)}" target="_blank" rel="noopener">${esc(it.headline)}</a></h3>
     <div class="subrow"><span class="sent ${sent}">${s.label}</span>${by}${dueEl}</div>
@@ -430,7 +445,7 @@ async function togglePin(id,mode,btn){
   if(fPin==='pinned'&&!isPinned(it)) render();
 }
 
-function pass(it){ if(fPin==='pinned'&&!isPinned(it)) return false; if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&sentOf(it)!==fSent) return false; return true; }
+function pass(it){ if(fPin==='pinned'&&!isPinned(it)) return false; if(fLowConf==='low'&&!isLowConf(it)) return false; if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&sentOf(it)!==fSent) return false; return true; }
 function render(){
   buildPulse(); buildSpotlight();
   const shown=ITEMS.filter(pass).sort((a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(sentOf(a))-rank(sentOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0); });
@@ -453,15 +468,19 @@ function syncControls(){
   p.querySelectorAll('.tile').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.b===fBrand)));
   $('#sentRow').querySelectorAll('.chip[data-v]').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===fSent)));
   const pc=$('#sentRow .chip[data-pin]'); if(pc) pc.setAttribute('aria-pressed',String(fPin==='pinned'));
+  const lc=$('#sentRow .chip[data-lowconf]'); if(lc) lc.setAttribute('aria-pressed',String(fLowConf==='low'));
 }
 function buildFilters(){
   const sent=$('#sentRow');
   const opts=[['all','All'],['negative','⚠ Needs response'],['positive','Wins'],['neutral','Market']];
   sent.innerHTML=`<span class="flabel">Show</span>`+opts.map(([v,l])=>`<button class="chip ${v==='negative'?'alert':''}" type="button" data-v="${v}" aria-pressed="${fSent===v}">${l}</button>`).join('')
-    +`<span class="flabel" style="padding-left:6px">·</span><button class="chip" type="button" data-pin="1" aria-pressed="${fPin==='pinned'}">📌 Pinned</button>`;
+    +`<span class="flabel" style="padding-left:6px">·</span><button class="chip" type="button" data-pin="1" aria-pressed="${fPin==='pinned'}">📌 Pinned</button>`
+    +`<button class="chip" type="button" data-lowconf="1" aria-pressed="${fLowConf==='low'}" title="Items the classifier was unsure about (confidence < 50%)">◔ Low-conf</button>`;
   sent.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{ fSent=c.dataset.v; syncControls(); render(); });
   const pin=sent.querySelector('.chip[data-pin]');
   pin.onclick=async()=>{ fPin=fPin==='pinned'?'all':'pinned'; syncControls(); if(fPin==='pinned') await loadPinnedExtras(); render(); };
+  const low=sent.querySelector('.chip[data-lowconf]');
+  low.onclick=()=>{ fLowConf=fLowConf==='low'?'all':'low'; syncControls(); render(); };
   const win=$('#winRow');
   const wopts=[['1','Today'],['2','48 hours'],['7','Week'],['30','Month']];
   win.innerHTML=`<span class="flabel">Since</span>`+wopts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fWin)===v}">${l}</button>`).join('');
