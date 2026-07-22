@@ -4,7 +4,8 @@ import { ALL_FEEDS, BRAND_FEEDS } from '../lib/sources.js';
 import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState } from '../lib/db.js';
 import { classify } from '../lib/classify.js';
 import { semanticDedupe } from '../lib/dedupe-semantic.js';
-import { postUrgentWebhook } from '../lib/notify.js';
+import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
+import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
 import { renderBulletin, renderUrgent, sendBulletin } from '../lib/email.js';
 import { authorFromEntry, fetchAuthor, isOutletName } from '../lib/author.js';
 import { resolveUrl, isGoogleNews } from '../lib/resolve.js';
@@ -512,6 +513,49 @@ export default async function handler(req, res) {
     );
   }
 
+  // 5a-bis. Cross-item SURGE detection — the aggregate crisis signal the
+  // per-item urgent path can't give (ten importance-3 stories, none severity-5,
+  // but abnormal VOLUME). Runs on every run that got this far (daily + each
+  // urgent poll), reading a live rolling baseline from the DB — no new tables.
+  // ONE alert per surging brand, throttled via pr_state so a poll can't re-fire
+  // the same surge. Detection + logging always happen; the email/webhook only
+  // go out when SURGE_ALERTS_ENABLED=1 (off by default — a new heuristic
+  // shouldn't email the team until it's been watched). Fail-soft end to end.
+  let surgeCount = 0;
+  if (!dry && !previewTo) {
+    try {
+      const surges = await detectSurges();
+      const throttleMs = (Number(process.env.SURGE_THROTTLE_HOURS) || 12) * 3600e3;
+      const fresh = [];
+      for (const s of surges) {
+        const last = await getStateTime(`surge:${s.brand}`).catch(() => 0);
+        if (last && Date.now() - last < throttleMs) continue;   // already alerted this window
+        fresh.push(s);
+      }
+      surgeCount = fresh.length;
+      if (fresh.length) {
+        console.warn('SURGE:', fresh.map((s) => `${s.brand} ${s.today} vs ~${s.mean} (${s.multiple}x)`).join('; '));
+        if (process.env.SURGE_ALERTS_ENABLED === '1') {
+          const to = process.env.SURGE_TO || process.env.RADAR_TO;
+          const subject = `SURGE — ${fresh.map((s) => s.brand).join(', ')} negative coverage spike`.slice(0, 140);
+          try {
+            await sendBulletin(renderSurgeEmail(fresh, boardUrl), subject, to);
+          } catch (e) {
+            console.error('surge email failed', e.message);
+          }
+          // Stamp the throttle + push the webhook only when we actually alerted,
+          // so enabling the feature mid-surge still fires the first alert.
+          await Promise.all(fresh.flatMap((s) => [
+            postSurgeWebhook(s, boardUrl),
+            touchState(`surge:${s.brand}`).catch(() => {}),
+          ]));
+        }
+      }
+    } catch (e) {
+      console.error('surge detection skipped (non-fatal)', e.message);
+    }
+  }
+
   // 5b. Regular bulletin — everything that cleared the bar. Skipped for
   // hourly urgent-only runs.
   //
@@ -664,6 +708,7 @@ export default async function handler(req, res) {
   return res.status(200).json({
     scanned: raw.length,
     feeds: feedSet.length,
+    surges: surgeCount,
     candidates: candidates.length,
     crossRunHeadlineDropped,
     crossRunSummaryDropped,
