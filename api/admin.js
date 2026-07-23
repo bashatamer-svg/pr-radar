@@ -14,7 +14,7 @@ import {
   allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber,
   allFeedback, setFeedbackResolved,
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
-  recentAudit, pendingRequests,
+  recentAudit, pendingRequests, countMissingAuthor,
 } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
@@ -36,6 +36,12 @@ export default async function handler(req, res) {
       if (resource === 'users') return res.status(200).json(await listUsers());
       if (resource === 'requests') return res.status(200).json(await pendingRequests());
       if (resource === 'audit') return res.status(200).json(await recentAudit({ limit: Number(req.query.limit) || 200 }));
+      if (resource === 'author-gap') {   // backlog size for the Tools tab indicator
+        const days = Math.max(1, Math.min(Number(req.query.days) || 7, 30));
+        let missing = null;
+        try { missing = await countMissingAuthor({ days }); } catch { missing = null; }
+        return res.status(200).json({ missing, days });
+      }
       return res.status(200).json(await allSubscribers());
     }
 

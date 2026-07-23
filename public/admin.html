@@ -351,9 +351,26 @@ function renderTools(){
         <button class="btn" id="baBtn" type="button">Backfill authors</button>
         <div class="formmsg" id="baMsg"></div>
       </div>
-      <div class="nm" style="margin-top:8px;color:var(--faint)">days back · max per pass. Each pass fills up to the AI-byline cap; a big backlog may need a few runs.</div>
+      <div class="nm" id="baGap" style="margin-top:9px;font-weight:700;color:var(--ink-2)">Checking backlog…</div>
+      <div class="nm" style="margin-top:4px;color:var(--faint)">days back · max per pass. Each pass fills up to the AI-byline cap; a big backlog may need a few runs.</div>
     </div>`;
   $('#baBtn').onclick=runBackfill;
+  $('#baDays').addEventListener('change',loadAuthorGap);
+  loadAuthorGap();
+}
+async function loadAuthorGap(){
+  const el=$('#baGap'); if(!el) return;
+  const days=Math.max(1,Math.min(Number($('#baDays').value)||7,30));
+  el.textContent='Checking backlog…';
+  try{
+    const r=await api({q:`&view=author-gap&days=${days}`});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok && typeof d.missing==='number'){
+      el.textContent = d.missing===0
+        ? `✓ No cards are missing an author in the last ${days} days.`
+        : `${d.missing} card${d.missing===1?'':'s'} still missing an author in the last ${days} days.`;
+    } else el.textContent='';
+  }catch(e){ el.textContent=''; }
 }
 async function runBackfill(){
   const btn=$('#baBtn'), msg=$('#baMsg');
@@ -367,7 +384,7 @@ async function runBackfill(){
     else{
       msg.className='formmsg ok';
       msg.textContent=`Filled ${d.filled} of ${d.scanned} scanned · ${d.remaining} still missing`+(d.remaining>0?' — run again to continue.':' ✓ all done.');
-      loadAudit();
+      loadAudit(); loadAuthorGap();
     }
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
   btn.disabled=false; btn.textContent=label;
