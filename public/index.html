@@ -317,6 +317,10 @@ function clock(){
 clock(); setInterval(clock,30000);
 
 const sentOf = it => SENT[it.sentiment]?it.sentiment:'neutral';
+// Section lane (what WE do about it) — distinct from the item's own sentiment.
+// "Wins to amplify" is Vodafone-only; a competitor's positive story is market
+// intel, so it drops to the "Market & noted" lane rather than reading as our win.
+const laneOf = it => (sentOf(it)==='positive' && (it.brand||'')!=='Vodafone') ? 'neutral' : sentOf(it);
 const spreadOf = it => Array.isArray(it.instances)?it.instances.filter(x=>x&&(x.outlet||x.url)).length:0;
 const linkOf = it => it.resolved_url || it.url || (it.id?`/api/go?id=${it.id}`:'#');
 const isCrit = it => sentOf(it)==='negative' && ((it.importance||0)>=5 || (it.brand==='Vodafone'&&(it.importance||0)>=4));
@@ -479,10 +483,10 @@ async function togglePin(id,mode,btn){
   if(fPin==='pinned'&&!isPinned(it)) render();
 }
 
-function pass(it){ if(fPin==='pinned'&&!isPinned(it)) return false; if(fLowConf==='low'&&!isLowConf(it)) return false; if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&sentOf(it)!==fSent) return false; return true; }
+function pass(it){ if(fPin==='pinned'&&!isPinned(it)) return false; if(fLowConf==='low'&&!isLowConf(it)) return false; if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&laneOf(it)!==fSent) return false; return true; }
 function render(){
   buildPulse(); buildSpotlight();
-  const shown=ITEMS.filter(pass).sort((a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(sentOf(a))-rank(sentOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0); });
+  const shown=ITEMS.filter(pass).sort((a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(laneOf(a))-rank(laneOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0); });
   const neg=ITEMS.filter(i=>sentOf(i)==='negative').length;
   const brandNote=fBrand==='all'?'':` · <b>${esc(fBrand)}</b>`;
   $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg">${neg} negative</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>`;
@@ -490,7 +494,7 @@ function render(){
   if(!shown.length){ list.innerHTML=`<div class="empty">Nothing matches this filter.<br>Clear the brand or widen the time window.</div>`; return; }
   const SEC=[['negative','Needs a response','#e60000'],['positive','Wins to amplify','#0f9d58'],['neutral','Market & noted','#5b6675']];
   let html='';
-  for(const [key,label,color] of SEC){ const rows=shown.filter(i=>sentOf(i)===key); if(!rows.length) continue;
+  for(const [key,label,color] of SEC){ const rows=shown.filter(i=>laneOf(i)===key); if(!rows.length) continue;
     html+=`<div class="sechead"><span class="tick" style="background:${color}"></span><span class="lab">${label}</span><span class="n" style="background:${color}">${rows.length}</span></div>`;
     html+=rows.map(cardHtml).join(''); }
   list.innerHTML=html; stagger(list); animateBars(list);
