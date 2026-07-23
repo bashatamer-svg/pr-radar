@@ -10,7 +10,8 @@
 // create an account or sign in. Accounts are created pre-confirmed via the admin
 // API, so NO confirmation email is sent — password login needs no email at all.
 
-import { roleFor, requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
+import { roleFor, requireRole, auditReq, adminSetPassword, ipOf } from '../lib/auth.js';
+import { authFailuresSince, addAudit } from '../lib/db.js';
 import { sendBulletin } from '../lib/email.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -78,8 +79,17 @@ export default async function handler(req, res) {
 
     // ── sign in ──
     if (mode === 'signin') {
+      // Brute-force throttle: too many recent failures for this email/IP → 429.
+      const ip = ipOf(req);
+      const sinceIso = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      let fails = 0;
+      try { fails = await authFailuresSince({ email, ip, sinceIso }); } catch { fails = 0; }
+      if (fails >= 10) return res.status(429).json({ error: 'too many attempts — please wait a few minutes and try again' });
       const tok = await passwordGrant(email, password);
-      if (!tok) return res.status(401).json({ error: 'wrong email or password' });
+      if (!tok) {
+        try { await addAudit({ actor: email, action: 'auth.signin_failed', target: email, ip }); } catch {}
+        return res.status(401).json({ error: 'wrong email or password' });
+      }
       let role = null;
       try { role = await roleFor(email); } catch { role = null; }
       if (!role) return res.status(403).json({ error: "this account isn't authorised for the board" });

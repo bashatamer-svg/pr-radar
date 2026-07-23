@@ -72,8 +72,7 @@ const $=(s,r=document)=>r.querySelector(s);
 const esc=(s)=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 
 const params=new URLSearchParams(location.search);
-const token=params.get('t')||localStorage.getItem('pr_token')||'';
-if(params.get('t')) localStorage.setItem('pr_token',params.get('t'));
+const token='';   // ?t= retired (Task 18) — sign-in session only
 let session=(()=>{ try{ return JSON.parse(localStorage.getItem('pr_session')||'null'); }catch(e){ return null; } })();
 $('#backLink').href=session?'/':(token?`/?t=${encodeURIComponent(token)}`:'/');
 let _cfg=null;

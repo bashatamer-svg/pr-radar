@@ -297,8 +297,7 @@ const esc = (s) => String(s==null?'':s).replace(/[<>&"]/g, c => ({'<':'&lt;','>'
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const params = new URLSearchParams(location.search);
-const token = params.get('t') || localStorage.getItem('pr_token') || '';
-if (params.get('t')) localStorage.setItem('pr_token', params.get('t'));
+const token = '';   // ?t= board tokens retired (Task 18) — auth is the sign-in session only
 
 // ── session (Task 16: magic-link auth) ──────────────────────────────────────
 // A magic-link redirect hands the Supabase session back in the URL fragment

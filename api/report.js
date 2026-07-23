@@ -13,16 +13,16 @@
 
 import { buildReport, renderReport } from '../lib/report.js';
 import { sendBulletin } from '../lib/email.js';
+import { safeEqual } from '../lib/auth.js';
 
 export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
-  const auth = req.headers.authorization;
-  const qtoken = req.query?.t;
+  // Bearer only (no ?t= query token), constant-time.
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
   const ok =
-    auth === `Bearer ${process.env.CRON_SECRET}` ||
-    auth === `Bearer ${process.env.RADAR_TOKEN}` ||
-    qtoken === process.env.RADAR_TOKEN;
+    (process.env.CRON_SECRET && safeEqual(bearer, process.env.CRON_SECRET)) ||
+    (process.env.RADAR_TOKEN && safeEqual(bearer, process.env.RADAR_TOKEN));
   if (!ok) return res.status(401).json({ error: 'unauthorized' });
 
   // Period → window. ?days wins if given (clamped); else week=7 / month=30.
