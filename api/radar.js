@@ -1,7 +1,8 @@
 import { XMLParser } from 'fast-xml-parser';
 import crypto from 'node:crypto';
 import { ALL_FEEDS, BRAND_FEEDS } from '../lib/sources.js';
-import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState, itemsByHashes, itemsMissingAuthor, setItemAuthor } from '../lib/db.js';
+import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState, itemsByHashes, itemsMissingAuthor } from '../lib/db.js';
+import { fillMissingAuthors, sweepAuthors } from '../lib/author-backfill.js';
 import { classify } from '../lib/classify.js';
 import { semanticDedupe } from '../lib/dedupe-semantic.js';
 import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
@@ -267,40 +268,6 @@ async function fetchFeed(feed) {
   }
 }
 
-// Fill authors for a set of stored, still-authorless items: an RSS byline on any
-// instance wins (no fetch); otherwise resolve the primary URL and extract via the
-// deterministic cascade + AI fallback. Writes each byline (and any decoded
-// publisher URL) back. Parallel, fail-soft; returns the count filled. Shared by
-// the daily backfill and the on-demand ?backfillAuthors=1 sweep.
-async function fillMissingAuthors(stale) {
-  if (!stale || !stale.length) return 0;
-  const instMap = await instancesForItems(stale.map((i) => i.id).filter(Boolean)).catch(() => ({}));
-  const filled = await Promise.all(stale.map(async (it) => {
-    const insts = instMap[it.id] || [];
-    // An RSS byline on any instance wins — no fetch needed.
-    let author = null;
-    for (const x of insts) { author = cleanAuthor(x.author, x.outlet); if (author) break; }
-    // Resolve the primary URL (Google-News wrapper → real publisher link).
-    let resolved = it.resolved_url || null;
-    if (!resolved) {
-      const primaryUrl = (insts[0] && insts[0].url) || it.url;
-      try { const r = await resolveUrl(primaryUrl); if (r && !isGoogleNews(r)) resolved = r; } catch { /* keep null */ }
-    }
-    // Otherwise fetch the candidate URLs and extract (cascade + AI fallback).
-    if (!author) {
-      const urls = [...new Set([resolved, it.url, ...insts.map((x) => x.url)].filter((u) => u && !isGoogleNews(u)))];
-      for (const u of urls) {
-        const person = cleanAuthor(await fetchAuthor(u), (insts[0] && insts[0].outlet) || it.source);
-        if (person) { author = person; break; }
-      }
-    }
-    if (!author) return false;
-    try { await setItemAuthor(it.id, author, resolved && resolved !== it.resolved_url ? resolved : null); return true; }
-    catch (e) { console.error('author backfill write failed', it.id, e.message); return false; }
-  }));
-  return filled.filter(Boolean).length;
-}
-
 export default async function handler(req, res) {
   // Bearer only (no ?t= query token), constant-time. Vercel Cron sends CRON_SECRET;
   // RADAR_TOKEN is accepted for manual ops runs.
@@ -339,16 +306,11 @@ export default async function handler(req, res) {
   // flat, so a large sweep may take several passes (or a raised cap). Read-mostly:
   // the only writes are author (+ resolved_url) onto already-stored rows.
   if (req.query?.backfillAuthors === '1') {
-    const days = Math.max(1, Math.min(Number(req.query?.days) || 3, 30));
-    const limit = Math.max(1, Math.min(Number(req.query?.limit) || 40, 200));
-    let stale;
-    try { stale = await itemsMissingAuthor({ days, limit }); }
-    catch (e) { return res.status(500).json({ error: 'authorless lookup failed: ' + e.message }); }
-    const filled = await fillMissingAuthors(stale);
-    let remaining = null;
-    try { remaining = (await itemsMissingAuthor({ days, limit: 200 }) || []).length; } catch { /* best-effort */ }
-    console.log(`on-demand author sweep: filled ${filled}/${(stale || []).length}; ~${remaining ?? '?'} still authorless (last ${days}d)`);
-    return res.status(200).json({ backfillAuthors: true, days, limit, scanned: (stale || []).length, filled, remaining });
+    let result;
+    try { result = await sweepAuthors({ days: req.query?.days, limit: req.query?.limit }); }
+    catch (e) { return res.status(500).json({ error: 'author sweep failed: ' + e.message }); }
+    console.log(`on-demand author sweep: filled ${result.filled}/${result.scanned}; ~${result.remaining ?? '?'} still authorless (last ${result.days}d)`);
+    return res.status(200).json({ backfillAuthors: true, ...result });
   }
 
   // 1. Fetch feeds in parallel. A dead feed yields [] and is logged.

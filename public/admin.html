@@ -96,6 +96,7 @@
     <button class="tab" type="button" data-tab="requests" aria-pressed="false">Requests <span class="n" id="nReq"></span></button>
     <button class="tab" type="button" data-tab="users" aria-pressed="false">Users <span class="n" id="nUsers"></span></button>
     <button class="tab" type="button" data-tab="audit" aria-pressed="false">Audit <span class="n" id="nAudit"></span></button>
+    <button class="tab" type="button" data-tab="tools" aria-pressed="false">Tools</button>
   </div>
   <main class="content" id="content"><div class="gate">Loading…</div></main>
 </div>
@@ -338,6 +339,40 @@ function renderAudit(){
   </div>`;
 }
 
+/* ── Tools ── */
+function renderTools(){
+  $('#content').innerHTML=`
+    <div class="card">
+      <h2>Backfill authors</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">Fill the “—” author on recent board cards the 30-min poll stored without a byline. Runs the resolve → fetch → author check (with the AI fallback) and writes the byline back. Safe: it only reads the articles and updates authors — no emails, no re-ingest. Run it again until nothing remains.</div>
+      <div class="form">
+        <input id="baDays" type="number" min="1" max="30" value="7" title="Look back this many days" aria-label="Days" style="flex:0 0 84px">
+        <input id="baLimit" type="number" min="1" max="200" value="40" title="Max items per pass" aria-label="Limit" style="flex:0 0 84px">
+        <button class="btn" id="baBtn" type="button">Backfill authors</button>
+        <div class="formmsg" id="baMsg"></div>
+      </div>
+      <div class="nm" style="margin-top:8px;color:var(--faint)">days back · max per pass. Each pass fills up to the AI-byline cap; a big backlog may need a few runs.</div>
+    </div>`;
+  $('#baBtn').onclick=runBackfill;
+}
+async function runBackfill(){
+  const btn=$('#baBtn'), msg=$('#baMsg');
+  const days=Math.max(1,Math.min(Number($('#baDays').value)||7,30));
+  const limit=Math.max(1,Math.min(Number($('#baLimit').value)||40,200));
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Working…'; msg.textContent='Fetching articles…'; msg.className='formmsg';
+  try{
+    const r=await api({method:'POST',q:'&resource=backfill-authors',body:{days,limit}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
+    else{
+      msg.className='formmsg ok';
+      msg.textContent=`Filled ${d.filled} of ${d.scanned} scanned · ${d.remaining} still missing`+(d.remaining>0?' — run again to continue.':' ✓ all done.');
+      loadAudit();
+    }
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
+  btn.disabled=false; btn.textContent=label;
+}
+
 /* ── shell ── */
 async function loadSubs(){ const r=await api({q:'&view=subscribers'}); SUBS=await r.json(); if(!Array.isArray(SUBS)) SUBS=[]; $('#nSubs').textContent=SUBS.length; if(TAB==='subs') renderSubs(); }
 async function loadFb(){ const r=await api({q:'&view=feedback'}); FB=await r.json(); if(!Array.isArray(FB)) FB=[]; $('#nFb').textContent=FB.length; if(TAB==='fb') renderFb(); }
@@ -351,6 +386,7 @@ function selectTab(t){
   else if(t==='requests'){ renderReq(); loadReq(); }
   else if(t==='users'){ renderUsers(); if(!USERS.length) loadUsers(); }
   else if(t==='audit'){ renderAudit(); loadAudit(); }
+  else if(t==='tools') renderTools();
 }
 
 async function boot(){

@@ -17,6 +17,11 @@ import {
   recentAudit, pendingRequests,
 } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
+import { sweepAuthors } from '../lib/author-backfill.js';
+
+// The author-backfill sweep does up to ~40 parallel article fetches, so give the
+// function room beyond the default; every other admin op returns in well under a second.
+export const config = { maxDuration: 60 };
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -35,6 +40,14 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
+      if (resource === 'backfill-authors') {
+        // One bounded sweep filling "—" authors on recent board cards. Read-mostly
+        // (reads articles, writes bylines); no re-ingest, no emails. Repeat until
+        // remaining is 0. Runs the same lib as the daily backfill + ?backfillAuthors.
+        const result = await sweepAuthors({ days: req.body?.days, limit: req.body?.limit });
+        await auditReq(req, who, 'authors.backfill', 'items', result);
+        return res.status(200).json({ ok: true, ...result });
+      }
       if (resource === 'users') {
         const { email, role, name } = req.body || {};
         if (!email || !EMAIL_RE.test(String(email))) return res.status(400).json({ error: 'a valid email is required' });
