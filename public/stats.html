@@ -88,6 +88,11 @@
   /* leaderboard-style rows (categories / outlets / authors) */
   .rows{margin-top:8px}
   .lrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--hair-2)}
+  a.lrow{text-decoration:none;color:inherit;cursor:pointer;padding-left:8px;padding-right:6px;margin:0 -8px;border-radius:8px;transition:background .12s}
+  a.lrow:hover{background:var(--raise)}
+  a.lrow:hover .nm{color:var(--red)}
+  a.lrow::after{content:"›";flex:none;color:var(--faint);font-weight:800;font-size:15px;line-height:1}
+  a.lrow:hover::after{color:var(--red)}
   .lrow:first-child{border-top:none}
   .lrow .nm{flex:0 1 34%;min-width:0;font-size:12.5px;font-weight:600;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lrow .nm .sub{display:block;font-size:10px;color:var(--faint);font-weight:500;overflow:hidden;text-overflow:ellipsis}
@@ -170,6 +175,10 @@ const CHART={Vodafone:'#e60000',Orange:'#ff7900',WE:'#7b1fa2','e&':'#00897d',Mar
 const NEG='#e60000', POS='#0f9d58', NEU='#d3dae1';   // sentiment polarity (board's own)
 
 let DATA=null; let fDays=Number(localStorage.getItem('pr_stats_days'))||30;
+// Click a Trends row → land on the board showing exactly those cards. Board
+// windows are 1/2/7/30 days, so clamp the stats window to the nearest.
+const boardWin=()=>{ const d=fDays||30; return d<=1?1:d<=2?2:d<=7?7:30; };
+const boardLink=(key,val)=>`/?${key}=${encodeURIComponent(val)}&win=${boardWin()}`;
 
 function clock(){
   const now=new Date();
@@ -397,12 +406,12 @@ function categoryRows(){
   const rows=cats.map(c=>{
     const negW=pct(c.negative,max), restW=pct(c.total-c.negative,max);
     const name=String(c.category).replace(/_/g,' ');
-    return `<div class="lrow">
-      <span class="nm" title="${esc(name)}">${esc(name)}</span>
+    return `<a class="lrow" href="${boardLink('cat',c.category)}" title="Show ${esc(name)} cards on the board">
+      <span class="nm">${esc(name)}</span>
       <span class="spark">${sparkSvg(c.series,72,20)}</span>
       <span class="bar" aria-hidden="true">${c.negative?`<i style="width:${negW}%;background:${NEG}"></i>`:''}${c.total-c.negative?`<i style="width:${restW}%;background:var(--neu);opacity:.35"></i>`:''}</span>
       <span class="val"><b>${c.total}</b>${c.negative?` · <b class="neg">${c.negative} neg</b>`:''}</span>
-    </div>`;
+    </a>`;
   }).join('');
   const table=()=>{
     let h='<table><thead><tr><th scope="col">Category</th><th scope="col">Items</th><th scope="col">Negative</th><th scope="col">Vodafone-negative</th></tr></thead><tbody>';
@@ -459,12 +468,12 @@ function leaderboardRows(list,kind){
     const seg=(n,c,op)=>n?`<i style="width:${pct(n,max)}%;background:${c}${op?`;opacity:${op}`:''}"></i>`:'';
     const bar=seg(o.negative,NEG)+seg(o.neutral,'var(--neu)','.35')+seg(o.positive,POS);
     const spark=o.series?sparkSvg(o.series,72,20):'';
-    return `<div class="lrow">
-      <span class="nm" title="${esc(name)}">${esc(name)}${flags}${sub}</span>
+    return `<a class="lrow" href="${boardLink(kind==='outlet'?'outlet':'author',name)}" title="Show ${esc(name)}'s cards on the board">
+      <span class="nm">${esc(name)}${flags}${sub}</span>
       <span class="spark">${spark}</span>
       <span class="bar" aria-hidden="true">${bar}</span>
       <span class="val"><b>${o.mentions}</b> · ${negShare}% neg${o.vodNeg?` · <b class="neg">${o.vodNeg} Vod</b>`:''}</span>
-    </div>`;
+    </a>`;
   }).join('');
   const table=()=>{
     let h=`<table><thead><tr><th scope="col">${kind==='outlet'?'Outlet':'Author'}</th><th scope="col">Stories</th><th scope="col">Neg</th><th scope="col">Neu</th><th scope="col">Pos</th><th scope="col">Vod-neg</th></tr></thead><tbody>`;
