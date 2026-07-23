@@ -12,6 +12,7 @@
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/login", "destination": "/login.html" },
     { "source": "/account", "destination": "/account.html" },
+    { "source": "/guide", "destination": "/guide.html" },
     { "source": "/auth/verify", "destination": "/api/verify" }
   ],
   "headers": [

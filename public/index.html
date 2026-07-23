@@ -52,6 +52,7 @@
   .account .signout,.account .acctlink{cursor:pointer;text-decoration:none;border:1px solid var(--hair);background:var(--raise);
                     color:var(--ink-2);font-size:11px;border-radius:8px;padding:5px 9px;font-weight:600;white-space:nowrap}
   .account .signout:hover,.account .acctlink:hover{border-color:var(--faint)}
+  .account .acctlink.guide{width:28px;height:28px;padding:0;border-radius:50%;display:grid;place-items:center;font-weight:800}
   @media (max-width:560px){
     .account .who,.account .acctlink.pw{display:none}
     .top .clock,.ttl .sub{display:none}   /* declutter the header row on phones */
@@ -353,7 +354,7 @@ async function loadMe(){
 }
 function renderAccount(){
   const el=$('#account'); if(!el) return;
-  let h='';
+  let h=`<a class="acctlink guide" href="/guide" title="How it works — a quick guide">?</a>`;
   if(ME&&ME.role==='admin'){ h+=`<a class="acctlink" href="/admin" title="Admin panel — users, subscribers, feedback, audit">⚙ Admin</a>`; }
   if(ME&&ME.email){
     h+=`<a class="acctlink pw" href="/account" title="Change your password">Password</a>`;

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How it works · PR Radar</title>
+<meta name="description" content="A quick guide to PR Radar — how the daily brand & reputation board works and how to use it.">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#e60000">
+<style>
+  :root{
+    --red:#e60000; --bg:#f1f2f5; --card:#fff; --raise:#f6f7f9;
+    --ink:#16191f; --ink-2:#3b434e; --muted:#6c7480; --faint:#9aa2ad; --hair:#e7e9ee; --hair-2:#eef0f3;
+    --neg:#e60000; --neg-bg:#fff2f0; --pos:#0f9d58; --pos-bg:#edfaf1; --neu-bg:#f0f3f7; --amber:#d97706;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mh:56px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.55}
+  .wrap{max-width:760px;margin:0 auto;padding-bottom:60px}
+  a{color:var(--red)}
+  .top{position:sticky;top:0;z-index:40;height:var(--mh);display:flex;align-items:center;gap:11px;padding:0 16px;
+       background:rgba(255,255,255,.85);backdrop-filter:blur(16px);border-bottom:1px solid var(--hair)}
+  .back{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--ink);color:#fff;text-decoration:none;font-size:15px;font-weight:800}
+  .top .h1{font-size:16px;font-weight:800;letter-spacing:-.02em}
+  .hero{padding:26px 20px 6px}
+  .hero h2{margin:0 0 6px;font-size:22px;letter-spacing:-.02em}
+  .hero p{margin:0;color:var(--muted);font-size:15px;max-width:56ch}
+  section{margin:22px 16px 0;background:var(--card);border:1px solid var(--hair);border-radius:16px;padding:18px 18px 6px;
+          box-shadow:0 2px 12px -8px rgba(20,23,28,.18)}
+  section > h3{margin:0 0 4px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:9px}
+  section > h3 .ic{flex:none;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:var(--raise);border:1px solid var(--hair)}
+  .lead{color:var(--muted);font-size:13.5px;margin:0 0 12px}
+  .item{display:flex;gap:11px;padding:11px 0;border-top:1px solid var(--hair-2)}
+  .item:first-of-type{border-top:none}
+  .item .k{flex:none;min-width:112px}
+  .chip{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .chip.neg{background:var(--neg-bg);color:#b60009}
+  .chip.pos{background:var(--pos-bg);color:#0c7a43}
+  .chip.neu{background:var(--neu-bg);color:#5b6675}
+  .chip.plain{background:var(--raise);color:var(--ink-2);border:1px solid var(--hair);font-weight:700}
+  .k .lab{font-size:12px;font-weight:800;color:var(--ink);text-transform:uppercase;letter-spacing:.03em}
+  .item .v{font-size:14px;color:var(--ink-2)}
+  .item .v b{color:var(--ink)}
+  .dots{letter-spacing:2px;color:var(--amber)}
+  .foot{margin:26px 16px 0;text-align:center;color:var(--faint);font-size:12px}
+  .cta{display:block;margin:22px 16px 0;text-align:center;background:var(--red);color:#fff;text-decoration:none;font-weight:800;
+       padding:14px;border-radius:13px;font-size:15px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="back" href="/" title="Back to the board" aria-label="Back to the board">‹</a>
+    <div class="h1">How it works</div>
+  </header>
+
+  <div class="hero">
+    <h2>Your daily brand &amp; reputation board</h2>
+    <p>PR Radar watches the news for stories about <b>Vodafone Egypt</b> and its main competitors (Orange, WE, e&amp;), reads each one, and lays out what matters today — and what to do about it. Here's how to read it.</p>
+  </div>
+
+  <section>
+    <h3><span class="ic">📈</span> The pulse, at the top</h3>
+    <p class="lead">A one-glance health check for the day.</p>
+    <div class="item"><div class="k"><span class="chip plain">Big number</span></div><div class="v">How many <b>negative</b> Vodafone stories today. <b>0</b> with a green <b>CLEAR</b> badge means a calm day; a red <b>ALERT</b> means something needs eyes.</div></div>
+    <div class="item"><div class="k"><span class="chip plain">Competitor tiles</span></div><div class="v">Orange, WE and e&amp; — how much they're in the news and how many negatives, for context. This is market awareness, not your to-do list.</div></div>
+  </section>
+
+  <section>
+    <h3><span class="ic">🗂️</span> The three lanes</h3>
+    <p class="lead">Every story is sorted by what <em>you</em> should do about it.</p>
+    <div class="item"><div class="k"><span class="chip neg">Needs a response</span></div><div class="v"><b>Negative Vodafone</b> stories — the ones worth addressing.</div></div>
+    <div class="item"><div class="k"><span class="chip pos">Wins to amplify</span></div><div class="v"><b>Positive Vodafone</b> stories — good news worth boosting.</div></div>
+    <div class="item"><div class="k"><span class="chip neu">Market &amp; noted</span></div><div class="v">Everything about <b>competitors</b>, plus neutral items — useful context, no action needed.</div></div>
+  </section>
+
+  <section>
+    <h3><span class="ic">🃏</span> Reading a story card</h3>
+    <p class="lead">Each card tells you what it is, how big it is, and what to do.</p>
+    <div class="item"><div class="k"><span class="chip pos">Positive</span> <span class="chip neg">Negative</span></div><div class="v">The <b>tone</b> of the story (also shown as the coloured badge).</div></div>
+    <div class="item"><div class="k"><span class="lab">Reach ●●●○○</span></div><div class="v">How <b>big / impactful</b> the story is, 1 to 5. More dots = more people likely see it.</div></div>
+    <div class="item"><div class="k"><span class="lab">92% confidence</span></div><div class="v">How <b>sure the AI was</b> about its read. Below 50% turns <span style="color:var(--amber);font-weight:700">amber · low</span> — worth a quick double-check.</div></div>
+    <div class="item"><div class="k"><span class="chip plain">◱ 2 outlets</span></div><div class="v">How many <b>outlets ran it</b>. The more outlets, the bigger the story.</div></div>
+    <div class="item"><div class="k"><span class="lab">What to do<br>with this</span></div><div class="v"><b>Read</b> (what it means) · <b>Audience</b> (who cares) · <b>Action</b> (the recommended move).</div></div>
+    <div class="item"><div class="k"><span class="chip plain">2h ago · By …</span></div><div class="v">When it broke and who wrote it. <b>Coverage</b> expands the full list of outlets.</div></div>
+  </section>
+
+  <section>
+    <h3><span class="ic">🔎</span> Filters</h3>
+    <p class="lead">Two rows near the top narrow what you see.</p>
+    <div class="item"><div class="k"><span class="lab">Show</span></div><div class="v"><b>All</b>, <b>Needs response</b>, <b>Wins</b>, <b>Market</b> — plus <b>📌 Pinned</b> (team-flagged) and <b>Low-conf</b> (items the AI was unsure about).</div></div>
+    <div class="item"><div class="k"><span class="lab">Since</span></div><div class="v"><b>24 hours</b>, <b>48 hours</b>, <b>Week</b> or <b>Month</b> — the time window. On phones, swipe the rows sideways to see every chip.</div></div>
+  </section>
+
+  <section>
+    <h3><span class="ic">🛠️</span> What you can do on a card</h3>
+    <div class="item"><div class="k"><span class="chip plain">📋 Copy brief</span></div><div class="v">Copy a ready-to-paste summary for WhatsApp, email or a chat.</div></div>
+    <div class="item"><div class="k"><span class="chip plain">📸 Share</span></div><div class="v">Make a clean branded image of the story (or the whole pulse) to share.</div></div>
+    <div class="item"><div class="k"><span class="chip plain">📌 Pin · 🙈 Hide</span></div><div class="v"><b>Admins:</b> flag a story for the team, or hide noise. Pinned items show under the Pinned filter.</div></div>
+    <div class="item"><div class="k"><span class="chip plain">▲ ▼</span></div><div class="v">Mark a card useful or not — it helps tune what surfaces.</div></div>
+    <div class="item"><div class="k"><span class="chip plain">Open source ↗</span></div><div class="v">Jump to the original article.</div></div>
+  </section>
+
+  <section>
+    <h3><span class="ic">📊</span> Trends &amp; more</h3>
+    <div class="item"><div class="k"><span class="chip plain">Trends</span></div><div class="v">Charts over time — share of voice vs competitors, sentiment, and the most active outlets &amp; journalists.</div></div>
+    <div class="item"><div class="k"><span class="chip plain">⚙ Admin</span></div><div class="v"><b>Admins only:</b> manage who can sign in, email subscribers, triage feedback, and review the activity log.</div></div>
+    <div class="item"><div class="k"><span class="chip plain">Your access</span></div><div class="v"><b>Viewers</b> read the board; <b>admins</b> also pin, edit and manage. Change your password anytime from the <b>Password</b> link.</div></div>
+  </section>
+
+  <a class="cta" href="/">Got it — open the board →</a>
+  <div class="foot">PR Radar · Vodafone Egypt — Brand &amp; Reputation monitor</div>
+</div>
+</body>
+</html>
