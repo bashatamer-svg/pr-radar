@@ -16,6 +16,8 @@
     --pos:#0f9d58; --pos-bg:#edfaf1; --pos-line:#c3e9d1;
     --neu:#5b6675; --neu-bg:#f0f3f7; --neu-line:#e0e6ec;
     --amber:#d97706;
+    --dot-empty:#dfe3e8; --seg-neu:#d3dae1; --seg-empty:#e7e9ee;
+    --topbg:rgba(255,255,255,.82); --barbg:rgba(241,242,245,.9); --markbg:var(--ink); --skel:#e7e9ee; --skel-hi:#f3f5f7;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     --mh:56px;
@@ -29,8 +31,8 @@
 
   /* ── header ── */
   .top{position:sticky;top:0;z-index:40;height:var(--mh);display:flex;align-items:center;gap:11px;padding:0 16px;
-       background:rgba(255,255,255,.82);backdrop-filter:blur(16px);border-bottom:1px solid var(--hair)}
-  .mark{position:relative;flex:none;width:34px;height:34px;border-radius:11px;background:var(--ink);overflow:hidden;
+       background:var(--topbg);backdrop-filter:blur(16px);border-bottom:1px solid var(--hair)}
+  .mark{position:relative;flex:none;width:34px;height:34px;border-radius:11px;background:var(--markbg);overflow:hidden;
         display:grid;place-items:center}
   .mark .sweep{position:absolute;inset:-40%;background:conic-gradient(from 0deg,transparent 300deg,rgba(230,0,0,.7) 358deg,#fff 360deg);
                animation:sweep 3.6s linear infinite}
@@ -101,7 +103,7 @@
 
   /* ── filter bar ── */
   .bar2[hidden]{display:none}
-  .bar2{position:sticky;top:var(--mh);z-index:30;background:rgba(241,242,245,.9);backdrop-filter:blur(12px);
+  .bar2{position:sticky;top:var(--mh);z-index:30;background:var(--barbg);backdrop-filter:blur(12px);
         border-bottom:1px solid var(--hair);padding:11px 16px 10px;margin-top:12px}
   .status{font-size:12px;color:var(--muted);margin-bottom:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .status b{color:var(--ink);font-weight:700} .status .neg{color:var(--neg);font-weight:700} .status .sep{color:var(--faint)}
@@ -211,6 +213,32 @@
   .pinmark.pin{background:#fff5e6;color:var(--amber);box-shadow:inset 0 0 0 1px #f5dcb0}
   .pinmark.hide{background:var(--hair-2);color:var(--muted);box-shadow:inset 0 0 0 1px var(--hair)}
 
+  /* ── skeleton loading ── */
+  .skel-wrap{padding:14px 16px}
+  .skel{background:var(--card);border:1px solid var(--hair);border-radius:18px;padding:16px 17px;margin:11px 0}
+  .skel .ln{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--skel) 25%,var(--skel-hi) 37%,var(--skel) 63%);
+            background-size:400% 100%;animation:shimmer 1.4s ease infinite}
+  .skel .ln.w40{width:40%}.skel .ln.w70{width:70%}.skel .ln.w90{width:90%}.skel .ln.tall{height:20px;margin:12px 0}
+  .skel .ln+.ln{margin-top:9px}
+  @keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+
+  /* ── share button (card + pulse) ── */
+  .btn.share{color:var(--ink-2)}
+  .shbtn{cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--muted);border-radius:9px;
+         font-size:12px;font-weight:700;padding:6px 10px;line-height:1;display:inline-flex;align-items:center;gap:5px}
+  .shbtn:hover{border-color:var(--faint);color:var(--ink-2)}
+  .pulse .ph .shbtn{margin-left:auto}
+  /* snapshot preview modal */
+  .snap{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;padding:20px;
+        background:rgba(8,10,13,.72);backdrop-filter:blur(4px)}
+  .snap.on{display:flex}
+  .snap .box{background:var(--card);border:1px solid var(--hair);border-radius:16px;padding:14px;max-width:min(92vw,440px);width:100%}
+  .snap img{width:100%;border-radius:10px;display:block;box-shadow:0 8px 30px -12px rgba(0,0,0,.5)}
+  .snap .acts{display:flex;gap:8px;margin-top:12px}
+  .snap .acts button{flex:1;cursor:pointer;border:0;border-radius:10px;padding:11px;font-family:var(--sans);font-size:13px;font-weight:700}
+  .snap .acts .dl{background:var(--red);color:#fff}
+  .snap .acts .cl{background:var(--raise);color:var(--ink-2);border:1px solid var(--hair)}
+
   /* ── classifier confidence cue (subtle 3-bar meter) ── */
   .cpip{display:inline-flex;align-items:flex-end;gap:1.5px;height:9px;cursor:help}
   .cpip i{width:2.5px;border-radius:1px;background:var(--hair-2)}
@@ -230,6 +258,11 @@
     <a class="trends" id="trendsLink" href="/stats" title="Trends — share of voice &amp; sentiment over time">Trends</a>
     <div class="clock"><div class="t" id="clockTime">—</div><div class="d" id="clockDate">—</div></div>
   </header>
+
+  <div class="snap" id="snap"><div class="box">
+    <img id="snapImg" alt="Shareable snapshot">
+    <div class="acts"><button class="dl" id="snapDl" type="button">↓ Save image</button><button class="cl" id="snapCl" type="button">Close</button></div>
+  </div></div>
 
   <button class="spotlight" id="spotlight" type="button">
     <span class="pin"></span>
@@ -288,7 +321,7 @@ const spreadOf = it => Array.isArray(it.instances)?it.instances.filter(x=>x&&(x.
 const linkOf = it => it.resolved_url || it.url || (it.id?`/api/go?id=${it.id}`:'#');
 const isCrit = it => sentOf(it)==='negative' && ((it.importance||0)>=5 || (it.brand==='Vodafone'&&(it.importance||0)>=4));
 
-function dots(imp){ const n=Math.max(1,Math.min(5,imp||1)); let o=''; for(let i=1;i<=5;i++) o+=`<span style="color:${i<=n?IMP[n]:'#dfe3e8'}">&#9679;</span>`; return o; }
+function dots(imp){ const n=Math.max(1,Math.min(5,imp||1)); let o=''; for(let i=1;i<=5;i++) o+=`<span style="color:${i<=n?IMP[n]:'var(--dot-empty)'}">&#9679;</span>`; return o; }
 // Subtle provenance cue: how confident the classifier was in this read. 3-bar
 // meter, amber when low (<50%) so an uncertain classification is worth a second
 // look. Hidden when confidence wasn't stored.
@@ -313,13 +346,13 @@ function buildPulse(){
   else {pill='Clear';pillbg='var(--pos-bg)';pillc='var(--pos)';}
   const vtot=vr.length||1;
   const vseg=(n,c)=>n?`<i data-w="${(n/vtot*100).toFixed(1)}%" style="background:${c}"></i>`:'';
-  const vbar=vr.length?vseg(vneg,'#e60000')+vseg(vneu,'#d3dae1')+vseg(vpos,'#0f9d58'):`<i data-w="100%" style="background:#e7e9ee"></i>`;
+  const vbar=vr.length?vseg(vneg,'#e60000')+vseg(vneu,'var(--seg-neu)')+vseg(vpos,'#0f9d58'):`<i data-w="100%" style="background:var(--seg-empty)"></i>`;
 
   const tiles=BRANDS.filter(b=>b!==V).map(b=>{
     const rows=ITEMS.filter(i=>(i.brand||'')===b);
     const neg=rows.filter(i=>sentOf(i)==='negative').length, pos=rows.filter(i=>sentOf(i)==='positive').length, neu=rows.length-neg-pos, tot=rows.length||1;
     const seg=(n,c)=>n?`<i data-w="${(n/tot*100).toFixed(1)}%" style="background:${c}"></i>`:'';
-    const bar=rows.length?seg(neg,'#e60000')+seg(neu,'#d3dae1')+seg(pos,'#0f9d58'):`<i data-w="100%" style="background:#e7e9ee"></i>`;
+    const bar=rows.length?seg(neg,'#e60000')+seg(neu,'var(--seg-neu)')+seg(pos,'#0f9d58'):`<i data-w="100%" style="background:var(--seg-empty)"></i>`;
     const cnt=rows.length?`<span class="${neg?'neg':''}"><b>${neg}</b></span> neg · ${rows.length}`:'no items';
     return `<button class="tile" type="button" data-b="${esc(b)}" aria-pressed="${fBrand===b}" style="--tc:${BRAND_COLOR[b]}">
       <span class="tt"><span class="tdot" style="background:${BRAND_COLOR[b]}"></span><span class="tb">${esc(b)}</span></span>
@@ -327,7 +360,7 @@ function buildPulse(){
   }).join('');
 
   $('#pulse').innerHTML=
-    `<div class="ph"><span class="dt"></span>Today’s reputation pulse</div>
+    `<div class="ph"><span class="dt"></span>Today’s reputation pulse<button class="shbtn" type="button" onclick="snapshotPulse()" title="Share a branded snapshot">📸 Share</button></div>
      <div class="hero ${alert?'alert':''}" role="button" tabindex="0" data-b="${V}" aria-pressed="${fBrand===V}">
        <div class="hlogo">V</div>
        <div class="hbody">
@@ -397,6 +430,7 @@ function cardHtml(it){
     ${coverageHtml(it.instances)}
     <div class="foot">
       <button class="btn copy" type="button" onclick="copyBrief(${it.id},this)">⧉ Copy brief</button>
+      <button class="fb share" type="button" title="Share a branded snapshot" onclick="snapshotCard(${it.id})">📸</button>
       <button class="fb pin" aria-pressed="${pinned}" title="Pin for the team" onclick="togglePin(${it.id},'pin',this)">📌</button>
       <button class="fb hide" aria-pressed="${hidden}" title="Hide from the team view" onclick="togglePin(${it.id},'hide',this)">🙈</button>
       <button class="fb up" aria-pressed="${fb===1}" title="Useful" onclick="vote(${it.id},1,this)">▲</button>
@@ -501,8 +535,14 @@ async function loadPinnedExtras(){
   }catch(e){}
 }
 
+// Skeleton placeholders — replaces the plain "Loading the board…" on first load
+// and while switching windows, so the board never shows a bare text state.
+function skeletons(n=4){ let h='<div class="skel-wrap">'; for(let i=0;i<n;i++) h+=`<div class="skel"><div class="ln w40"></div><div class="ln tall w90"></div><div class="ln w70"></div><div class="ln w40"></div></div>`; return h+'</div>'; }
+
 async function load(){
   if(!token){ $('#list').innerHTML=`<div class="gate">This board is private.<br>Open it with your access link: <code>?t=YOUR_TOKEN</code></div>`; return; }
+  if(!ITEMS.length) $('#list').innerHTML=skeletons();      // first paint: skeletons, not bare text
+  else $('#list').style.opacity='.45';                     // refetch: hold the frame, don't flash
   try{
     const r=await fetch(`/api/items?t=${encodeURIComponent(token)}&days=${fWin}`);
     if(r.status===401){ $('#list').innerHTML=`<div class="gate">That access link was rejected.<br>Check the token and open the board again.</div>`; return; }
@@ -513,7 +553,95 @@ async function load(){
     if(fPin==='pinned') await loadPinnedExtras();
     render();
   }catch(e){ $('#list').innerHTML=`<div class="empty">Couldn't load the board.<br>${esc(e.message||e)}</div>`; }
+  finally{ $('#list').style.opacity=''; }
 }
+
+/* ── shareable branded snapshot (canvas → PNG, no libraries) ──
+   Renders a clean, always-light branded image (best for WhatsApp/Slack) of the
+   reputation pulse or a single card, then offers Web Share (with the file) or a
+   download. Arabic headlines are drawn right-to-left. */
+const SNAPW=1080, DPR=2;
+function roundRect(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+function wrapText(c,text,maxW){ const rtl=/[؀-ۿ]/.test(text); const words=String(text).split(/\s+/); const lines=[]; let cur=''; for(const w of words){ const t=cur?cur+' '+w:w; if(c.measureText(t).width>maxW&&cur){ lines.push(cur); cur=w; } else cur=t; } if(cur) lines.push(cur); return {lines,rtl}; }
+function newCanvas(h){ const cv=document.createElement('canvas'); cv.width=SNAPW*DPR; cv.height=h*DPR; const c=cv.getContext('2d'); c.scale(DPR,DPR); c.textBaseline='alphabetic'; return {cv,c}; }
+function snapHeader(c,title){
+  c.fillStyle='#e60000'; c.fillRect(0,0,SNAPW,150);
+  c.fillStyle='#fff'; roundRect(c,48,44,64,64,16); c.fill();
+  c.fillStyle='#e60000'; c.font='800 26px '+SANS; c.textAlign='left'; c.fillText('PR',62,86);
+  c.fillStyle='#fff'; c.font='800 34px '+SANS; c.fillText(title,132,78);
+  c.fillStyle='rgba(255,255,255,.85)'; c.font='600 15px '+SANS;
+  const d=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'Africa/Cairo'}).toUpperCase();
+  c.fillText('BRAND & REPUTATION  ·  '+d+'  ·  VODAFONE EGYPT',132,108);
+}
+function snapFooter(c,y){ c.fillStyle='#9aa2ad'; c.font='600 15px '+SANS; c.textAlign='left'; c.fillText('PR Radar · Vodafone Egypt — Brand & Reputation monitor',48,y); }
+const SANS='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+const SENTC={negative:'#e60000',positive:'#0f9d58',neutral:'#5b6675'};
+
+function snapshotPulse(){
+  const V='Vodafone'; const vr=ITEMS.filter(i=>(i.brand||'')===V);
+  const vneg=vr.filter(i=>sentOf(i)==='negative').length, vpos=vr.filter(i=>sentOf(i)==='positive').length;
+  const H=560; const {cv,c}=newCanvas(H);
+  c.fillStyle='#faf8f7'; c.fillRect(0,0,SNAPW,H); snapHeader(c,'Reputation Pulse');
+  // Vodafone hero
+  c.fillStyle='#fff'; roundRect(c,48,186,SNAPW-96,150,20); c.fill();
+  c.fillStyle='#e60000'; roundRect(c,72,210,84,84,18); c.fill();
+  c.fillStyle='#fff'; c.font='800 44px '+SANS; c.textAlign='center'; c.fillText('V',114,270); c.textAlign='left';
+  c.fillStyle='#16191f'; c.font='800 26px '+SANS; c.fillText('Vodafone',176,244);
+  c.font='800 60px '+SANS; const numW=c.measureText(String(vneg)).width;   // measure at the BIG size, before switching fonts
+  c.fillStyle=vneg?'#b60009':'#0f9d58'; c.fillText(String(vneg),176,308);
+  c.fillStyle='#6c7480'; c.font='600 18px '+SANS; c.fillText(`negative of ${vr.length} tracked`,176+numW+18,299);
+  // competitor row
+  let y=384; c.fillStyle='#16191f'; c.font='700 18px '+SANS; c.fillText('Competitors',48,y); y+=14;
+  for(const b of ['Orange','WE','e&']){ const rows=ITEMS.filter(i=>(i.brand||'')===b); const neg=rows.filter(i=>sentOf(i)==='negative').length;
+    y+=34; c.fillStyle=BRAND_COLOR[b]; roundRect(c,48,y-16,12,12,3); c.fill();
+    c.fillStyle='#3b434e'; c.font='700 17px '+SANS; c.fillText(b,72,y-4);
+    c.fillStyle=neg?'#b60009':'#9aa2ad'; c.font='700 17px '+SANS; c.textAlign='right'; c.fillText(`${neg} negative · ${rows.length} tracked`,SNAPW-48,y-4); c.textAlign='left'; }
+  snapFooter(c,H-30);
+  openSnap(cv,'pr-radar-pulse.png','PR Radar — reputation pulse');
+}
+
+function snapshotCard(id){
+  const it=ITEMS.find(x=>x.id===id); if(!it) return; const sent=sentOf(it); const spread=spreadOf(it);
+  // measure headline height first
+  const tmp=newCanvas(10).c; tmp.font='800 34px '+SANS; const {lines,rtl}=wrapText(tmp,it.headline||'',SNAPW-96);
+  const H=320+lines.length*46+(it.summary?70:0); const {cv,c}=newCanvas(H);
+  c.fillStyle='#faf8f7'; c.fillRect(0,0,SNAPW,H); snapHeader(c,'Coverage Alert');
+  c.fillStyle='#fff'; roundRect(c,48,186,SNAPW-96,H-232,20); c.fill();
+  c.fillStyle=SENTC[sent]; c.fillRect(48,186,7,H-232);
+  let y=246; c.textAlign='left';
+  // brand chip + sentiment + outlets
+  const brand=it.brand||'Market';
+  c.font='800 18px '+SANS; const bw=c.measureText(brand).width+28; c.fillStyle=BRAND_COLOR[it.brand]||'#6c7480'; roundRect(c,80,y-26,bw,34,9); c.fill();
+  c.fillStyle='#fff'; c.fillText(brand,94,y-2);
+  c.fillStyle=SENTC[sent]; c.font='800 18px '+SANS; c.fillText(SENT[sent].label.toUpperCase(),80+bw+16,y-2);
+  if(spread>1){ c.fillStyle='#6c7480'; c.font='700 17px '+SANS; c.textAlign='right'; c.fillText(`◱ ${spread} outlets`,SNAPW-80,y-2); c.textAlign='left'; }
+  // headline (RTL-aware)
+  y+=54; c.fillStyle='#16191f'; c.font='800 34px '+SANS;
+  if(rtl){ c.textAlign='right'; for(const ln of lines){ c.fillText(ln,SNAPW-80,y); y+=46; } c.textAlign='left'; }
+  else { for(const ln of lines){ c.fillText(ln,80,y); y+=46; } }
+  // action line
+  const act=actionLine(it);
+  if(act){ y+=8; c.fillStyle='#b60009'; c.font='700 19px '+SANS; const aw=wrapText(c,'→ '+act,SNAPW-160); const artl=/[؀-ۿ]/.test(act);
+    if(artl){ c.textAlign='right'; for(const ln of aw.lines){ c.fillText(ln,SNAPW-80,y); y+=28; } c.textAlign='left'; }
+    else for(const ln of aw.lines){ c.fillText(ln,80,y); y+=28; } }
+  snapFooter(c,H-30);
+  openSnap(cv,'pr-radar-card.png','PR Radar — '+(it.brand||'coverage'));
+}
+
+let SNAP_URL=null, SNAP_NAME='snapshot.png';
+function openSnap(cv,filename,shareText){
+  SNAP_NAME=filename;
+  cv.toBlob(async(blob)=>{
+    if(SNAP_URL) URL.revokeObjectURL(SNAP_URL); SNAP_URL=URL.createObjectURL(blob);
+    $('#snapImg').src=SNAP_URL; $('#snap').classList.add('on');
+    const file=new File([blob],filename,{type:'image/png'});
+    const canShare=navigator.canShare&&navigator.canShare({files:[file]});
+    const dl=$('#snapDl'); dl.textContent=canShare?'↗ Share':'↓ Save image';
+    dl.onclick=async()=>{ if(canShare){ try{ await navigator.share({files:[file],text:shareText}); return; }catch(e){} } const a=document.createElement('a'); a.href=SNAP_URL; a.download=filename; a.click(); };
+  },'image/png');
+}
+$('#snapCl').onclick=()=>$('#snap').classList.remove('on');
+$('#snap').onclick=e=>{ if(e.target.id==='snap') $('#snap').classList.remove('on'); };
 
 buildFilters();
 load();
