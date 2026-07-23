@@ -1,7 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import crypto from 'node:crypto';
 import { ALL_FEEDS, BRAND_FEEDS } from '../lib/sources.js';
-import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState, itemsByHashes } from '../lib/db.js';
+import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState, itemsByHashes, itemsMissingAuthor, setItemAuthor } from '../lib/db.js';
 import { classify } from '../lib/classify.js';
 import { semanticDedupe } from '../lib/dedupe-semantic.js';
 import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
@@ -852,10 +852,57 @@ export default async function handler(req, res) {
     }
   }
 
+  // 5d. Stored-author backfill (daily full run only). The 30-min urgent poll
+  // ingests brand stories but SKIPS author extraction for speed, and the daily
+  // run then dedups those already-stored items out — so a story first seen by
+  // the poll would keep "—" forever (and brand mentions, the ones we most want
+  // a byline for, are exactly what the poll grabs first). Here the daily run
+  // picks up a bounded set of recent, still-authorless board items and runs the
+  // SAME resolve→fetch→author hop (deterministic cascade + AI fallback), then
+  // writes the byline back. Runs AFTER the sends so it never delays delivery;
+  // bounded (last 48h, top-importance, cap 20), parallel, fully fail-soft, and
+  // shares the per-run AI cap so cost stays flat. The live board reflects it at
+  // once; anything not filled this run is retried next daily run (self-healing).
+  let authorsBackfilled = 0;
+  if (!dry && !urgentOnly && !previewTo) {
+    try {
+      const stale = await itemsMissingAuthor({ days: 2, limit: 20 });
+      const instMap = stale.length
+        ? await instancesForItems(stale.map((i) => i.id).filter(Boolean)).catch(() => ({}))
+        : {};
+      const filled = await Promise.all(stale.map(async (it) => {
+        const insts = instMap[it.id] || [];
+        // An RSS byline on any instance wins — no fetch needed.
+        let author = null;
+        for (const x of insts) { author = cleanAuthor(x.author, x.outlet); if (author) break; }
+        // Resolve the primary URL (Google-News wrapper → real publisher link).
+        let resolved = it.resolved_url || null;
+        if (!resolved) {
+          const primaryUrl = (insts[0] && insts[0].url) || it.url;
+          try { const r = await resolveUrl(primaryUrl); if (r && !isGoogleNews(r)) resolved = r; } catch { /* keep null */ }
+        }
+        // Otherwise fetch the candidate URLs and extract (cascade + AI fallback).
+        if (!author) {
+          const urls = [...new Set([resolved, it.url, ...insts.map((x) => x.url)].filter((u) => u && !isGoogleNews(u)))];
+          for (const u of urls) {
+            const person = cleanAuthor(await fetchAuthor(u), (insts[0] && insts[0].outlet) || it.source);
+            if (person) { author = person; break; }
+          }
+        }
+        if (!author) return false;
+        try { await setItemAuthor(it.id, author, resolved && resolved !== it.resolved_url ? resolved : null); return true; }
+        catch (e) { console.error('author backfill write failed', it.id, e.message); return false; }
+      }));
+      authorsBackfilled = filled.filter(Boolean).length;
+      if (authorsBackfilled) console.log(`stored-author backfill: filled ${authorsBackfilled}/${stale.length} authorless item(s)`);
+    } catch (e) { console.error('stored-author backfill skipped (non-fatal)', e.message); }
+  }
+
   return res.status(200).json({
     scanned: raw.length,
     feeds: feedSet.length,
     surges: surgeCount,
+    authorsBackfilled,
     candidates: candidates.length,
     crossRunHeadlineDropped,
     crossRunSummaryDropped,
