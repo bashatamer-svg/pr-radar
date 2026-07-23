@@ -66,7 +66,18 @@ async function sendMagicLink(email, req) {
   const data = await r.json();
   const link = data.action_link || (data.properties && data.properties.action_link);
   if (!link) throw new Error('no action_link in generate_link response');
-  await sendBulletin(magicEmailHtml(link), 'Sign in to PR Radar', email);
+  // Send the branded, same-domain link (see api/verify.js) — falls back to the
+  // raw Supabase link if the board origin can't be resolved, so login never breaks.
+  await sendBulletin(magicEmailHtml(brandedLink(link, redirect)), 'Sign in to PR Radar', email);
+}
+
+// Wrap the raw Supabase verify URL in a redirect on the board's own domain, so
+// the visible sign-in link matches the sender domain (deliverability).
+function brandedLink(actionLink, redirect) {
+  let origin;
+  try { origin = new URL(redirect).origin; } catch { return actionLink; }
+  const u = Buffer.from(actionLink, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${origin}/auth/verify?u=${u}`;
 }
 
 function magicEmailHtml(link) {

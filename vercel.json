@@ -10,7 +10,8 @@
     { "source": "/stats", "destination": "/stats.html" },
     { "source": "/context", "destination": "/context.html" },
     { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/login", "destination": "/login.html" }
+    { "source": "/login", "destination": "/login.html" },
+    { "source": "/auth/verify", "destination": "/api/verify" }
   ],
   "functions": {
     "api/radar.js": { "maxDuration": 60 }
