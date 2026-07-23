@@ -888,7 +888,7 @@ export default async function handler(req, res) {
       const stale = await itemsMissingAuthor({ days: 2, limit: 20 });
       const { filled, breakdown } = await fillMissingAuthors(stale);
       authorsBackfilled = filled;
-      if (stale.length) console.log(`stored-author backfill: filled ${filled}/${stale.length} (unresolved ${breakdown.unresolved}, no-byline ${breakdown.noByline}, write-fail ${breakdown.writeFailed})`);
+      if (stale.length) console.log(`stored-author backfill: filled ${filled}/${stale.length} (unresolved ${breakdown.unresolved}, fetch-failed ${breakdown.fetchFailed}, no-byline ${breakdown.noByline}, write-fail ${breakdown.writeFailed})`);
     } catch (e) { console.error('stored-author backfill skipped (non-fatal)', e.message); }
   }
 
