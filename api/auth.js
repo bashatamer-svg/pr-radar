@@ -59,11 +59,19 @@ export default async function handler(req, res) {
     if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'a valid email is required' });
 
     // ── create account ──
+    // Self-service signup is intentionally OPEN for viewer-role allowlisted emails
+    // (project decision): anyone who knows a not-yet-registered viewer email can claim
+    // it (impact: read-only board). Mitigate by registering people promptly. Admin
+    // emails cannot be self-claimed — see the role==='admin' guard below.
     if (mode === 'signup') {
       if (password.length < MIN_PW) return res.status(400).json({ error: `password must be at least ${MIN_PW} characters` });
       let role = null;
       try { role = await roleFor(email); } catch { role = null; }
       if (!role) return res.status(403).json({ error: "this email isn't authorised — ask an admin to add you first" });
+      // Admin accounts are provisioned server-side (see bootstrap), never self-created:
+      // whoever sets the first password on an unregistered admin email would become
+      // admin. Viewer self-signup stays open per project decision.
+      if (role === 'admin') return res.status(403).json({ error: 'Admin accounts are set up by ops, not self-created. Ask ops to set your password.' });
       try {
         const outcome = await adminCreateUser(email, password);
         if (outcome === 'exists') return res.status(409).json({ error: 'an account already exists for this email — sign in instead', exists: true });
