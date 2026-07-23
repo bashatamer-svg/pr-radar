@@ -1,7 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import crypto from 'node:crypto';
 import { ALL_FEEDS, BRAND_FEEDS } from '../lib/sources.js';
-import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState } from '../lib/db.js';
+import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState, itemsByHashes } from '../lib/db.js';
 import { classify } from '../lib/classify.js';
 import { semanticDedupe } from '../lib/dedupe-semantic.js';
 import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
@@ -277,6 +277,15 @@ export default async function handler(req, res) {
   if (!ok) return res.status(401).json({ error: 'unauthorized' });
 
   const dry = req.query?.dry === '1';
+  // Coverage diagnostic (?debug=1): run the pipeline THROUGH classify, then
+  // return a per-story funnel trace (which feed fetched it, where it was
+  // dropped, why) instead of delivering anything. SIDE-EFFECT-FREE — no DB
+  // writes, no emails, no author backfill, no surge. ?brand= picks the brand
+  // to trace (default Vodafone); ?hours= narrows the report window (report
+  // only — the ingest window stays the pipeline's own 48h).
+  const debug = req.query?.debug === '1';
+  const debugBrand = String(req.query?.brand || 'Vodafone');
+  const debugHours = Math.max(1, Math.min(Number(req.query?.hours) || 48, 96));
   // Hourly external scheduler passes urgentOnly=1: skip the regular
   // bulletin (would just report "nothing cleared screening" most hours),
   // still fire urgent alerts for anything importance-5 that just landed.
@@ -297,6 +306,12 @@ export default async function handler(req, res) {
   const feedSet = urgentOnly ? BRAND_FEEDS : ALL_FEEDS;
   const results = await Promise.allSettled(feedSet.map(fetchFeed));
   const raw = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+
+  // Per-feed fetched counts for the ?debug=1 trace (zero for a failed feed).
+  const feedCounts = feedSet.map((f, i) => ({
+    id: f.id,
+    fetched: results[i].status === 'fulfilled' ? results[i].value.length : 0,
+  }));
 
   // 2. Drop anything older than 48h.
   const cutoff = Date.now() - 2 * 864e5;
@@ -435,7 +450,7 @@ export default async function handler(req, res) {
   // /api/go shares instant from day one — and the card's primary link becomes the
   // clean publisher URL, not the un-tappable Google wrapper. Skipped on the
   // hourly urgent-only check (protect its speed) and on dry smoke-tests.
-  if (!dry && !urgentOnly) {
+  if (!dry && !urgentOnly && !debug) {
     await Promise.all(
       classified
         .filter((i) => i.is_relevant)
@@ -482,6 +497,116 @@ export default async function handler(req, res) {
   const relevant = classified.filter((i) => i.is_relevant && i.importance >= 2);
   const urgent = relevant.filter((i) => i.importance === 5);
 
+  // ── Coverage diagnostic: build the funnel trace and return. ────────────────
+  // Everything below this block (inserts, alerts, bulletins) is skipped, so a
+  // debug run has NO side effects — it only spends the classify calls.
+  if (debug) {
+    const BRAND_RE = {
+      Vodafone: /vodafone|فودافون/i,
+      Orange: /orange|اورنج|أورنج/i,
+      WE: /telecom egypt|\bWE\b|المصرية للاتصالات|وي/i,
+      'e&': /etisalat|اتصالات مصر|e&|إي آند/i,
+    };
+    const re = BRAND_RE[debugBrand] || BRAND_RE.Vodafone;
+
+    // Unique raw stories (exact-hash view of everything the feeds returned).
+    const uniqRaw = new Map();
+    for (const i of raw) {
+      const h = hashOf(i.headline);
+      if (!uniqRaw.has(h)) uniqRaw.set(h, { ...i, hash: h });
+    }
+
+    // Stage-membership sets — the first set a story is MISSING from is where it
+    // was dropped. Mirrors the pipeline order exactly.
+    const freshSet = new Set(fresh.map((i) => hashOf(i.headline)));
+    const withinRunSet = new Set(deduped.map((i) => i.hash));
+    const notRepostedSet = new Set(notReposted.map((i) => i.hash));
+    const candidatesSet = new Set(candidates.map((i) => i.hash));
+    const classifiedByHash = new Map(rawClassified.map((i) => [i.hash, i]));
+    const postDedupSet = new Set(classified.map((i) => i.hash));
+    const relevantSet = new Set(relevant.map((i) => i.hash));
+
+    // For stories dropped as "already stored", look up how the EARLIER run
+    // classified them — 'already stored' can mean on the board (fine) or stored
+    // as not-relevant (a silent gap). Fail-soft.
+    const storedInfo = new Map();
+    try {
+      const storedHashes = [...uniqRaw.values()]
+        .filter((i) => re.test(i.headline || '') && seen.has(i.hash))
+        .map((i) => i.hash);
+      for (const r of await itemsByHashes(storedHashes)) storedInfo.set(r.hash, r);
+    } catch (e) { console.error('debug stored lookup failed (non-fatal)', e.message); }
+
+    const dispositionOf = (it) => {
+      const h = it.hash;
+      if (!freshSet.has(h)) return 'dropped @ freshness (older than the 48h ingest window)';
+      if (!withinRunSet.has(h)) return 'merged @ within-run dedup (exact/fuzzy duplicate of another fetched story)';
+      if (!notRepostedSet.has(h)) {
+        const s = storedInfo.get(h);
+        if (s) {
+          return s.is_relevant && (s.importance || 0) >= 2
+            ? `already stored — ON BOARD from an earlier run (importance ${s.importance}, ${s.sentiment || '—'})`
+            : `already stored on an earlier run as ${s.is_relevant ? 'importance<2' : 'NOT-relevant'} — NOT on board`;
+        }
+        return 'already stored on an earlier run (exact hash)';
+      }
+      if (!candidatesSet.has(h)) return 'dropped @ cross-run fuzzy headline (resembles a story stored in the last 5 days)';
+      const cls = classifiedByHash.get(h);
+      if (!cls) return 'no classifier verdict (unexpected — check logs)';
+      if (!postDedupSet.has(h)) return 'merged @ post-classify dedup (summary/semantic — judged same event as another story)';
+      if (cls.is_relevant === false) return `dropped @ classifier: not relevant${cls.reason ? ' — ' + cls.reason : ''}`;
+      if ((cls.importance || 0) < 2) return 'dropped @ importance<2 (below board/email threshold)';
+      return 'ON BOARD (this run)';
+    };
+
+    const sinceMs = Date.now() - debugHours * 3600e3;
+    const brandStories = [...uniqRaw.values()]
+      .filter((i) => {
+        const cls = classifiedByHash.get(i.hash);
+        return (cls && cls.brand === debugBrand) || re.test(i.headline || '');
+      })
+      .map((i) => {
+        const cls = classifiedByHash.get(i.hash) || {};
+        return {
+          headline: i.headline,
+          source: i.source,
+          published_at: i.published_at,
+          disposition: dispositionOf(i),
+          brand: cls.brand ?? null,
+          sentiment: cls.sentiment ?? null,
+          importance: cls.importance ?? null,
+          confidence: cls.confidence ?? null,
+          reason: cls.reason ?? null,
+        };
+      })
+      // Report-window filter — but ALWAYS keep freshness drops: they are older
+      // than the window by definition, and hiding them would hide that stage.
+      .filter((s) =>
+        !s.published_at ||
+        new Date(s.published_at).getTime() >= sinceMs ||
+        s.disposition.includes('freshness'))
+      .sort((a, b) => (a.disposition > b.disposition ? 1 : -1));
+
+    return res.status(200).json({
+      window: { brand: debugBrand, hours: debugHours },
+      generatedAt: new Date().toISOString(),
+      feeds: feedCounts,
+      funnel: {
+        rawFetched: raw.length,
+        uniqueRaw: uniqRaw.size,
+        afterFreshness: fresh.length,
+        afterWithinRunDedup: deduped.length,
+        candidates: candidates.length,
+        classifiedRelevant: relevant.length,
+      },
+      brandStories,
+      // THE GAP LIST: everything fetched about the brand that is not on the
+      // board. 'merged' entries are included on purpose — a wrong merge is a
+      // hidden story, and only a human can judge that from the headline.
+      missed: brandStories.filter((s) => !s.disposition.includes('ON BOARD')),
+    });
+  }
+
   if (!dry && !previewTo) {
     // insertItems returns the inserted rows (with DB ids). Splice them back onto
     // the in-memory items so the urgent + bulletin emails can deep-link to
@@ -491,7 +616,7 @@ export default async function handler(req, res) {
     // here pre-populated by the backfill above. Then write every outlet that ran
     // the story to pr_instances against the new ids.
     const inserted = await insertItems(
-      classified.map(({ refined, snippet, _instances, ...row }) => row)
+      classified.map(({ refined, snippet, _instances, reason, ...row }) => row)
     );
     const idByHash = new Map((inserted || []).map((r) => [r.hash, r.id]));
     const instanceRows = [];
