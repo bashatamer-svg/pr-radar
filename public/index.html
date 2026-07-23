@@ -318,12 +318,16 @@ clock(); setInterval(clock,30000);
 
 const sentOf = it => SENT[it.sentiment]?it.sentiment:'neutral';
 // Section lane (what WE do about it) — distinct from the item's own sentiment.
-// "Wins to amplify" is Vodafone-only; a competitor's positive story is market
-// intel, so it drops to the "Market & noted" lane rather than reading as our win.
-const laneOf = it => (sentOf(it)==='positive' && (it.brand||'')!=='Vodafone') ? 'neutral' : sentOf(it);
+// The action lanes ("Needs a response", "Wins to amplify") are Vodafone-only:
+// a competitor's story — good or bad — is market intel, so it drops to the
+// "Market & noted" lane rather than reading as our win or our fire to fight.
+// sentOf() is untouched, so each card keeps its true sentiment badge.
+const laneOf = it => ((it.brand||'')==='Vodafone') ? sentOf(it) : 'neutral';
 const spreadOf = it => Array.isArray(it.instances)?it.instances.filter(x=>x&&(x.outlet||x.url)).length:0;
 const linkOf = it => it.resolved_url || it.url || (it.id?`/api/go?id=${it.id}`:'#');
-const isCrit = it => sentOf(it)==='negative' && ((it.importance||0)>=5 || (it.brand==='Vodafone'&&(it.importance||0)>=4));
+// Critical (red ring / "needs eyes") is a Vodafone-action signal — a competitor's
+// negative story is market intel, not our crisis, so it never trips crit.
+const isCrit = it => sentOf(it)==='negative' && it.brand==='Vodafone' && (it.importance||0)>=4;
 
 function dots(imp){ const n=Math.max(1,Math.min(5,imp||1)); let o=''; for(let i=1;i<=5;i++) o+=`<span style="color:${i<=n?IMP[n]:'var(--dot-empty)'}">&#9679;</span>`; return o; }
 // Subtle provenance cue: how confident the classifier was in this read. 3-bar
@@ -384,7 +388,9 @@ function buildPulse(){
 
 function buildSpotlight(){
   const el=$('#spotlight');
-  const worst=ITEMS.filter(i=>sentOf(i)==='negative').sort((a,b)=>(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a))[0];
+  // "Needs eyes now" is an urgent-action prompt, so it only fires for Vodafone —
+  // a competitor's bad news isn't ours to jump on.
+  const worst=ITEMS.filter(i=>sentOf(i)==='negative'&&i.brand==='Vodafone').sort((a,b)=>(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a))[0];
   const spread=worst?spreadOf(worst):0;
   if(worst&&((worst.importance||0)>=4||spread>=4)){
     const where=spread>1?` · ${spread} outlets`:'';
