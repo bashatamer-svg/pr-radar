@@ -62,6 +62,8 @@
   .kpi .kv{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1.15;margin-top:5px}
   .kpi .kv.neg{color:var(--red-deep)}
   .kpi .ks{font-size:10.5px;color:var(--faint);margin-top:3px;font-weight:600}
+  a.kpi{text-decoration:none;color:inherit;display:block;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  a.kpi:hover{border-color:var(--red);box-shadow:0 3px 14px -8px var(--red-glow,rgba(230,0,0,.28))}
 
   /* chart cards */
   .cardc{background:var(--card);border:1px solid var(--hair);border-radius:18px;padding:15px 16px;margin:12px 0;
@@ -75,6 +77,8 @@
   .chead .tgl:hover{border-color:var(--faint)}
   .legend{display:flex;flex-wrap:wrap;gap:5px 14px;margin:10px 0 2px;font-size:11.5px;color:var(--ink-2);font-weight:600}
   .legend .li{display:inline-flex;align-items:center;gap:6px}
+  a.li{text-decoration:none;color:inherit;cursor:pointer;border-radius:6px;padding:2px 5px;margin:-2px -1px}
+  a.li:hover{background:var(--raise);color:var(--red)}
   .legend .sw{width:10px;height:10px;border-radius:3px;flex:none}
   .legend .sw.line{height:3px;border-radius:2px;width:14px}
   .cbody{margin-top:6px}
@@ -214,7 +218,11 @@ const pct=(n,d)=>d?Math.round(n/d*100):0;
 function topRect(x,y,w,h,r){ r=Math.min(r,h,w/2); if(h<=0||w<=0)return''; return `M${x},${y+h} L${x},${y+r} Q${x},${y} ${x+r},${y} L${x+w-r},${y} Q${x+w},${y} ${x+w},${y+r} L${x+w},${y+h} Z`; }
 
 function legendHtml(names,shape){
-  return `<div class="legend">${names.map(n=>`<span class="li"><span class="sw ${shape==='line'?'line':''}" style="background:${CHART[n]}"></span>${esc(n)}</span>`).join('')}</div>`;
+  const BRANDS=['Vodafone','Orange','WE','e&'];
+  return `<div class="legend">${names.map(n=>{
+    const inner=`<span class="sw ${shape==='line'?'line':''}" style="background:${CHART[n]}"></span>${esc(n)}`;
+    return BRANDS.includes(n)?`<a class="li" href="${boardLink('brand',n)}" title="Show ${esc(n)} cards on the board">${inner}</a>`:`<span class="li">${inner}</span>`;
+  }).join('')}</div>`;
 }
 
 /* ============================================================
@@ -385,7 +393,7 @@ function sentimentChart(el){
     rows.forEach(b=>{ const d=s[b]; h+=`<tr><td>${esc(b)}</td><td>${d.negative}</td><td>${d.neutral}</td><td>${d.positive}</td><td><b>${d.total}</b></td></tr>`; });
     return h+'</tbody></table>';
   };
-  return {legend:`<div class="legend"><span class="li"><span class="sw" style="background:${NEG}"></span>Negative</span><span class="li"><span class="sw" style="background:${NEU}"></span>Neutral</span><span class="li"><span class="sw" style="background:${POS}"></span>Positive</span></div>`,svg,bind,table};
+  return {legend:`<div class="legend"><a class="li" href="${boardLink('sent','negative')}" title="Show negative cards"><span class="sw" style="background:${NEG}"></span>Negative</a><a class="li" href="${boardLink('sent','neutral')}" title="Show neutral cards"><span class="sw" style="background:${NEU}"></span>Neutral</a><a class="li" href="${boardLink('sent','positive')}" title="Show positive cards"><span class="sw" style="background:${POS}"></span>Positive</a></div>`,svg,bind,table};
 }
 
 /* Sparkline for category rows — single muted line, 1.5px, no axis. */
@@ -433,12 +441,13 @@ function narrativeRows(list){
     const seg=(v,c,op)=>v?`<i style="width:${pct(v,max)}%;background:${c}${op?`;opacity:${op}`:''}"></i>`:'';
     const bar=seg(n.negative,NEG)+seg(n.neutral,'var(--neu)','.35')+seg(n.positive,POS);
     const sub=n.headline?`<span class="sub">${esc(n.headline)}</span>`:'';
-    return `<div class="lrow">
-      <span class="nm" title="${esc(n.name)}">${esc(n.name)}${rise}${sub}</span>
+    const href=n.ids&&n.ids.length?`/?ids=${n.ids.join(',')}&label=${encodeURIComponent(n.name)}&win=${boardWin()}`:boardLink('brand',n.brand);
+    return `<a class="lrow" href="${href}" title="Show these ${n.total} stories on the board">
+      <span class="nm">${esc(n.name)}${rise}${sub}</span>
       <span class="spark">${sparkSvg(n.series,72,20)}</span>
       <span class="bar" aria-hidden="true">${bar}</span>
       <span class="val"><b>${n.total}</b> stor${n.total===1?'y':'ies'}</span>
-    </div>`;
+    </a>`;
   }).join('');
   const table=()=>{
     let h='<table><thead><tr><th scope="col">Narrative</th><th scope="col">Brand</th><th scope="col">Stories</th><th scope="col">Neg</th><th scope="col">Neu</th><th scope="col">Pos</th><th scope="col">Rising</th></tr></thead><tbody>';
@@ -490,11 +499,12 @@ function leaderboardRows(list,kind){
 function kpiHtml(){
   const t=DATA.totals;
   const sovPct=pct(t.vodafone.mentions,t.items);
+  const W=boardWin();
   return `<div class="kpis">
-    <div class="kpi"><div class="kl">Tracked items</div><div class="kv">${t.items}</div><div class="ks">last ${DATA.meta.days}d · board scope</div></div>
-    <div class="kpi"><div class="kl">Negative</div><div class="kv ${t.negatives?'neg':''}">${t.negatives}</div><div class="ks">${pct(t.negatives,t.items)}% of coverage</div></div>
-    <div class="kpi"><div class="kl">Vodafone share of voice</div><div class="kv">${sovPct}%</div><div class="ks">${t.vodafone.mentions} mentions · ${t.vodafone.negatives} negative</div></div>
-    <div class="kpi"><div class="kl">Outlets covering</div><div class="kv">${t.distinctOutlets}</div><div class="ks">distinct publications</div></div>
+    <a class="kpi" href="/?win=${W}" title="Open all these cards on the board"><div class="kl">Tracked items</div><div class="kv">${t.items}</div><div class="ks">last ${DATA.meta.days}d · board scope</div></a>
+    <a class="kpi" href="/?sent=negative&win=${W}" title="Show the cards that need a response"><div class="kl">Negative</div><div class="kv ${t.negatives?'neg':''}">${t.negatives}</div><div class="ks">${pct(t.negatives,t.items)}% of coverage</div></a>
+    <a class="kpi" href="/?brand=Vodafone&win=${W}" title="Show Vodafone cards"><div class="kl">Vodafone share of voice</div><div class="kv">${sovPct}%</div><div class="ks">${t.vodafone.mentions} mentions · ${t.vodafone.negatives} negative</div></a>
+    <a class="kpi" href="/?win=${W}" title="Open the board"><div class="kl">Outlets covering</div><div class="kv">${t.distinctOutlets}</div><div class="ks">distinct publications</div></a>
   </div>`;
 }
 

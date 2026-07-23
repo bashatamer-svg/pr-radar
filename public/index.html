@@ -388,13 +388,14 @@ let ITEMS=[]; let fBrand='all', fSent='all', fWin=Number(localStorage.getItem('p
 // Deep-link filters from the Trends page: click a category / outlet / journalist
 // there to land on the board showing exactly those cards.
 let fCat=params.get('cat')||'', fOutlet=params.get('outlet')||'', fAuthor=params.get('author')||'';
+let fIds=(params.get('ids')||'').split(',').map(Number).filter(Boolean), fLabel=params.get('label')||'';
 if(params.get('brand')) fBrand=params.get('brand');
 if(params.get('sent')) fSent=params.get('sent');
 { const w=Number(params.get('win')); if([1,2,7,30].includes(w)) fWin=w; }
 const itemHasOutlet=(it,o)=>Array.isArray(it.instances)&&it.instances.some(x=>x&&x.outlet===o);
 const itemHasAuthor=(it,a)=>(it.author===a)||(Array.isArray(it.instances)&&it.instances.some(x=>x&&x.author===a));
-function deepFilter(){ if(fCat) return{kind:'Category',val:String(fCat).replace(/_/g,' ')}; if(fOutlet) return{kind:'Outlet',val:fOutlet}; if(fAuthor) return{kind:'Journalist',val:fAuthor}; return null; }
-function clearDeepFilter(){ fCat=fOutlet=fAuthor=''; try{ const u=new URL(location.href); ['cat','outlet','author'].forEach(k=>u.searchParams.delete(k)); history.replaceState(null,'',u.pathname+(u.search||'')+u.hash); }catch(e){} render(); }
+function deepFilter(){ if(fIds.length) return{kind:'Narrative',val:fLabel||`${fIds.length} stories`}; if(fCat) return{kind:'Category',val:String(fCat).replace(/_/g,' ')}; if(fOutlet) return{kind:'Outlet',val:fOutlet}; if(fAuthor) return{kind:'Journalist',val:fAuthor}; return null; }
+function clearDeepFilter(){ fCat=fOutlet=fAuthor=''; fIds=[]; fLabel=''; try{ const u=new URL(location.href); ['cat','outlet','author','ids','label'].forEach(k=>u.searchParams.delete(k)); history.replaceState(null,'',u.pathname+(u.search||'')+u.hash); }catch(e){} render(); }
 
 // team_share pins are SERVER state (shared with the team view), but pinned
 // items can be older than the current window — so we also remember pinned ids
@@ -585,7 +586,7 @@ async function togglePin(id,mode,btn){
   if(fPin==='pinned'&&!isPinned(it)) render();
 }
 
-function pass(it){ if(fPin==='pinned'&&!isPinned(it)) return false; if(fLowConf==='low'&&!isLowConf(it)) return false; if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&laneOf(it)!==fSent) return false; if(fCat&&(it.category||'')!==fCat) return false; if(fOutlet&&!itemHasOutlet(it,fOutlet)) return false; if(fAuthor&&!itemHasAuthor(it,fAuthor)) return false; return true; }
+function pass(it){ if(fPin==='pinned'&&!isPinned(it)) return false; if(fLowConf==='low'&&!isLowConf(it)) return false; if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&laneOf(it)!==fSent) return false; if(fIds.length&&!fIds.includes(it.id)) return false; if(fCat&&(it.category||'')!==fCat) return false; if(fOutlet&&!itemHasOutlet(it,fOutlet)) return false; if(fAuthor&&!itemHasAuthor(it,fAuthor)) return false; return true; }
 function render(){
   buildPulse(); buildSpotlight();
   const shown=ITEMS.filter(pass).sort((a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(laneOf(a))-rank(laneOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0); });
@@ -645,6 +646,15 @@ async function loadPinnedExtras(){
   }catch(e){}
 }
 
+// Fetch specific ids not already loaded (narrative deep-links may reference
+// stories older than the current window). Mirrors loadPinnedExtras.
+async function loadIdsExtras(idsWanted){
+  const missing=idsWanted.filter(id=>!ITEMS.some(x=>x.id===id));
+  if(!missing.length) return;
+  try{ const r=await afetch(`/api/items?ids=${missing.join(',')}`); if(!r.ok) return; const extra=await r.json(); if(!Array.isArray(extra)) return;
+    const have=new Set(ITEMS.map(i=>i.id)); for(const e of extra) if(!have.has(e.id)) ITEMS.push(e); }catch(e){}
+}
+
 // Skeleton placeholders — replaces the plain "Loading the board…" on first load
 // and while switching windows, so the board never shows a bare text state.
 function skeletons(n=4){ let h='<div class="skel-wrap">'; for(let i=0;i<n;i++) h+=`<div class="skel"><div class="ln w40"></div><div class="ln tall w90"></div><div class="ln w70"></div><div class="ln w40"></div></div>`; return h+'</div>'; }
@@ -662,6 +672,7 @@ async function load(){
     // pin made on another device), then top up out-of-window pins if filtering.
     const set=pinnedSet(); for(const it of ITEMS) if(it.team_share===true) set.add(it.id); savePinned(set);
     if(fPin==='pinned') await loadPinnedExtras();
+    if(fIds.length) await loadIdsExtras(fIds);   // a narrative's stories may be older than the window
     render();
   }catch(e){ $('#list').innerHTML=`<div class="empty">Couldn't load the board.<br>${esc(e.message||e)}</div>`; }
   finally{ $('#list').style.opacity=''; }
