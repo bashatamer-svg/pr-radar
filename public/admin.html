@@ -234,6 +234,7 @@ function userRow(u){
       <div class="nm">${u.name?esc(u.name):'—'} · added ${when(u.created_at)}${u.last_seen_at?` · seen ${when(u.last_seen_at)}`:''}</div>
     </div>
     <div class="acts">
+      <button class="btn ghost sm" type="button" title="Set a new password for this user" onclick="setUserPassword(${u.id},'${esc(u.email)}')">Set password</button>
       <button class="btn ghost sm" type="button" title="Toggle admin/viewer" onclick="toggleRole(${u.id},'${esc(u.role)}','${esc(u.email)}',this)">${u.role==='admin'?'Make viewer':'Make admin'}</button>
       <button class="toggle" type="button" aria-pressed="${!!u.active}" title="${u.active?'Active — click to block':'Blocked — click to allow'}" onclick="toggleUser(${u.id},'${esc(u.email)}',this)"></button>
       <button class="x" type="button" title="Remove user" onclick="removeUser(${u.id},'${esc(u.email)}')">✕</button>
@@ -272,6 +273,12 @@ async function addUser(){
     if(!r.ok){ const e=await r.json().catch(()=>({})); msg.textContent=e.error||'Failed to add.'; msg.className='formmsg err'; btn.disabled=false; return; }
     msg.textContent='Added ✓'; msg.className='formmsg ok'; await loadUsers();
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; btn.disabled=false; }
+}
+async function setUserPassword(id,email){
+  const pw=prompt(`Set a new password for ${email} (min 8 characters). Share it with them; they can change it later.`);
+  if(pw==null) return;
+  if(pw.length<8){ alert('Password must be at least 8 characters.'); return; }
+  try{ const r=await api({method:'PATCH',q:'&resource=users',body:{id,email,password:pw}}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } alert('Password updated for '+email+'.'); }catch(e){ alert('Network error.'); }
 }
 async function toggleRole(id,cur,email,btn){
   const next=cur==='admin'?'viewer':'admin';

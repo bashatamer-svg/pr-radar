@@ -49,10 +49,10 @@
   .clock .d{font-family:var(--mono);font-size:8px;color:var(--faint);letter-spacing:.08em}
   .account{flex:none;display:flex;align-items:center;gap:8px;min-width:0}
   .account .who{font-size:11px;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .account .signout{cursor:pointer;border:1px solid var(--hair);background:var(--raise);color:var(--ink-2);font-size:11px;
-                    border-radius:8px;padding:5px 9px;font-weight:600}
-  .account .signout:hover{border-color:var(--faint)}
-  @media (max-width:560px){ .account .who{display:none} }
+  .account .signout,.account .acctlink{cursor:pointer;text-decoration:none;border:1px solid var(--hair);background:var(--raise);
+                    color:var(--ink-2);font-size:11px;border-radius:8px;padding:5px 9px;font-weight:600;white-space:nowrap}
+  .account .signout:hover,.account .acctlink:hover{border-color:var(--faint)}
+  @media (max-width:560px){ .account .who,.account .acctlink.pw{display:none} }
   /* Viewers are read-only — hide the write controls (pins/hide/votes) entirely. */
   body[data-role="viewer"] .fb.pin, body[data-role="viewer"] .fb.hide,
   body[data-role="viewer"] .fb.up, body[data-role="viewer"] .fb.down{ display:none }
@@ -347,9 +347,16 @@ async function loadMe(){
 }
 function renderAccount(){
   const el=$('#account'); if(!el) return;
-  if(ME&&ME.email){ el.innerHTML=`<span class="who" title="${esc(ME.role)}">${esc(ME.email)}</span><button class="signout" type="button" onclick="signOut()">Sign out</button>`; }
-  else if(token){ el.innerHTML=`<button class="signout" type="button" onclick="signOut()">Sign out</button>`; }
-  else el.innerHTML='';
+  let h='';
+  if(ME&&ME.role==='admin'){ h+=`<a class="acctlink" href="/admin" title="Admin panel — users, subscribers, feedback, audit">⚙ Admin</a>`; }
+  if(ME&&ME.email){
+    h+=`<a class="acctlink pw" href="/account" title="Change your password">Password</a>`;
+    h+=`<span class="who" title="Signed in as ${esc(ME.role)}">${esc(ME.email)}</span>`;
+    h+=`<button class="signout" type="button" onclick="signOut()">Sign out</button>`;
+  } else if(token){
+    h+=`<button class="signout" type="button" onclick="signOut()">Sign out</button>`;
+  }
+  el.innerHTML=h;
 }
 
 const BRANDS = ['Vodafone','Orange','WE','e&'];

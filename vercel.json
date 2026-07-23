@@ -11,6 +11,7 @@
     { "source": "/context", "destination": "/context.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/login", "destination": "/login.html" },
+    { "source": "/account", "destination": "/account.html" },
     { "source": "/auth/verify", "destination": "/api/verify" }
   ],
   "functions": {

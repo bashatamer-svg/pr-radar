@@ -16,7 +16,7 @@ import {
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
   recentAudit,
 } from '../lib/db.js';
-import { requireRole, auditReq } from '../lib/auth.js';
+import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -53,10 +53,20 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'PATCH') {
-      const { id, active, resolved, role, email } = req.body || {};
+      const { id, active, resolved, role, email, password } = req.body || {};
       if (id == null) return res.status(400).json({ error: 'id required' });
 
       if (resource === 'users') {
+        // Admin password reset (no email). Sets/creates the Supabase password.
+        if (typeof password === 'string' && password) {
+          if (password.length < 8) return res.status(400).json({ error: 'password must be at least 8 characters' });
+          const target = email && String(email).toLowerCase();
+          if (!target) return res.status(400).json({ error: 'email is required to set a password' });
+          const ok = await adminSetPassword(target, password);
+          if (!ok) return res.status(500).json({ error: 'could not set the password' });
+          await auditReq(req, who, 'user.password', target, null);
+          return res.status(204).end();
+        }
         // Self-protection: an admin can't demote or deactivate their own account
         // (ADMIN_EMAILS remains the ultimate lock-out insurance regardless).
         const selfEmail = email && String(email).toLowerCase();

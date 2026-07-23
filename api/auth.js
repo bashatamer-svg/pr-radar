@@ -10,7 +10,7 @@
 // create an account or sign in. Accounts are created pre-confirmed via the admin
 // API, so NO confirmation email is sent — password login needs no email at all.
 
-import { roleFor, requireRole, auditReq } from '../lib/auth.js';
+import { roleFor, requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { sendBulletin } from '../lib/email.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -36,6 +36,23 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const body = req.body || {};
     const mode = body.mode || req.query.mode || 'signin';
+
+    // ── change own password (signed-in users; no email needed) ──
+    if (mode === 'change_password') {
+      const who = await requireRole(req, res, 'viewer');
+      if (!who) return;
+      if (who.kind !== 'user' || !who.email) return res.status(400).json({ error: 'password change is only for signed-in users' });
+      const current = String(body.current || '');
+      const next = String(body.password || '');
+      if (next.length < MIN_PW) return res.status(400).json({ error: `new password must be at least ${MIN_PW} characters` });
+      const tok = await passwordGrant(who.email, current);
+      if (!tok) return res.status(401).json({ error: 'your current password is incorrect' });
+      const okSet = await adminSetPassword(who.email, next);
+      if (!okSet) return res.status(500).json({ error: 'could not update your password' });
+      await auditReq(req, who, 'auth.password_change', who.email, null);
+      return res.status(200).json({ ok: true });
+    }
+
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
     if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'a valid email is required' });
