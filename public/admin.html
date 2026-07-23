@@ -93,6 +93,7 @@
   <div class="tabs" id="tabs" hidden>
     <button class="tab" type="button" data-tab="subs" aria-pressed="true">Subscribers <span class="n" id="nSubs"></span></button>
     <button class="tab" type="button" data-tab="fb" aria-pressed="false">Feedback <span class="n" id="nFb"></span></button>
+    <button class="tab" type="button" data-tab="requests" aria-pressed="false">Requests <span class="n" id="nReq"></span></button>
     <button class="tab" type="button" data-tab="users" aria-pressed="false">Users <span class="n" id="nUsers"></span></button>
     <button class="tab" type="button" data-tab="audit" aria-pressed="false">Audit <span class="n" id="nAudit"></span></button>
   </div>
@@ -127,7 +128,7 @@ async function afetch(path,opts={},_retried){
   return r;
 }
 
-let TAB='subs', SUBS=[], FB=[], USERS=[], AUDIT=[];
+let TAB='subs', SUBS=[], FB=[], USERS=[], AUDIT=[], REQ=[];
 const api=(opts)=>afetch(`/api/admin${opts.q?opts.q.replace(/^&/,'?'):''}`,{method:opts.method||'GET',headers:opts.body?{'Content-Type':'application/json'}:undefined,body:opts.body?JSON.stringify(opts.body):undefined});
 const when=(t)=>{ try{ return new Date(t).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit',timeZone:'Africa/Cairo'}); }catch(e){ return ''; } };
 
@@ -295,6 +296,33 @@ async function removeUser(id,email){
   USERS=USERS.filter(u=>u.id!==id); $('#nUsers').textContent=USERS.length; renderUsers();
 }
 
+/* ── Access requests ── */
+function reqRow(r){
+  return `<div class="row" data-id="${r.id}">
+    <div class="who"><div class="em">${esc(r.email)}</div><div class="nm">requested ${when(r.created_at)}</div></div>
+    <div class="acts">
+      <button class="btn sm" type="button" title="Approve as a viewer" onclick="approveReq(${r.id},'${esc(r.email)}','viewer')">Approve</button>
+      <button class="btn ghost sm" type="button" title="Approve as an admin" onclick="approveReq(${r.id},'${esc(r.email)}','admin')">as admin</button>
+      <button class="x" type="button" title="Reject request" onclick="rejectReq(${r.id},'${esc(r.email)}')">✕</button>
+    </div>
+  </div>`;
+}
+function renderReq(){
+  $('#content').innerHTML=`<div class="card">
+    <h2>Access requests · ${REQ.length} pending</h2>
+    ${REQ.length?REQ.map(reqRow).join(''):`<div class="empty">No pending requests.<br>People who ask for access on the login screen show up here to approve or reject.</div>`}
+  </div>`;
+}
+async function approveReq(id,email,role){
+  try{ const r=await api({method:'PATCH',q:'&resource=requests',body:{id,email,role}}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } }catch(e){ return; }
+  REQ=REQ.filter(x=>x.id!==id); $('#nReq').textContent=REQ.length; renderReq(); loadUsers();
+}
+async function rejectReq(id,email){
+  if(!confirm(`Reject the access request from ${email}?`)) return;
+  try{ const r=await api({method:'DELETE',q:`&resource=requests&id=${id}&email=${encodeURIComponent(email)}`}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } }catch(e){ return; }
+  REQ=REQ.filter(x=>x.id!==id); $('#nReq').textContent=REQ.length; renderReq();
+}
+
 /* ── Audit log ── */
 function auditRow(a){
   const detail=a.detail?` <span class="cat">${esc(typeof a.detail==='object'?JSON.stringify(a.detail):a.detail)}</span>`:'';
@@ -315,10 +343,12 @@ async function loadSubs(){ const r=await api({q:'&view=subscribers'}); SUBS=awai
 async function loadFb(){ const r=await api({q:'&view=feedback'}); FB=await r.json(); if(!Array.isArray(FB)) FB=[]; $('#nFb').textContent=FB.length; if(TAB==='fb') renderFb(); }
 async function loadUsers(){ const r=await api({q:'&view=users'}); USERS=await r.json(); if(!Array.isArray(USERS)) USERS=[]; $('#nUsers').textContent=USERS.length; if(TAB==='users') renderUsers(); }
 async function loadAudit(){ const r=await api({q:'&view=audit'}); AUDIT=await r.json(); if(!Array.isArray(AUDIT)) AUDIT=[]; $('#nAudit').textContent=AUDIT.length; if(TAB==='audit') renderAudit(); }
+async function loadReq(){ const r=await api({q:'&view=requests'}); REQ=await r.json(); if(!Array.isArray(REQ)) REQ=[]; $('#nReq').textContent=REQ.length; if(TAB==='requests') renderReq(); }
 function selectTab(t){
   TAB=t; $('#tabs').querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===t)));
   if(t==='subs') renderSubs();
   else if(t==='fb') renderFb();
+  else if(t==='requests'){ renderReq(); loadReq(); }
   else if(t==='users'){ renderUsers(); if(!USERS.length) loadUsers(); }
   else if(t==='audit'){ renderAudit(); loadAudit(); }
 }
@@ -333,7 +363,7 @@ async function boot(){
     $('#tabs').hidden=false; $('#nSubs').textContent=SUBS.length;
     $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>selectTab(b.dataset.tab));
     renderSubs();
-    loadFb(); loadUsers(); loadAudit();   // warm the other tabs in the background
+    loadFb(); loadReq(); loadUsers(); loadAudit();   // warm the other tabs in the background
   }catch(e){ $('#content').innerHTML=`<div class="gate">Couldn't load admin.<br>${esc(e.message||e)}</div>`; }
 }
 boot();

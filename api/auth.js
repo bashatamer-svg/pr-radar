@@ -11,7 +11,7 @@
 // API, so NO confirmation email is sent — password login needs no email at all.
 
 import { roleFor, requireRole, auditReq, adminSetPassword, ipOf } from '../lib/auth.js';
-import { authFailuresSince, addAudit } from '../lib/db.js';
+import { authFailuresSince, addAudit, requestAccess } from '../lib/db.js';
 import { sendBulletin } from '../lib/email.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -95,6 +95,15 @@ export default async function handler(req, res) {
       if (!role) return res.status(403).json({ error: "this account isn't authorised for the board" });
       await auditReq(req, { actor: email, role }, 'auth.signin', email, null);
       return res.status(200).json({ ok: true, ...tok, role });
+    }
+
+    // ── request access (from the login screen) ──
+    if (mode === 'request') {
+      try {
+        await requestAccess(email);
+        await addAudit({ actor: email, action: 'access.requested', target: email, ip: ipOf(req) });
+      } catch (e) { console.error('access request failed', e.message); }
+      return res.status(200).json({ ok: true });   // neutral either way
     }
 
     // ── optional: magic-link (kept as a fallback, not exposed in the UI) ──

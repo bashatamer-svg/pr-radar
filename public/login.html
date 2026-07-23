@@ -57,6 +57,7 @@
       <div class="tabs">
         <button class="tab" type="button" id="tabSignin" aria-pressed="true">Sign in</button>
         <button class="tab" type="button" id="tabSignup" aria-pressed="false">Create account</button>
+        <button class="tab" type="button" id="tabRequest" aria-pressed="false">Request access</button>
       </div>
       <form id="form" autocomplete="on">
         <label for="email">Work email</label>
@@ -92,17 +93,29 @@
     mode=m;
     $('#tabSignin').setAttribute('aria-pressed',String(m==='signin'));
     $('#tabSignup').setAttribute('aria-pressed',String(m==='signup'));
-    btn.textContent = m==='signin' ? 'Sign in' : 'Create account';
+    $('#tabRequest').setAttribute('aria-pressed',String(m==='request'));
+    const isReq = m==='request';
+    // request mode collects only an email — hide everything password-related
+    const pwLabel=document.querySelector('label[for="password"]');
+    if(pwLabel) pwLabel.style.display = isReq ? 'none' : '';
+    pw.style.display = isReq ? 'none' : '';
+    pw.required = !isReq;   // a hidden required field would block form submit
+    document.querySelector('.pwrow').style.display = isReq ? 'none' : '';
+    confirmWrap.hidden = (m!=='signup');
+    pwHint.style.display = (m==='signup') ? '' : 'none';
+    $('#forgot').style.display = (m==='signin') ? '' : 'none';
+    btn.textContent = m==='signin' ? 'Sign in' : (m==='signup' ? 'Create account' : 'Request access');
     pw.setAttribute('autocomplete', m==='signin' ? 'current-password' : 'new-password');
     pw.placeholder = m==='signin' ? 'Your password' : 'Choose a password';
-    pwHint.hidden = m!=='signup';
-    confirmWrap.hidden = m!=='signup';
-    $('#forgot').style.display = m==='signup' ? 'none' : '';
     if(m!=='signup') confirm.value='';
+    $('#foot').innerHTML = isReq
+      ? 'Enter your work email and an admin will review your request.'
+      : 'Access is limited to approved addresses. First time? Choose “Create account” to set your password. · <a href="/guide">How it works</a>';
     clearMsg();
   }
   $('#tabSignin').onclick=()=>setMode('signin');
   $('#tabSignup').onclick=()=>setMode('signup');
+  $('#tabRequest').onclick=()=>setMode('request');
   $('#showpw').onchange=(e)=>{ const t=e.target.checked?'text':'password'; pw.type=t; confirm.type=t; };
   $('#forgot').onclick=(e)=>{ e.preventDefault(); show('ok','<strong>Ask an admin to reset it.</strong><br>An admin can set you a new password from Admin → Users → “Set password”. For security we don’t email reset links.'); };
 
@@ -110,8 +123,20 @@
 
   form.addEventListener('submit', async (e)=>{
     e.preventDefault();
-    const email=$('#email').value.trim(), password=pw.value;
-    if(!email || !password) return;
+    const email=$('#email').value.trim();
+    if(!email) return;
+    // request access — email only, no password
+    if(mode==='request'){
+      btn.disabled=true; btn.textContent='Sending…';
+      try{
+        await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'request',email})});
+        show('ok','<strong>Request sent.</strong><br>An admin will review it. Once approved, come back and choose “Create account”.');
+        $('#email').value='';
+      }catch(err){ show('err','Network error. Please try again.'); }
+      btn.disabled=false; btn.textContent='Request access'; return;
+    }
+    const password=pw.value;
+    if(!password) return;
     if(mode==='signup'){
       if(password.length<8){ show('err','Password must be at least 8 characters.'); return; }
       if(password!==confirm.value){ show('err','The two passwords don’t match.'); return; }
@@ -123,7 +148,7 @@
       if(r.ok && d.access_token){ saveSession(d); location.href='/'; return; }
       if(r.ok){ show('ok','Account ready — signing you in…'); location.href='/'; return; }
       if(r.status===409){ show('err','An account already exists for this email. Switch to <b>Sign in</b>.'); setMode('signin'); }
-      else if(r.status===403){ show('err', d.error || "This email isn't authorised. Ask an admin to add you."); }
+      else if(r.status===403){ show('err', (d.error || "This email isn't authorised.") + ' Use <b>Request access</b> to ask an admin.'); }
       else if(r.status===401){ show('err','Wrong email or password.'); }
       else { show('err', d.error || 'Something went wrong. Please try again.'); }
     }catch(err){ show('err','Network error. Please try again in a moment.'); }

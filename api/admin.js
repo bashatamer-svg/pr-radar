@@ -14,7 +14,7 @@ import {
   allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber,
   allFeedback, setFeedbackResolved,
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
-  recentAudit,
+  recentAudit, pendingRequests,
 } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 
@@ -29,6 +29,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       if (resource === 'feedback') return res.status(200).json(await allFeedback({ limit: Number(req.query.limit) || 200 }));
       if (resource === 'users') return res.status(200).json(await listUsers());
+      if (resource === 'requests') return res.status(200).json(await pendingRequests());
       if (resource === 'audit') return res.status(200).json(await recentAudit({ limit: Number(req.query.limit) || 200 }));
       return res.status(200).json(await allSubscribers());
     }
@@ -55,6 +56,14 @@ export default async function handler(req, res) {
     if (req.method === 'PATCH') {
       const { id, active, resolved, role, email, password } = req.body || {};
       if (id == null) return res.status(400).json({ error: 'id required' });
+
+      if (resource === 'requests') {   // approve an access request
+        const target = email && String(email).toLowerCase();
+        await setUserActive(id, true);
+        if (role === 'admin' || role === 'viewer') await setUserRole(id, role);
+        await auditReq(req, who, 'access.approve', target || id, { role: role === 'admin' ? 'admin' : 'viewer' });
+        return res.status(204).end();
+      }
 
       if (resource === 'users') {
         // Admin password reset (no email). Sets/creates the Supabase password.
@@ -87,6 +96,12 @@ export default async function handler(req, res) {
     if (req.method === 'DELETE') {
       const id = req.query.id;
       if (id == null) return res.status(400).json({ error: 'id required' });
+      if (resource === 'requests') {   // reject an access request
+        const target = req.query.email && String(req.query.email).toLowerCase();
+        await removeUser(id);
+        await auditReq(req, who, 'access.reject', target || id, null);
+        return res.status(204).end();
+      }
       if (resource === 'users') {
         const selfEmail = req.query.email && String(req.query.email).toLowerCase();
         if (selfEmail && who.email && selfEmail === who.email) return res.status(400).json({ error: "you can't remove your own account" });
