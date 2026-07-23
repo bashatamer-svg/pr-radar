@@ -502,7 +502,7 @@ function kpiHtml(){
   const W=boardWin();
   return `<div class="kpis">
     <a class="kpi" href="/?win=${W}" title="Open all these cards on the board"><div class="kl">Tracked items</div><div class="kv">${t.items}</div><div class="ks">last ${DATA.meta.days}d · board scope</div></a>
-    <a class="kpi" href="/?sent=negative&win=${W}" title="Show the cards that need a response"><div class="kl">Negative</div><div class="kv ${t.negatives?'neg':''}">${t.negatives}</div><div class="ks">${pct(t.negatives,t.items)}% of coverage</div></a>
+    <a class="kpi" href="/?sent=negative&win=${W}" title="Show the Vodafone cards that need a response"><div class="kl">Needs response</div><div class="kv ${t.vodafone.negatives?'neg':''}">${t.vodafone.negatives}</div><div class="ks">Vodafone negative · of ${t.vodafone.mentions} mention${t.vodafone.mentions===1?'':'s'}</div></a>
     <a class="kpi" href="/?brand=Vodafone&win=${W}" title="Show Vodafone cards"><div class="kl">Vodafone share of voice</div><div class="kv">${sovPct}%</div><div class="ks">${t.vodafone.mentions} mentions · ${t.vodafone.negatives} negative</div></a>
     <a class="kpi" href="/?win=${W}" title="Open the board"><div class="kl">Outlets covering</div><div class="kv">${t.distinctOutlets}</div><div class="ks">distinct publications</div></a>
   </div>`;
