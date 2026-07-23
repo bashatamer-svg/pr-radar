@@ -38,9 +38,9 @@
                animation:sweep 3.6s linear infinite}
   .mark .glyph{position:relative;font-weight:800;font-size:13px;color:#fff;letter-spacing:-.02em}
   @keyframes sweep{to{transform:rotate(360deg)}}
-  .ttl{flex:1;min-width:0}
-  .ttl .h1{font-size:16px;font-weight:800;letter-spacing:-.02em;line-height:1}
-  .ttl .sub{font-size:10.5px;color:var(--muted);margin-top:3px;font-weight:500}
+  .ttl{flex:1;min-width:0;overflow:hidden}
+  .ttl .h1{font-size:16px;font-weight:800;letter-spacing:-.02em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ttl .sub{font-size:10.5px;color:var(--muted);margin-top:3px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .trends{flex:none;font-size:11.5px;font-weight:700;color:var(--ink-2);text-decoration:none;background:var(--raise);
           border:1px solid var(--hair);border-radius:9px;padding:8px 11px;white-space:nowrap}
   .trends:hover{border-color:var(--faint)}
@@ -52,7 +52,11 @@
   .account .signout,.account .acctlink{cursor:pointer;text-decoration:none;border:1px solid var(--hair);background:var(--raise);
                     color:var(--ink-2);font-size:11px;border-radius:8px;padding:5px 9px;font-weight:600;white-space:nowrap}
   .account .signout:hover,.account .acctlink:hover{border-color:var(--faint)}
-  @media (max-width:560px){ .account .who,.account .acctlink.pw{display:none} }
+  @media (max-width:560px){
+    .account .who,.account .acctlink.pw{display:none}
+    .top .clock,.ttl .sub{display:none}   /* declutter the header row on phones */
+    .top{gap:8px;padding:0 12px}
+  }
   /* Viewers are read-only — hide the write controls (pins/hide/votes) entirely. */
   body[data-role="viewer"] .fb.pin, body[data-role="viewer"] .fb.hide,
   body[data-role="viewer"] .fb.up, body[data-role="viewer"] .fb.down{ display:none }
@@ -593,7 +597,7 @@ function buildFilters(){
   const low=sent.querySelector('.chip[data-lowconf]');
   low.onclick=()=>{ fLowConf=fLowConf==='low'?'all':'low'; syncControls(); render(); };
   const win=$('#winRow');
-  const wopts=[['1','Today'],['2','48 hours'],['7','Week'],['30','Month']];
+  const wopts=[['1','24 hours'],['2','48 hours'],['7','Week'],['30','Month']];
   win.innerHTML=`<span class="flabel">Since</span>`+wopts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fWin)===v}">${l}</button>`).join('');
   win.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ fWin=Number(c.dataset.v); localStorage.setItem('pr_win',c.dataset.v); win.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===c.dataset.v))); load(); });
   $('#bar2').hidden=false;
