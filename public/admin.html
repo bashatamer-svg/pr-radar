@@ -422,7 +422,16 @@ async function runBackfill(){
     if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
     else{
       msg.className='formmsg ok';
-      msg.textContent=`Filled ${d.filled} of ${d.scanned} scanned · ${d.remaining} still missing`+(d.remaining>0?' — run again to continue.':' ✓ all done.');
+      let t=`Filled ${d.filled} of ${d.scanned} scanned · ${d.remaining} still missing`+(d.remaining>0?' — run again to continue.':' ✓ all done.');
+      // When little/nothing filled, say WHY: unresolved link vs no byline on the page.
+      if(d.filled<d.scanned && (d.unresolved||d.noByline||d.writeFailed)){
+        const bits=[];
+        if(d.unresolved) bits.push(`${d.unresolved} link${d.unresolved===1?'':'s'} wouldn’t resolve`);
+        if(d.noByline) bits.push(`${d.noByline} had no byline on the page`);
+        if(d.writeFailed) bits.push(`${d.writeFailed} write error${d.writeFailed===1?'':'s'}`);
+        t+=` — of the rest: ${bits.join(', ')}.`;
+      }
+      msg.textContent=t;
       loadAudit(); loadAuthorGap();
     }
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
