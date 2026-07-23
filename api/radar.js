@@ -102,6 +102,12 @@ const STOPWORDS = new Set([
   'may','might','after','before','over','under','into','about','more','than','their','they','them',
   'new','news','report','reports','update','updates','latest','announces','announced','launches',
   'launched','opens','opened','plans','plan',
+  // Brand + geo + generic-sector tokens: every story about a brand shares these,
+  // so counting them as similarity gives two unrelated same-brand stories a floor
+  // they didn't earn — how a distinct story or a next-day development gets wrongly
+  // merged and hidden. Excluding them lets only DISTINCTIVE words drive the merge.
+  'vodafone','orange','etisalat','telecom','egypt','egyptian','cash','mobile','money',
+  'فودافون','اورنج','أورنج','اتصالات','المصرية',
 ]);
 function tokenize(s) {
   return new Set(
@@ -143,7 +149,7 @@ function fuzzyDedupe(items) {
   for (const item of items) {
     const tokens = tokenize(item.headline);
     const cluster = clusters.find(
-      (c) => c.country === item.country && jaccard(c.tokens, tokens) >= 0.4
+      (c) => c.country === item.country && jaccard(c.tokens, tokens) >= 0.55
     );
     if (cluster) cluster.items.push(item);
     else clusters.push({ tokens, country: item.country, items: [item] });
@@ -232,7 +238,7 @@ async function fetchFeed(feed) {
     const xml = parser.parse(await res.text());
     const entries = arr(xml?.rss?.channel?.item).concat(arr(xml?.feed?.entry));
 
-    const items = entries.slice(0, 30).map((e) => {
+    const items = entries.slice(0, 80).map((e) => {
       const title = decodeEntities(String(e.title?.['#text'] ?? e.title ?? '').trim());
       const link = e.link?.['@_href'] ?? e.link ?? '';
       const pub = e.pubDate ?? e.published ?? e.updated ?? null;
@@ -311,7 +317,7 @@ export default async function handler(req, res) {
   // Arabic/English pair of the same story — slips through as duplicate
   // cards, no matter how many hours separate the two versions. Fetch the
   // recently-stored stories ONCE and reuse them for two passes:
-  //   1. headline tokens, same country, Jaccard >= 0.4 (before classify)
+  //   1. headline tokens, same country, Jaccard >= 0.55 (before classify)
   //   2. summary tokens, any country, Jaccard >= 0.5 (after classify)
   // Same thresholds/grouping as the within-run passes, so it's consistent.
   const recentHeadTokensByCountry = new Map();
@@ -323,12 +329,18 @@ export default async function handler(req, res) {
     recentHeadTokensByCountry.get(key).push(tokenize(r.headline));
     if (r.summary) { recentSummaryTokens.push(tokenize(r.summary)); recentSummaryTexts.push(r.summary); }
   }
+  const crossRunDroppedHeadlines = [];
   const candidates = notReposted.filter((i) => {
     const toks = tokenize(i.headline);
     const pool = recentHeadTokensByCountry.get(i.country || '') || [];
-    return !pool.some((t) => jaccard(t, toks) >= 0.4);
+    const dup = pool.some((t) => jaccard(t, toks) >= 0.55);
+    if (dup) crossRunDroppedHeadlines.push(i.headline);
+    return !dup;
   });
   const crossRunHeadlineDropped = notReposted.length - candidates.length;
+  if (crossRunDroppedHeadlines.length) {
+    console.log('cross-run headline dedup dropped:', crossRunDroppedHeadlines.map((h) => h.slice(0, 90)).join(' | '));
+  }
 
   // Nothing NEW this run. For an hourly urgent-only check that's the end of
   // it — no classify, no digest to send. But the daily FULL run must not stop
