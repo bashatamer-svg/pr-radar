@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in · PR Radar</title>
+<meta name="description" content="Sign in to PR Radar — Brand & Reputation monitor for Vodafone Egypt.">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#e60000">
+<style>
+  :root{
+    --red:#e60000; --bg:#f1f2f5; --card:#fff; --ink:#16191f; --ink-2:#3b434e; --muted:#6c7480; --faint:#9aa2ad; --hair:#e7e9ee;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+       min-height:100vh;display:grid;place-items:center;padding:20px}
+  .card{width:100%;max-width:400px;background:var(--card);border:1px solid var(--hair);border-radius:18px;overflow:hidden;
+        box-shadow:0 12px 40px rgba(16,20,28,.08)}
+  .head{background:var(--red);padding:22px 26px;display:flex;align-items:center;gap:11px}
+  .mark{width:36px;height:36px;border-radius:10px;background:#fff;color:var(--red);font-weight:800;font-size:14px;
+        display:grid;place-items:center;letter-spacing:-.02em}
+  .head .h1{color:#fff;font-weight:800;font-size:17px}
+  .head .sub{color:rgba(255,255,255,.82);font-size:11px;letter-spacing:.04em}
+  .body{padding:26px}
+  .body h2{margin:0 0 6px;font-size:18px}
+  .body p{margin:0 0 18px;color:var(--muted);font-size:13.5px;line-height:1.5}
+  label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:6px}
+  input[type=email]{width:100%;font-size:15px;padding:12px 13px;border:1px solid var(--hair);border-radius:11px;background:#fbfcfd;
+        font-family:inherit;color:var(--ink)}
+  input[type=email]:focus{outline:2px solid var(--red);outline-offset:1px;border-color:transparent}
+  button.go{margin-top:14px;width:100%;cursor:pointer;border:0;background:var(--red);color:#fff;font-weight:700;font-size:14.5px;
+        padding:13px;border-radius:11px;font-family:inherit}
+  button.go:disabled{opacity:.6;cursor:default}
+  .msg{margin-top:16px;font-size:13.5px;line-height:1.5;padding:12px 14px;border-radius:11px;display:none}
+  .msg.show{display:block}
+  .msg.ok{background:#edfaf1;color:#0c7a43;border:1px solid #c3e9d1}
+  .msg.err{background:#fff2f0;color:#b60009;border:1px solid #ffd4cf}
+  .foot{margin-top:18px;font-size:11px;color:var(--faint)}
+  .foot a{color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="mark">PR</div>
+      <div><div class="h1">PR Radar</div><div class="sub">BRAND &amp; REPUTATION · VODAFONE EGYPT</div></div>
+    </div>
+    <div class="body">
+      <h2>Sign in</h2>
+      <p>Enter your work email and we'll send you a secure sign-in link. No password needed.</p>
+      <form id="form" autocomplete="on">
+        <label for="email">Work email</label>
+        <input type="email" id="email" name="email" placeholder="you@vodafone.com" required autofocus>
+        <button class="go" id="btn" type="submit">Send me a link</button>
+      </form>
+      <div class="msg" id="msg"></div>
+      <div class="foot">Access is limited to approved addresses. If yours isn't approved yet, ask an admin to add you.</div>
+    </div>
+  </div>
+<script>
+  const $ = (s) => document.querySelector(s);
+  // Already signed in? Skip straight to the board.
+  try{ if(JSON.parse(localStorage.getItem('pr_session')||'null')) location.replace('/'); }catch(e){}
+
+  const form=$('#form'), btn=$('#btn'), msg=$('#msg');
+  function show(kind,html){ msg.className='msg show '+kind; msg.innerHTML=html; }
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const email=$('#email').value.trim();
+    if(!email){ return; }
+    btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const r=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+      if(r.status===400){ show('err','That doesn\'t look like a valid email address.'); }
+      else { show('ok','<strong>Check your inbox.</strong><br>If <b>'+email.replace(/[<>&]/g,'')+'</b> is approved, a sign-in link is on its way. It expires shortly, so use it soon.'); form.reset(); }
+    }catch(err){ show('err','Something went wrong sending the link. Please try again in a moment.'); }
+    btn.disabled=false; btn.textContent='Send me a link';
+  });
+</script>
+</body>
+</html>

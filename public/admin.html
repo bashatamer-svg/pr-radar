@@ -93,6 +93,8 @@
   <div class="tabs" id="tabs" hidden>
     <button class="tab" type="button" data-tab="subs" aria-pressed="true">Subscribers <span class="n" id="nSubs"></span></button>
     <button class="tab" type="button" data-tab="fb" aria-pressed="false">Feedback <span class="n" id="nFb"></span></button>
+    <button class="tab" type="button" data-tab="users" aria-pressed="false">Users <span class="n" id="nUsers"></span></button>
+    <button class="tab" type="button" data-tab="audit" aria-pressed="false">Audit <span class="n" id="nAudit"></span></button>
   </div>
   <main class="content" id="content"><div class="gate">Loading…</div></main>
 </div>
@@ -104,10 +106,30 @@ const esc=(s)=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;'
 const params=new URLSearchParams(location.search);
 const token=params.get('t')||localStorage.getItem('pr_token')||'';
 if(params.get('t')) localStorage.setItem('pr_token',params.get('t'));
-$('#backLink').href=token?`/?t=${encodeURIComponent(token)}`:'/';
+let session=(()=>{ try{ return JSON.parse(localStorage.getItem('pr_session')||'null'); }catch(e){ return null; } })();
+$('#backLink').href=session?'/':(token?`/?t=${encodeURIComponent(token)}`:'/');
 
-let TAB='subs', SUBS=[], FB=[];
-const api=(opts)=>fetch(`/api/admin?t=${encodeURIComponent(token)}${opts.q||''}`,{method:opts.method||'GET',headers:opts.body?{'Content-Type':'application/json'}:undefined,body:opts.body?JSON.stringify(opts.body):undefined});
+let _cfg=null;
+async function authConfig(){ if(_cfg) return _cfg; try{ _cfg=await (await fetch('/api/auth?view=config')).json(); }catch(e){ _cfg={}; } return _cfg; }
+async function refreshSession(){
+  if(!session?.refresh_token) return false;
+  const c=await authConfig(); if(!c.supabaseUrl||!c.anonKey) return false;
+  try{ const r=await fetch(`${c.supabaseUrl}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:c.anonKey,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:session.refresh_token})});
+    if(!r.ok) return false; const d=await r.json(); if(!d.access_token) return false;
+    session={access_token:d.access_token,refresh_token:d.refresh_token||session.refresh_token}; try{ localStorage.setItem('pr_session',JSON.stringify(session)); }catch(e){} return true;
+  }catch(e){ return false; }
+}
+function authURL(path){ if(session) return path; return token?`${path}${path.includes('?')?'&':'?'}t=${encodeURIComponent(token)}`:path; }
+async function afetch(path,opts={},_retried){
+  const o={...opts,headers:{...(opts.headers||{})}};
+  if(session) o.headers.Authorization=`Bearer ${session.access_token}`;
+  const r=await fetch(authURL(path),o);
+  if(r.status===401 && session && !_retried && await refreshSession()) return afetch(path,opts,true);
+  return r;
+}
+
+let TAB='subs', SUBS=[], FB=[], USERS=[], AUDIT=[];
+const api=(opts)=>afetch(`/api/admin${opts.q?opts.q.replace(/^&/,'?'):''}`,{method:opts.method||'GET',headers:opts.body?{'Content-Type':'application/json'}:undefined,body:opts.body?JSON.stringify(opts.body):undefined});
 const when=(t)=>{ try{ return new Date(t).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit',timeZone:'Africa/Cairo'}); }catch(e){ return ''; } };
 
 /* ── Subscribers ── */
@@ -204,21 +226,108 @@ async function toggleFb(id,resolved,btn){
   try{ await api({method:'PATCH',q:'&resource=feedback',body:{id,resolved:next}}); }catch(e){}
 }
 
+/* ── Users (RBAC allowlist) ── */
+function userRow(u){
+  return `<div class="row" data-id="${u.id}">
+    <div class="who">
+      <div class="em">${esc(u.email)} <span class="cat ${u.role==='admin'?'all':''}" style="margin-left:4px">${esc(u.role)}</span></div>
+      <div class="nm">${u.name?esc(u.name):'—'} · added ${when(u.created_at)}${u.last_seen_at?` · seen ${when(u.last_seen_at)}`:''}</div>
+    </div>
+    <div class="acts">
+      <button class="btn ghost sm" type="button" title="Toggle admin/viewer" onclick="toggleRole(${u.id},'${esc(u.role)}','${esc(u.email)}',this)">${u.role==='admin'?'Make viewer':'Make admin'}</button>
+      <button class="toggle" type="button" aria-pressed="${!!u.active}" title="${u.active?'Active — click to block':'Blocked — click to allow'}" onclick="toggleUser(${u.id},'${esc(u.email)}',this)"></button>
+      <button class="x" type="button" title="Remove user" onclick="removeUser(${u.id},'${esc(u.email)}')">✕</button>
+    </div>
+  </div>`;
+}
+function renderUsers(){
+  const admins=USERS.filter(u=>u.role==='admin').length;
+  $('#content').innerHTML=`
+    <div class="card">
+      <h2>Add a user (allowlist)</h2>
+      <div class="form">
+        <input id="uEmail" type="email" placeholder="email@vodafone.com" autocomplete="off">
+        <input id="uName" type="text" placeholder="Name (optional)" autocomplete="off">
+        <select id="uRole" class="btn ghost" style="flex:0 0 auto">
+          <option value="viewer">Viewer</option><option value="admin">Admin</option>
+        </select>
+        <button class="btn" id="uAddBtn" type="button">Add</button>
+        <div class="formmsg" id="uMsg"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Users · ${admins} admin / ${USERS.length} total</h2>
+      ${USERS.length?USERS.map(userRow).join(''):`<div class="empty">No users yet.<br>Only allowlisted emails can sign in.</div>`}
+    </div>`;
+  $('#uAddBtn').onclick=addUser;
+  $('#uEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') addUser(); });
+}
+async function addUser(){
+  const email=$('#uEmail').value.trim(), name=$('#uName').value.trim(), role=$('#uRole').value;
+  const msg=$('#uMsg'), btn=$('#uAddBtn');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent='Enter a valid email.'; msg.className='formmsg err'; return; }
+  btn.disabled=true;
+  try{
+    const r=await api({method:'POST',q:'&resource=users',body:{email,name,role}});
+    if(!r.ok){ const e=await r.json().catch(()=>({})); msg.textContent=e.error||'Failed to add.'; msg.className='formmsg err'; btn.disabled=false; return; }
+    msg.textContent='Added ✓'; msg.className='formmsg ok'; await loadUsers();
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; btn.disabled=false; }
+}
+async function toggleRole(id,cur,email,btn){
+  const next=cur==='admin'?'viewer':'admin';
+  try{ const r=await api({method:'PATCH',q:'&resource=users',body:{id,role:next,email}}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } }catch(e){ return; }
+  await loadUsers();
+}
+async function toggleUser(id,email,btn){
+  const next=btn.getAttribute('aria-pressed')!=='true';
+  try{ const r=await api({method:'PATCH',q:'&resource=users',body:{id,active:next,email}}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } }catch(e){ return; }
+  const u=USERS.find(x=>x.id===id); if(u) u.active=next; btn.setAttribute('aria-pressed',String(next));
+}
+async function removeUser(id,email){
+  if(!confirm('Remove this user? They will lose access immediately.')) return;
+  try{ const r=await api({method:'DELETE',q:`&resource=users&id=${id}&email=${encodeURIComponent(email)}`}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } }catch(e){ return; }
+  USERS=USERS.filter(u=>u.id!==id); $('#nUsers').textContent=USERS.length; renderUsers();
+}
+
+/* ── Audit log ── */
+function auditRow(a){
+  const detail=a.detail?` <span class="cat">${esc(typeof a.detail==='object'?JSON.stringify(a.detail):a.detail)}</span>`:'';
+  return `<div class="fb" data-id="${a.id}">
+    <div class="fb-top"><span class="kind">${esc(a.action)}</span><span>${when(a.created_at)}</span>${a.target?`<span>· ${esc(a.target)}</span>`:''}</div>
+    <div class="meta">${esc(a.actor||'—')}${a.actor_role?` · ${esc(a.actor_role)}`:''}${detail}</div>
+  </div>`;
+}
+function renderAudit(){
+  $('#content').innerHTML=`<div class="card">
+    <h2>Audit log · last ${AUDIT.length}</h2>
+    ${AUDIT.length?AUDIT.map(auditRow).join(''):`<div class="empty">No audit entries yet.<br>Admin actions (adds, role changes, edits) are recorded here.</div>`}
+  </div>`;
+}
+
 /* ── shell ── */
 async function loadSubs(){ const r=await api({q:'&view=subscribers'}); SUBS=await r.json(); if(!Array.isArray(SUBS)) SUBS=[]; $('#nSubs').textContent=SUBS.length; if(TAB==='subs') renderSubs(); }
 async function loadFb(){ const r=await api({q:'&view=feedback'}); FB=await r.json(); if(!Array.isArray(FB)) FB=[]; $('#nFb').textContent=FB.length; if(TAB==='fb') renderFb(); }
-function selectTab(t){ TAB=t; $('#tabs').querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===t))); if(t==='subs') renderSubs(); else renderFb(); }
+async function loadUsers(){ const r=await api({q:'&view=users'}); USERS=await r.json(); if(!Array.isArray(USERS)) USERS=[]; $('#nUsers').textContent=USERS.length; if(TAB==='users') renderUsers(); }
+async function loadAudit(){ const r=await api({q:'&view=audit'}); AUDIT=await r.json(); if(!Array.isArray(AUDIT)) AUDIT=[]; $('#nAudit').textContent=AUDIT.length; if(TAB==='audit') renderAudit(); }
+function selectTab(t){
+  TAB=t; $('#tabs').querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===t)));
+  if(t==='subs') renderSubs();
+  else if(t==='fb') renderFb();
+  else if(t==='users'){ renderUsers(); if(!USERS.length) loadUsers(); }
+  else if(t==='audit'){ renderAudit(); loadAudit(); }
+}
 
 async function boot(){
-  if(!token){ $('#content').innerHTML=`<div class="gate">This page is private.<br>Open it with your access link: <code>/admin.html?t=YOUR_TOKEN</code></div>`; return; }
+  if(!session && !token){ location.href='/login'; return; }
   try{
     const probe=await api({q:'&view=subscribers'});
-    if(probe.status===401){ $('#content').innerHTML=`<div class="gate">That access link was rejected.<br>Check the token and try again.</div>`; return; }
+    if(probe.status===401){ location.href='/login'; return; }
+    if(probe.status===403){ $('#content').innerHTML=`<div class="gate">Admin only.<br>Your account can view the board but isn't an admin. Ask an admin to grant access.</div>`; return; }
     SUBS=await probe.json(); if(!Array.isArray(SUBS)) SUBS=[];
     $('#tabs').hidden=false; $('#nSubs').textContent=SUBS.length;
     $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>selectTab(b.dataset.tab));
     renderSubs();
-    loadFb();   // warm the feedback tab in the background
+    loadFb(); loadUsers(); loadAudit();   // warm the other tabs in the background
   }catch(e){ $('#content').innerHTML=`<div class="gate">Couldn't load admin.<br>${esc(e.message||e)}</div>`; }
 }
 boot();

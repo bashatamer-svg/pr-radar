@@ -10,14 +10,14 @@
 // redeploy. Scope is public market facts only (see lib/house-context.js).
 
 import { getHouseKnowledge, houseKnowledgeUpdatedAt, setHouseKnowledge } from '../lib/db.js';
+import { requireRole, auditReq } from '../lib/auth.js';
 
 const MAX = 20000;   // guardrail — this text is prepended to every batch prompt.
 
 export default async function handler(req, res) {
-  const token = req.query.t || req.headers.authorization?.replace('Bearer ', '');
-  if (token !== process.env.RADAR_TOKEN) return res.status(401).json({ error: 'unauthorized' });
-
   if (req.method === 'PUT' || req.method === 'POST') {
+    const who = await requireRole(req, res, 'admin');   // editing house knowledge is an admin action
+    if (!who) return;
     const body = req.body || {};
     const content = typeof body === 'string' ? body : body.content;
     if (typeof content !== 'string') return res.status(400).json({ error: 'content must be a string' });
@@ -25,6 +25,7 @@ export default async function handler(req, res) {
     try {
       await setHouseKnowledge(content);
       const updated_at = await houseKnowledgeUpdatedAt().catch(() => new Date().toISOString());
+      await auditReq(req, who, 'context.edit', 'house_knowledge', { length: content.length });
       return res.status(200).json({ ok: true, updated_at, length: content.length });
     } catch (e) {
       console.error('context save failed', e.message);
@@ -32,7 +33,9 @@ export default async function handler(req, res) {
     }
   }
 
-  // GET — current doc + when it was last edited.
+  // GET — current doc + when it was last edited (viewers may read).
+  const who = await requireRole(req, res, 'viewer');
+  if (!who) return;
   const [content, updated_at] = await Promise.all([
     getHouseKnowledge().catch(() => ''),
     houseKnowledgeUpdatedAt().catch(() => null),

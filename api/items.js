@@ -1,13 +1,13 @@
 import { recentItems, itemsByIds, instancesForItems } from '../lib/db.js';
+import { requireRole, auditReq } from '../lib/auth.js';
 
-// Token-gated. Vercel's own password protection is Pro-only, so this is the
-// free equivalent: /?t=<RADAR_TOKEN>. Not secret-grade — don't put anything
-// in here you wouldn't put in an email to yourself.
+// Auth: viewers (and above) may read the board; only admins may mutate an item
+// (pin/hide/vote). A legacy ?t=<RADAR_TOKEN> or a cron secret resolves to a
+// service-admin principal, so existing links and jobs keep working.
 export default async function handler(req, res) {
-  const token = req.query.t || req.headers.authorization?.replace('Bearer ', '');
-  if (token !== process.env.RADAR_TOKEN) return res.status(401).json({ error: 'unauthorized' });
-
   if (req.method === 'PATCH') {
+    const who = await requireRole(req, res, 'admin');
+    if (!who) return;
     const { id, feedback, team_share } = req.body || {};
     // Only forward fields that were actually sent, so we never null out
     // team_share when the caller is only updating feedback (or vice versa).
@@ -31,8 +31,13 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify(patch),
     });
+    await auditReq(req, who, 'item.update', id, patch);
     return res.status(204).end();
   }
+
+  // Reads require a signed-in viewer (or a service token / cron secret).
+  const who = await requireRole(req, res, 'viewer');
+  if (!who) return;
 
   // Fetch specific items by id (the board's "Saved" filter — starred items may
   // be older than the current window) or the recent window.

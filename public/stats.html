@@ -150,7 +150,14 @@ const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const params=new URLSearchParams(location.search);
 const token=params.get('t')||localStorage.getItem('pr_token')||'';
 if(params.get('t')) localStorage.setItem('pr_token',params.get('t'));
-$('#backLink').href=token?`/?t=${encodeURIComponent(token)}`:'/';
+let session=(()=>{ try{ return JSON.parse(localStorage.getItem('pr_session')||'null'); }catch(e){ return null; } })();
+$('#backLink').href=session?'/':(token?`/?t=${encodeURIComponent(token)}`:'/');
+let _cfg=null;
+async function authConfig(){ if(_cfg) return _cfg; try{ _cfg=await (await fetch('/api/auth?view=config')).json(); }catch(e){ _cfg={}; } return _cfg; }
+async function refreshSession(){ if(!session?.refresh_token) return false; const c=await authConfig(); if(!c.supabaseUrl||!c.anonKey) return false;
+  try{ const r=await fetch(`${c.supabaseUrl}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:c.anonKey,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:session.refresh_token})}); if(!r.ok) return false; const d=await r.json(); if(!d.access_token) return false; session={access_token:d.access_token,refresh_token:d.refresh_token||session.refresh_token}; try{ localStorage.setItem('pr_session',JSON.stringify(session)); }catch(e){} return true; }catch(e){ return false; } }
+function authURL(path){ if(session) return path; return token?`${path}${path.includes('?')?'&':'?'}t=${encodeURIComponent(token)}`:path; }
+async function afetch(path,opts={},_retried){ const o={...opts,headers:{...(opts.headers||{})}}; if(session) o.headers.Authorization=`Bearer ${session.access_token}`; const r=await fetch(authURL(path),o); if(r.status===401 && session && !_retried && await refreshSession()) return afetch(path,opts,true); return r; }
 
 // Brand series — FIXED order and entity-bound colors (never re-assigned when a
 // series is empty). e& uses #00897d for chart marks: the brand's #00857b sits a
@@ -554,13 +561,14 @@ function buildFilters(){
 
 let loading=false;
 async function load(){
-  if(!token){ $('#content').innerHTML=`<div class="gate">This page is private.<br>Open it with your access link: <code>/stats?t=YOUR_TOKEN</code></div>`; return; }
+  if(!session && !token){ location.href='/login'; return; }
   if(loading) return; loading=true;
   // refetch keeps the frame: fade the previous render, no skeleton flash
   const prev=$('#content'); if(DATA) prev.style.opacity='.45';
   try{
-    const r=await fetch(`/api/stats?t=${encodeURIComponent(token)}&days=${fDays}`);
-    if(r.status===401){ $('#content').innerHTML=`<div class="gate">That access link was rejected.<br>Check the token and try again.</div>`; return; }
+    const r=await afetch(`/api/stats?days=${fDays}`);
+    if(r.status===401){ location.href='/login'; return; }
+    if(r.status===403){ $('#content').innerHTML=`<div class="gate">Your account isn't authorised for this page.<br>Ask an admin to add you.</div>`; return; }
     DATA=await r.json();
     render();
   }catch(e){

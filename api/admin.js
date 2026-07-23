@@ -1,54 +1,92 @@
-// Subscriber + feedback admin endpoint. Token-gated exactly like api/items.js.
-// Backs /admin.html. No schema change — pr_subscribers + pr_feedback already
-// exist; this just gives them a surface.
+// Admin endpoint — subscribers, feedback, users (RBAC allowlist) and the audit
+// log. Admin-only. Backs /admin.html.
 //
-//   GET    /api/admin?t=…&view=subscribers      → list all subscribers
-//   GET    /api/admin?t=…&view=feedback          → list feedback (open first)
-//   POST   /api/admin?t=…  {email,name,categories}   → add / re-activate a subscriber
-//   PATCH  /api/admin?t=…  {id,active}                → toggle a subscriber on/off
-//   PATCH  /api/admin?t=…&resource=feedback {id,resolved} → triage feedback
-//   DELETE /api/admin?t=…&id=N                        → remove a subscriber
+//   GET    /api/admin?view=subscribers|feedback|users|audit
+//   POST   /api/admin                      {email,name,categories}  → add/reactivate subscriber
+//   POST   /api/admin?resource=users       {email,role,name}        → add/reactivate a user
+//   PATCH  /api/admin                      {id,active}              → toggle a subscriber
+//   PATCH  /api/admin?resource=feedback    {id,resolved}            → triage feedback
+//   PATCH  /api/admin?resource=users       {id,role?,active?,email?} → change a user
+//   DELETE /api/admin?id=N                                          → remove a subscriber
+//   DELETE /api/admin?resource=users&id=N&email=…                   → remove a user
 
 import {
   allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber,
   allFeedback, setFeedbackResolved,
+  listUsers, upsertUser, setUserRole, setUserActive, removeUser,
+  recentAudit,
 } from '../lib/db.js';
+import { requireRole, auditReq } from '../lib/auth.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export default async function handler(req, res) {
-  const token = req.query.t || req.headers.authorization?.replace('Bearer ', '');
-  if (token !== process.env.RADAR_TOKEN) return res.status(401).json({ error: 'unauthorized' });
+  const who = await requireRole(req, res, 'admin');
+  if (!who) return;
 
   const resource = req.query.resource || req.query.view || 'subscribers';
   try {
     if (req.method === 'GET') {
       if (resource === 'feedback') return res.status(200).json(await allFeedback({ limit: Number(req.query.limit) || 200 }));
+      if (resource === 'users') return res.status(200).json(await listUsers());
+      if (resource === 'audit') return res.status(200).json(await recentAudit({ limit: Number(req.query.limit) || 200 }));
       return res.status(200).json(await allSubscribers());
     }
 
     if (req.method === 'POST') {
+      if (resource === 'users') {
+        const { email, role, name } = req.body || {};
+        if (!email || !EMAIL_RE.test(String(email))) return res.status(400).json({ error: 'a valid email is required' });
+        const rows = await upsertUser({ email, role: role === 'admin' ? 'admin' : 'viewer', name, invited_by: who.actor });
+        const user = Array.isArray(rows) ? rows[0] : rows;
+        await auditReq(req, who, 'user.add', String(email).toLowerCase(), { role: role === 'admin' ? 'admin' : 'viewer' });
+        return res.status(200).json({ ok: true, user });
+      }
       const { email, name, categories } = req.body || {};
       if (!email || !EMAIL_RE.test(String(email))) return res.status(400).json({ error: 'a valid email is required' });
-      // Accept categories as an array or a comma-separated string; empty → all.
       const cats = Array.isArray(categories)
         ? categories.map((c) => String(c).trim()).filter(Boolean)
         : (typeof categories === 'string' ? categories.split(',').map((c) => c.trim()).filter(Boolean) : []);
       const rows = await addSubscriber({ email, name, categories: cats });
+      await auditReq(req, who, 'subscriber.add', String(email).toLowerCase(), null);
       return res.status(200).json({ ok: true, subscriber: Array.isArray(rows) ? rows[0] : rows });
     }
 
     if (req.method === 'PATCH') {
-      const { id, active, resolved } = req.body || {};
+      const { id, active, resolved, role, email } = req.body || {};
       if (id == null) return res.status(400).json({ error: 'id required' });
-      if (resource === 'feedback') { await setFeedbackResolved(id, resolved); return res.status(204).end(); }
-      await setSubscriberActive(id, active); return res.status(204).end();
+
+      if (resource === 'users') {
+        // Self-protection: an admin can't demote or deactivate their own account
+        // (ADMIN_EMAILS remains the ultimate lock-out insurance regardless).
+        const selfEmail = email && String(email).toLowerCase();
+        const targetingSelf = selfEmail && who.email && selfEmail === who.email;
+        if (targetingSelf && (role === 'viewer' || active === false)) {
+          return res.status(400).json({ error: "you can't demote or deactivate your own account" });
+        }
+        if (role !== undefined) { await setUserRole(id, role); await auditReq(req, who, 'user.role', selfEmail || id, { role: role === 'admin' ? 'admin' : 'viewer' }); }
+        if (active !== undefined) { await setUserActive(id, active); await auditReq(req, who, 'user.active', selfEmail || id, { active: !!active }); }
+        return res.status(204).end();
+      }
+      if (resource === 'feedback') { await setFeedbackResolved(id, resolved); await auditReq(req, who, 'feedback.resolve', id, { resolved: !!resolved }); return res.status(204).end(); }
+      await setSubscriberActive(id, active);
+      await auditReq(req, who, 'subscriber.active', id, { active: !!active });
+      return res.status(204).end();
     }
 
     if (req.method === 'DELETE') {
       const id = req.query.id;
       if (id == null) return res.status(400).json({ error: 'id required' });
-      await removeSubscriber(id); return res.status(204).end();
+      if (resource === 'users') {
+        const selfEmail = req.query.email && String(req.query.email).toLowerCase();
+        if (selfEmail && who.email && selfEmail === who.email) return res.status(400).json({ error: "you can't remove your own account" });
+        await removeUser(id);
+        await auditReq(req, who, 'user.remove', selfEmail || id, null);
+        return res.status(204).end();
+      }
+      await removeSubscriber(id);
+      await auditReq(req, who, 'subscriber.remove', id, null);
+      return res.status(204).end();
     }
 
     return res.status(405).json({ error: 'method not allowed' });

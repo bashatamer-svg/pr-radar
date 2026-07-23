@@ -47,6 +47,15 @@
   .clock{flex:none;text-align:right;background:var(--raise);border:1px solid var(--hair);border-radius:9px;padding:5px 9px}
   .clock .t{font-family:var(--mono);font-size:12px;font-weight:700;line-height:1.1}
   .clock .d{font-family:var(--mono);font-size:8px;color:var(--faint);letter-spacing:.08em}
+  .account{flex:none;display:flex;align-items:center;gap:8px;min-width:0}
+  .account .who{font-size:11px;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .account .signout{cursor:pointer;border:1px solid var(--hair);background:var(--raise);color:var(--ink-2);font-size:11px;
+                    border-radius:8px;padding:5px 9px;font-weight:600}
+  .account .signout:hover{border-color:var(--faint)}
+  @media (max-width:560px){ .account .who{display:none} }
+  /* Viewers are read-only — hide the write controls (pins/hide/votes) entirely. */
+  body[data-role="viewer"] .fb.pin, body[data-role="viewer"] .fb.hide,
+  body[data-role="viewer"] .fb.up, body[data-role="viewer"] .fb.down{ display:none }
 
   /* ── spotlight ── */
   .spotlight{display:none;align-items:center;gap:11px;cursor:pointer;margin:12px 16px 0;color:#fff;
@@ -256,6 +265,7 @@
     <div class="mark" aria-hidden="true"><span class="sweep"></span><span class="glyph">PR</span></div>
     <div class="ttl"><div class="h1">PR Radar</div><div class="sub">Brand &amp; Reputation · Vodafone Egypt</div></div>
     <a class="trends" id="trendsLink" href="/stats" title="Trends — share of voice &amp; sentiment over time">Trends</a>
+    <div class="account" id="account"></div>
     <div class="clock"><div class="t" id="clockTime">—</div><div class="d" id="clockDate">—</div></div>
   </header>
 
@@ -289,7 +299,58 @@ const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const params = new URLSearchParams(location.search);
 const token = params.get('t') || localStorage.getItem('pr_token') || '';
 if (params.get('t')) localStorage.setItem('pr_token', params.get('t'));
-if (token) $('#trendsLink').href = `/stats?t=${encodeURIComponent(token)}`;
+
+// ── session (Task 16: magic-link auth) ──────────────────────────────────────
+// A magic-link redirect hands the Supabase session back in the URL fragment
+// (#access_token=…&refresh_token=…). Capture it, stash it, and scrub the URL so
+// the tokens don't linger in history. Signed-in calls send a Bearer token; the
+// legacy ?t=<token> board link still works as a fallback.
+let session = (()=>{ try{ return JSON.parse(localStorage.getItem('pr_session')||'null'); }catch(e){ return null; } })();
+(function captureHash(){
+  if(!location.hash) return;
+  const h=new URLSearchParams(location.hash.slice(1));
+  const at=h.get('access_token');
+  if(at){ session={access_token:at, refresh_token:h.get('refresh_token')||''};
+    try{ localStorage.setItem('pr_session',JSON.stringify(session)); }catch(e){}
+    history.replaceState(null,'',location.pathname+location.search); }
+})();
+function saveSession(s){ session=s; try{ s?localStorage.setItem('pr_session',JSON.stringify(s)):localStorage.removeItem('pr_session'); }catch(e){} }
+function signOut(){ saveSession(null); localStorage.removeItem('pr_token'); location.href='/login'; }
+const authed = () => !!(session || token);
+$('#trendsLink').href = session ? '/stats' : (token?`/stats?t=${encodeURIComponent(token)}`:'/stats');
+
+let _cfg=null;
+async function authConfig(){ if(_cfg) return _cfg; try{ _cfg=await (await fetch('/api/auth?view=config')).json(); }catch(e){ _cfg={}; } return _cfg; }
+async function refreshSession(){
+  if(!session?.refresh_token) return false;
+  const c=await authConfig(); if(!c.supabaseUrl||!c.anonKey) return false;
+  try{
+    const r=await fetch(`${c.supabaseUrl}/auth/v1/token?grant_type=refresh_token`,{method:'POST',
+      headers:{apikey:c.anonKey,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:session.refresh_token})});
+    if(!r.ok) return false; const d=await r.json(); if(!d.access_token) return false;
+    saveSession({access_token:d.access_token, refresh_token:d.refresh_token||session.refresh_token}); return true;
+  }catch(e){ return false; }
+}
+function authURL(path){ if(session) return path; return token?`${path}${path.includes('?')?'&':'?'}t=${encodeURIComponent(token)}`:path; }
+// Fetch an /api path with auth; on a 401 try one silent session refresh.
+async function afetch(path, opts={}, _retried){
+  const o={...opts, headers:{...(opts.headers||{})}};
+  if(session) o.headers.Authorization=`Bearer ${session.access_token}`;
+  const r=await fetch(authURL(path), o);
+  if(r.status===401 && session && !_retried && await refreshSession()) return afetch(path, opts, true);
+  return r;
+}
+// Identity (email + role). Viewers are read-only, so we hide write controls.
+let ME=null;
+async function loadMe(){
+  try{ const r=await afetch('/api/auth?view=me'); if(r.ok){ ME=await r.json(); document.body.dataset.role=ME.role||''; renderAccount(); } }catch(e){}
+}
+function renderAccount(){
+  const el=$('#account'); if(!el) return;
+  if(ME&&ME.email){ el.innerHTML=`<span class="who" title="${esc(ME.role)}">${esc(ME.email)}</span><button class="signout" type="button" onclick="signOut()">Sign out</button>`; }
+  else if(token){ el.innerHTML=`<button class="signout" type="button" onclick="signOut()">Sign out</button>`; }
+  else el.innerHTML='';
+}
 
 const BRANDS = ['Vodafone','Orange','WE','e&'];
 const BRAND_COLOR = { Vodafone:'#e60000', Orange:'#ff7900', WE:'#7b1fa2', 'e&':'#00857b', market:'#6c7480' };
@@ -464,7 +525,7 @@ async function vote(id,val,btn){
   const card=btn.closest('.card'); card.querySelectorAll('.fb').forEach(b=>b.setAttribute('aria-pressed','false'));
   if(next!==null) btn.setAttribute('aria-pressed','true');
   const it=ITEMS.find(x=>x.id===id); if(it) it.feedback=next;
-  try{ await fetch(`/api/items?t=${encodeURIComponent(token)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,feedback:next===null?0:next})}); }catch(e){}
+  try{ await afetch(`/api/items`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,feedback:next===null?0:next})}); }catch(e){}
 }
 
 // Admin pin (team_share=true) / hide (false) / clear (null). Pin and hide are
@@ -485,7 +546,7 @@ async function togglePin(id,mode,btn){
   // refresh the little "Pinned/Hidden" marker in the metas row
   const metas=card.querySelector('.metas .pinmark'); if(metas) metas.remove();
   if(next!==null){ const m=document.createElement('span'); m.className='pinmark '+(next===true?'pin':'hide'); m.textContent=next===true?'📌 Pinned':'🙈 Hidden'; card.querySelector('.metas').appendChild(m); }
-  try{ await fetch(`/api/items?t=${encodeURIComponent(token)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,team_share:next})}); }catch(e){}
+  try{ await afetch(`/api/items`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,team_share:next})}); }catch(e){}
   if(fPin==='pinned'&&!isPinned(it)) render();
 }
 
@@ -539,7 +600,7 @@ async function loadPinnedExtras(){
   const missing=[...pinnedSet()].filter(id=>!ITEMS.some(x=>x.id===id));
   if(!missing.length) return;
   try{
-    const r=await fetch(`/api/items?t=${encodeURIComponent(token)}&ids=${missing.join(',')}`);
+    const r=await afetch(`/api/items?ids=${missing.join(',')}`);
     if(!r.ok) return; const extra=await r.json(); if(!Array.isArray(extra)) return;
     const have=new Set(ITEMS.map(i=>i.id)); for(const e of extra) if(!have.has(e.id)) ITEMS.push(e);
   }catch(e){}
@@ -550,12 +611,13 @@ async function loadPinnedExtras(){
 function skeletons(n=4){ let h='<div class="skel-wrap">'; for(let i=0;i<n;i++) h+=`<div class="skel"><div class="ln w40"></div><div class="ln tall w90"></div><div class="ln w70"></div><div class="ln w40"></div></div>`; return h+'</div>'; }
 
 async function load(){
-  if(!token){ $('#list').innerHTML=`<div class="gate">This board is private.<br>Open it with your access link: <code>?t=YOUR_TOKEN</code></div>`; return; }
+  if(!authed()){ location.href='/login'; return; }           // no session and no legacy token → sign in
   if(!ITEMS.length) $('#list').innerHTML=skeletons();      // first paint: skeletons, not bare text
   else $('#list').style.opacity='.45';                     // refetch: hold the frame, don't flash
   try{
-    const r=await fetch(`/api/items?t=${encodeURIComponent(token)}&days=${fWin}`);
-    if(r.status===401){ $('#list').innerHTML=`<div class="gate">That access link was rejected.<br>Check the token and open the board again.</div>`; return; }
+    const r=await afetch(`/api/items?days=${fWin}`);
+    if(r.status===401){ location.href='/login'; return; }   // session expired / rejected → sign in
+    if(r.status===403){ $('#list').innerHTML=`<div class="gate">Your account isn't authorised for this board.<br>Ask an admin to add you.</div>`; return; }
     ITEMS=await r.json(); if(!Array.isArray(ITEMS)) ITEMS=[];
     // Sync local pinned set with server pins visible in this window (covers a
     // pin made on another device), then top up out-of-window pins if filtering.
@@ -654,6 +716,8 @@ $('#snapCl').onclick=()=>$('#snap').classList.remove('on');
 $('#snap').onclick=e=>{ if(e.target.id==='snap') $('#snap').classList.remove('on'); };
 
 buildFilters();
+renderAccount();
+if(authed()) loadMe();
 load();
 </script>
 </body>

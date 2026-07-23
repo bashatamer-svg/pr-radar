@@ -11,6 +11,7 @@
 
 import { itemsForStats, instancesForItems } from '../lib/db.js';
 import { isOutletName } from '../lib/author.js';
+import { requireRole } from '../lib/auth.js';
 
 const BRANDS = ['Vodafone', 'Orange', 'WE', 'e&'];
 const SERIES = [...BRANDS, 'Market'];               // fixed order — stack + legend order
@@ -135,8 +136,8 @@ function buildNarratives(items, days, dayIdx, { minStories = 2, threshold = 0.22
 }
 
 export default async function handler(req, res) {
-  const token = req.query.t || req.headers.authorization?.replace('Bearer ', '');
-  if (token !== process.env.RADAR_TOKEN) return res.status(401).json({ error: 'unauthorized' });
+  const who = await requireRole(req, res, 'viewer');
+  if (!who) return;
 
   const windowDays = Math.max(1, Math.min(Number(req.query.days) || 30, 90));
   const items = await itemsForStats({ days: windowDays, withText: true });

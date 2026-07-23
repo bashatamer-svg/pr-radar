@@ -9,7 +9,8 @@
   "rewrites": [
     { "source": "/stats", "destination": "/stats.html" },
     { "source": "/context", "destination": "/context.html" },
-    { "source": "/admin", "destination": "/admin.html" }
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/login", "destination": "/login.html" }
   ],
   "functions": {
     "api/radar.js": { "maxDuration": 60 }
