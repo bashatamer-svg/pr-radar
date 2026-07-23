@@ -353,10 +353,49 @@ function renderTools(){
       </div>
       <div class="nm" id="baGap" style="margin-top:9px;font-weight:700;color:var(--ink-2)">Checking backlog…</div>
       <div class="nm" style="margin-top:4px;color:var(--faint)">days back · max per pass. Each pass fills up to the AI-byline cap; a big backlog may need a few runs.</div>
+    </div>
+    <div class="card">
+      <h2>WhatsApp urgent alerts</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">Urgent (importance-5) items are also sent as WhatsApp DMs to each configured recipient (the official API can’t post to a group, so it messages people individually). Configure the number, token, recipients and template in the environment, then send a test to verify delivery.</div>
+      <div class="nm" id="waStatus" style="font-weight:700;color:var(--ink-2);margin-bottom:10px">Checking…</div>
+      <div class="form">
+        <button class="btn" id="waTestBtn" type="button" disabled>Send test alert</button>
+        <div class="formmsg" id="waMsg"></div>
+      </div>
     </div>`;
   $('#baBtn').onclick=runBackfill;
   $('#baDays').addEventListener('change',loadAuthorGap);
   loadAuthorGap();
+  $('#waTestBtn').onclick=runWhatsappTest;
+  loadWhatsappStatus();
+}
+async function loadWhatsappStatus(){
+  const el=$('#waStatus'), btn=$('#waTestBtn'); if(!el) return;
+  try{
+    const r=await api({q:'&view=whatsapp-status'});
+    const s=await r.json().catch(()=>({}));
+    if(!r.ok){ el.textContent=''; return; }
+    if(s.enabled && s.hasToken && s.hasPhoneId && s.recipients>0){
+      el.innerHTML=`<span style="color:var(--pos)">● Configured</span> · ${s.recipients} recipient${s.recipients===1?'':'s'} · template “${esc(s.template)}”`;
+      if(btn) btn.disabled=false;
+    }else{
+      const miss=[]; if(!s.enabled) miss.push('WHATSAPP_ENABLED=1'); if(!s.hasToken) miss.push('WHATSAPP_TOKEN'); if(!s.hasPhoneId) miss.push('WHATSAPP_PHONE_ID'); if(!s.recipients) miss.push('WHATSAPP_TO');
+      el.innerHTML=`<span style="color:var(--amber)">● Not configured</span> — set ${esc(miss.join(', '))} in the environment.`;
+      if(btn) btn.disabled=true;
+    }
+  }catch(e){ el.textContent=''; }
+}
+async function runWhatsappTest(){
+  const btn=$('#waTestBtn'), msg=$('#waMsg');
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Sending…'; msg.textContent=''; msg.className='formmsg';
+  try{
+    const r=await api({method:'POST',q:'&resource=whatsapp-test'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
+    else if(d.skipped){ msg.textContent='WhatsApp isn’t configured yet.'; msg.className='formmsg err'; }
+    else{ msg.className='formmsg '+(d.failed?'err':'ok'); msg.textContent=`Sent to ${d.sent} of ${d.recipients}`+(d.failed?` · ${d.failed} failed (check logs)`:' ✓'); }
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
+  btn.disabled=false; btn.textContent=label;
 }
 async function loadAuthorGap(){
   const el=$('#baGap'); if(!el) return;

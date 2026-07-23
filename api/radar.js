@@ -6,6 +6,7 @@ import { fillMissingAuthors, sweepAuthors } from '../lib/author-backfill.js';
 import { classify } from '../lib/classify.js';
 import { semanticDedupe } from '../lib/dedupe-semantic.js';
 import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
+import { sendWhatsAppUrgent } from '../lib/whatsapp.js';
 import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
 import { renderBulletin, renderUrgent, sendBulletin } from '../lib/email.js';
 import { authorFromEntry, fetchAuthor, cleanAuthor } from '../lib/author.js';
@@ -664,13 +665,15 @@ export default async function handler(req, res) {
     await Promise.all(
       urgent.map((item) => {
         const subject = `URGENT — ${item.headline}`.slice(0, 140);
-        // Email is the primary channel; the optional webhook (Slack/Teams/
-        // WhatsApp-via-bridge) fires alongside it and is fail-soft internally.
+        // Email is the primary channel; the optional webhook (Slack/Teams) and
+        // WhatsApp DMs fire alongside it, each fail-soft internally (no-op unless
+        // configured), so a delivery-channel outage never blocks the others.
         return Promise.all([
           sendBulletin(renderUrgent(item, boardUrl), subject).catch((e) => {
             console.error('urgent send failed', item.hash, e.message);
           }),
           postUrgentWebhook(item, boardUrl),
+          sendWhatsAppUrgent(item).catch((e) => console.error('whatsapp urgent failed', e.message)),
         ]);
       })
     );

@@ -18,6 +18,7 @@ import {
 } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
+import { sendWhatsAppUrgent, whatsappStatus } from '../lib/whatsapp.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
 // function room beyond the default; every other admin op returns in well under a second.
@@ -42,6 +43,7 @@ export default async function handler(req, res) {
         try { missing = await countMissingAuthor({ days }); } catch { missing = null; }
         return res.status(200).json({ missing, days });
       }
+      if (resource === 'whatsapp-status') return res.status(200).json(whatsappStatus());
       return res.status(200).json(await allSubscribers());
     }
 
@@ -52,6 +54,16 @@ export default async function handler(req, res) {
         // remaining is 0. Runs the same lib as the daily backfill + ?backfillAuthors.
         const result = await sweepAuthors({ days: req.body?.days, limit: req.body?.limit });
         await auditReq(req, who, 'authors.backfill', 'items', result);
+        return res.status(200).json({ ok: true, ...result });
+      }
+      if (resource === 'whatsapp-test') {
+        // Deliver a sample urgent alert to the configured recipients so ops can
+        // verify the number, opt-in, and template approval before going live.
+        const sample = { brand: 'Vodafone', sentiment: 'negative', importance: 5,
+          headline: 'Test alert from PR Radar — please ignore',
+          pr_angle: 'Action · This is a WhatsApp delivery test' };
+        const result = await sendWhatsAppUrgent(sample);
+        await auditReq(req, who, 'whatsapp.test', who.actor, result);
         return res.status(200).json({ ok: true, ...result });
       }
       if (resource === 'users') {
