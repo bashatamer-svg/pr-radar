@@ -465,9 +465,13 @@ export default async function handler(req, res) {
   // Parallel, fail-soft (a miss leaves author null → "—"). The resolved URL is
   // cached onto the item so the insert below populates resolved_url — making
   // /api/go shares instant from day one — and the card's primary link becomes the
-  // clean publisher URL, not the un-tappable Google wrapper. Skipped on the
-  // hourly urgent-only check (protect its speed) and on dry smoke-tests.
-  if (!dry && !urgentOnly && !debug) {
+  // clean publisher URL, not the un-tappable Google wrapper. Runs on the 30-min
+  // urgent poll TOO: the poll is where most brand stories land first, and skipping
+  // it left them author-less until the next 05:00 daily backfill (~up to 17h of
+  // "—" on fresh cards). Cost is bounded — a poll usually has 0–3 new relevant
+  // items, the map is parallel, and quiet polls early-return long before here.
+  // Skipped only on dry smoke-tests and ?debug=1 traces.
+  if (!dry && !debug) {
     await Promise.all(
       classified
         .filter((i) => i.is_relevant)
