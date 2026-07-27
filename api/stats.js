@@ -44,7 +44,12 @@ const NARR_STOP = new Set([
 // Brand tokens steer clustering but are stripped from the generated NAME (the
 // name shows the theme; the brand is a separate field/prefix).
 const NARR_BRAND = new Set([
-  'vodafone', 'فودافون', 'orange', 'اورنج', 'أورنج', 'we', 'وي', 'etisalat', 'اتصالات', 'telecom', 'e&',
+  'vodafone', 'فودافون', 'ڤودافون', 'orange', 'اورنج', 'أورنج', 'we', 'وي', 'etisalat', 'اتصالات', 'telecom', 'e&',
+  // Company-name morphology: "المصرية للاتصالات" is Telecom Egypt's NAME — its
+  // two words were counting as two shared "theme" tokens and glued every WE
+  // corporate story together.
+  'المصرية', 'للاتصالات', 'والاتصالات',
+  'cash', 'كاش',   // product token: "Vodafone Cash" steers like a brand, it isn't a theme
 ]);
 // Generic sector vocabulary. In a MOBILE-market monitor every second story says
 // "mobile", "operators", "four", "network", "service" — so these can never make
@@ -56,8 +61,14 @@ const NARR_GENERIC = new Set([
   'four', 'major', 'service', 'services', 'company', 'companies', 'customers',
   'app', 'apps', 'digital', 'launch', 'launches', 'launched', 'announces', 'announced',
   'million', 'billion', 'first', 'largest', 'through', 'across',
+  // Corporate-PR filler — every partnership/deal story says these, so they can't
+  // link two stories ("strategic partnership", "implementation", "agreement"
+  // merged TE's unified-card story with Orange's carry-on project).
+  'implementation', 'cooperation', 'partnership', 'partnerships', 'strategic',
+  'project', 'projects', 'agreement', 'agreements', 'discuss', 'discusses', 'discussed', 'government',
   'محمول', 'المحمول', 'موبايل', 'شبكة', 'شبكات', 'خدمة', 'خدمات', 'شركات', 'الشركات',
   'هاتف', 'الهاتف', 'عملاء', 'العملاء', 'مليون', 'مليار',
+  'شراكة', 'تعاون', 'التعاون', 'استراتيجية', 'استراتيجي', 'اتفاقية', 'اتفاق',
 ]);
 const narrTokens = (s) => String(s || '')
   .toLowerCase().replace(/[^a-z0-9؀-ۿ ]/g, ' ').split(/\s+/)
@@ -74,6 +85,14 @@ const titleCase = (s) => s.replace(/\b\p{L}/gu, (m) => m.toUpperCase());
 // Cluster relevant items into named narratives with a per-day volume series,
 // sentiment split, and a "rising" flag (accelerating in the back third of the
 // window). Returns the top `limit` narratives, rising first.
+// Catch-all categories carry no theme information of their own, so two stories
+// there must share MORE distinctive tokens to count as one narrative — generic
+// business pairs ("stake sale", "strategic partnership") glued different
+// companies' corporate stories together. Focused categories (pricing, network,
+// vodafone_cash…) already narrow the theme, so 2 shared tokens stay enough
+// ("price increases", "roaming price").
+const NARR_CATCHALL = new Set(['corporate', 'other', 'competitor']);
+
 function buildNarratives(items, days, dayIdx, { minStories = 2, threshold = 0.22, limit = 12 } = {}) {
   const clusters = [];
   for (const it of items) {
@@ -81,22 +100,30 @@ function buildNarratives(items, days, dayIdx, { minStories = 2, threshold = 0.22
     if (!toks.size) continue;
     const strong = strongToks(`${it.headline} ${it.summary}`);
     const cat = it.category || 'other';
-    // Join the best same-category cluster that matches on EITHER overall overlap
-    // (Jaccard ≥ threshold) OR ≥2 shared distinctive tokens; pick the strongest.
+    const need = NARR_CATCHALL.has(cat) ? 3 : 2;
+    // Join the best same-category cluster where the item matches SOME MEMBER
+    // pairwise — never the cluster's pooled tokens. Pooling snowballed: every
+    // join grew the pool, so a big cluster eventually matched anything in its
+    // category (the 16-story "corporate" mega-cluster). Pairwise keeps a chain
+    // honest: each link must resemble an actual story, not the pile.
     let best = null, bestScore = 0;
     for (const c of clusters) {
       if (c.category !== cat) continue;
-      const j = jaccard(c.tokens, toks);
-      const sh = sharedCount(c.strong, strong);
-      const score = Math.max(j, sh >= 2 ? 0.2 + 0.02 * sh : 0);
-      if (score > bestScore && (j >= threshold || sh >= 2)) { bestScore = score; best = c; }
+      let score = 0, qualifies = false;
+      for (const m of c.members) {
+        const j = jaccard(m.toks, toks);
+        const sh = sharedCount(m.strong, strong);
+        if (j >= threshold || sh >= need) qualifies = true;
+        const s = Math.max(j, sh >= need ? 0.2 + 0.02 * sh : 0);
+        if (s > score) score = s;
+      }
+      if (qualifies && score > bestScore) { bestScore = score; best = c; }
     }
     if (best) {
       best.items.push(it);
-      for (const t of toks) best.tokens.add(t);
-      for (const t of strong) best.strong.add(t);
+      best.members.push({ toks, strong });
     } else {
-      clusters.push({ category: cat, tokens: new Set(toks), strong: new Set(strong), items: [it] });
+      clusters.push({ category: cat, members: [{ toks, strong }], items: [it] });
     }
   }
 
