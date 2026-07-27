@@ -216,8 +216,13 @@
   .cov[open] summary .chev{transform:rotate(90deg)}
   .cov[open] summary{border-radius:11px 11px 0 0;border-bottom:none}
   .cov .rows{background:var(--card);border:1px solid var(--hair);border-top:none;border-radius:0 0 11px 11px;padding:9px 13px}
-  .cov .row{font-size:12px;line-height:1.65;color:var(--ink-2);padding:2px 0}
-  .cov .row a{color:var(--ink-2);text-decoration:none;font-weight:600}
+  .cov .row{font-size:12px;line-height:1.65;color:var(--ink-2);padding:3px 0}
+  /* Linked outlets must LOOK clickable — red like every other link, with a small
+     open-in-new arrow; outlets with no URL stay plain text. */
+  .cov .row a{color:var(--red);text-decoration:none;font-weight:600}
+  .cov .row a::after{content:" ↗";font-size:10px;color:var(--faint)}
+  .cov .row a:hover{text-decoration:underline}
+  .cov .row a:hover::after{color:var(--red)}
   .cov .row a:hover{color:var(--red)}
   .cov .row .au{color:var(--faint)}
 
