@@ -46,14 +46,27 @@ const NARR_STOP = new Set([
 const NARR_BRAND = new Set([
   'vodafone', 'فودافون', 'orange', 'اورنج', 'أورنج', 'we', 'وي', 'etisalat', 'اتصالات', 'telecom', 'e&',
 ]);
+// Generic sector vocabulary. In a MOBILE-market monitor every second story says
+// "mobile", "operators", "four", "network", "service" — so these can never make
+// two stories "the same theme". Without this, a ticketing how-to and a crypto
+// settlement piece clustered because both said "four ... mobile ...". Excluded
+// from the distinctive-token bridge AND from generated cluster names.
+const NARR_GENERIC = new Set([
+  'mobile', 'phone', 'phones', 'operator', 'operators', 'network', 'networks',
+  'four', 'major', 'service', 'services', 'company', 'companies', 'customers',
+  'app', 'apps', 'digital', 'launch', 'launches', 'launched', 'announces', 'announced',
+  'million', 'billion', 'first', 'largest', 'through', 'across',
+  'محمول', 'المحمول', 'موبايل', 'شبكة', 'شبكات', 'خدمة', 'خدمات', 'شركات', 'الشركات',
+  'هاتف', 'الهاتف', 'عملاء', 'العملاء', 'مليون', 'مليار',
+]);
 const narrTokens = (s) => String(s || '')
   .toLowerCase().replace(/[^a-z0-9؀-ۿ ]/g, ' ').split(/\s+/)
   .filter((w) => w.length >= 3 && !NARR_STOP.has(w));
-// Distinctive tokens — long enough + non-brand — are what make two stories "the
-// same theme" even when their overall wording barely overlaps ("roaming price"
-// shared across otherwise-different headlines). Mirrors dedupe-semantic's
-// strong-token bridge.
-const strongToks = (s) => new Set([...narrTokens(s)].filter((w) => w.length >= 4 && !NARR_BRAND.has(w)));
+// Distinctive tokens — long enough + non-brand + non-generic — are what make two
+// stories "the same theme" even when their overall wording barely overlaps
+// ("roaming price" shared across otherwise-different headlines). Mirrors
+// dedupe-semantic's strong-token bridge.
+const strongToks = (s) => new Set([...narrTokens(s)].filter((w) => w.length >= 4 && !NARR_BRAND.has(w) && !NARR_GENERIC.has(w)));
 const jaccard = (a, b) => { if (!a.size || !b.size) return 0; let i = 0; for (const x of a) if (b.has(x)) i++; return i / (a.size + b.size - i); };
 const sharedCount = (a, b) => { let i = 0; for (const x of a) if (b.has(x)) i++; return i; };
 const titleCase = (s) => s.replace(/\b\p{L}/gu, (m) => m.toUpperCase());
@@ -102,7 +115,7 @@ function buildNarratives(items, days, dayIdx, { minStories = 2, threshold = 0.22
       if (s === 'negative') negative++; else if (s === 'positive') positive++; else neutral++;
       const b = brandOf(it);
       brandCount[b] = (brandCount[b] || 0) + 1;
-      for (const t of new Set(narrTokens(it.headline))) if (!NARR_BRAND.has(t)) freq.set(t, (freq.get(t) || 0) + 1);
+      for (const t of new Set(narrTokens(it.headline))) if (!NARR_BRAND.has(t) && !NARR_GENERIC.has(t)) freq.set(t, (freq.get(t) || 0) + 1);
     }
     const brand = Object.entries(brandCount).sort((a, b) => b[1] - a[1])[0][0];
     const ranked = [...freq.entries()].sort((a, b) => b[1] - a[1]);
