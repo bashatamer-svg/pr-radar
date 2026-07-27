@@ -181,7 +181,7 @@
   .sent.negative{background:var(--neg-bg);color:var(--red-deep);box-shadow:inset 0 0 0 1px var(--neg-line)}
   .sent.positive{background:var(--pos-bg);color:var(--pos);box-shadow:inset 0 0 0 1px var(--pos-line)}
   .sent.neutral{background:var(--neu-bg);color:var(--neu);box-shadow:inset 0 0 0 1px var(--neu-line)}
-  .by{color:var(--ink-2);font-weight:500} .by.none{color:var(--faint)}
+  .by{color:var(--ink-2);font-weight:500} .by.none{color:var(--faint)} .by.desk{color:var(--muted)}
   .due{margin-left:auto;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;
        background:#fff5e6;color:var(--amber);box-shadow:inset 0 0 0 1px #f5dcb0}
   .due.hot{background:var(--neg-bg);color:var(--red-deep);box-shadow:inset 0 0 0 1px var(--neg-line)}
@@ -532,7 +532,14 @@ function cardHtml(it){
   const cat=it.category?`<span class="cat">${esc(String(it.category).replace(/_/g,' '))}</span>`:'';
   const age=ageLabel(it); const ageEl=age?`<span class="age">${esc(age)}</span>`:'';
   const href=it.id?`/api/go?id=${it.id}`:(it.url||'#');
-  const by=it.author?`<span class="by">By ${esc(it.author)}</span>`:`<span class="by none">Author —</span>`;
+  // Attribution is never blank: a person byline when we have one, else the
+  // publication's newsroom (unbylined copy is desk-written — that IS the author).
+  // DISPLAY-ONLY fallback: nothing is written to the DB, so the journalist
+  // analytics and the authorless-backfill counter stay clean.
+  const desk=(Array.isArray(it.instances)&&it.instances[0]&&it.instances[0].outlet)||it.source||'';
+  const by=it.author?`<span class="by">By ${esc(it.author)}</span>`
+    :desk?`<span class="by desk" title="No individual byline — attributed to the publication's newsroom">${esc(desk)} · newsroom</span>`
+    :`<span class="by none">Author —</span>`;
   const due=dueLabel(it); const dueEl=due?`<span class="due ${sent==='negative'?'hot':''}">⧗ ${esc(due)}</span>`:'';
   const fb=it.feedback;
   const pinned=it.team_share===true, hidden=it.team_share===false;
