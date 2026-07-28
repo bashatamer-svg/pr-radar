@@ -15,6 +15,7 @@ const items = [
   { id: 1, brand: 'Vodafone', headline: 'Vodafone Cash outage angers users', summary: 's', sentiment: 'negative', importance: 5, category: 'vodafone_cash', source: 'Youm7', author: 'Ahmed Ali', url: 'https://news/1', resolved_url: 'https://news/1', pr_angle: 'p', published_at: now, seen_at: now },
   { id: 2, brand: 'Vodafone', headline: 'Vodafone wins network award', summary: 's', sentiment: 'positive', importance: 3, category: 'brand', source: 'Ahram', author: null, url: 'https://news/2', resolved_url: '', pr_angle: '', published_at: now, seen_at: now },
   { id: 3, brand: 'Orange', headline: 'Orange billing glitch', summary: 's', sentiment: 'negative', importance: 4, category: 'billing', source: 'Masrawy', author: null, url: 'https://news/3', resolved_url: '', pr_angle: '', published_at: now, seen_at: now },
+  { id: 4, brand: 'market', headline: 'NTRA announces new spectrum auction', summary: 's', sentiment: 'neutral', importance: 3, category: 'regulatory', source: 'Ahram', author: null, url: 'https://news/4', resolved_url: '', pr_angle: '', published_at: now, seen_at: now },
 ];
 const prevItems = [items[2]]; // lighter prior window → deltas are non-zero
 
@@ -57,11 +58,21 @@ assert.ok(r.sent.includes('Vodafone Cash outage angers users'), 'story in the lo
 assert.ok(r.sent.includes('Ahmed Ali'), 'byline shown when known');
 assert.ok(r.sent.includes('newsroom'), 'authorless rows fall back to newsroom');
 assert.ok(r.sent.includes('1 Jul') && r.sent.includes('7 Jul 2026'), 'range label names both dates');
+
+// coverage log is grouped by operator, then the wider market
+const iVod = r.sent.indexOf('Vodafone&nbsp;<span');
+const iOrg = r.sent.indexOf('Orange&nbsp;<span');
+const iMkt = r.sent.indexOf('Market &amp; sector&nbsp;<span');
+assert.ok(iVod >= 0 && iOrg >= 0 && iMkt >= 0, 'operator + market group headers present');
+assert.ok(iVod < iOrg && iOrg < iMkt, 'groups ordered: Vodafone → Orange → Market');
+assert.ok(r.sent.indexOf('Vodafone Cash outage angers users') < iOrg, 'Vodafone stories inside the Vodafone group');
+assert.ok(r.sent.indexOf('NTRA announces new spectrum auction') > iMkt, 'sector story lands under Market & sector');
+assert.ok(/· 2 stories/.test(r.sent), 'group header carries its story count');
 assert.ok(r.sent.includes('Print / save as PDF'), 'print button on the export view');
 assert.ok(!/[?&]t=/.test(r.sent), 'no token in any link');
 
-// exec summary reflects the data: 3 items, 2 negative, needs-response headline
-assert.ok(/<b>3<\/b> brand-relevant/.test(r.sent), 'exec: item count');
+// exec summary reflects the data: 4 items, 2 negative, needs-response headline
+assert.ok(/<b>4<\/b> brand-relevant/.test(r.sent), 'exec: item count');
 assert.ok(/<b>2<\/b> ran negative/.test(r.sent), 'exec: negative count');
 assert.ok(/needs-response bar/.test(r.sent) && /Vodafone Cash outage/.test(r.sent), 'exec: top negative surfaced');
 

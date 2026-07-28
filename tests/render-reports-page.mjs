@@ -51,6 +51,17 @@ assert.strictEqual(await page.getAttribute('.chip[data-days="7"]', 'aria-pressed
 await page.click('.chip[data-days="30"]');
 const span = await page.evaluate(() => (new Date(document.querySelector('#to').value) - new Date(document.querySelector('#from').value)) / 864e5 + 1);
 assert.strictEqual(span, 30, '30-day preset spans 30 days inclusive');
+// daily extraction: Today chip → a single day (from = to = today)
+await page.click('.chip[data-days="1"]');
+const day = await page.evaluate(() => ({ from: document.querySelector('#from').value, to: document.querySelector('#to').value }));
+assert.strictEqual(day.from, cairoToday, 'Today chip: from = today');
+assert.strictEqual(day.to, cairoToday, 'Today chip: to = today');
+// quarterly extraction: This quarter chip → from = first day of the quarter
+await page.click('.chip[data-days="quarter"]');
+const q = await page.evaluate(() => document.querySelector('#from').value);
+const m = Number(cairoToday.slice(5, 7)), qm = m - ((m - 1) % 3);
+assert.strictEqual(q, `${cairoToday.slice(0, 4)}-${String(qm).padStart(2, '0')}-01`, 'quarter chip: from = quarter start');
+assert.strictEqual(await page.evaluate(() => document.querySelector('#to').value), cairoToday, 'quarter chip: to = today');
 
 // bad range (to < from) → inline error, API never called
 await page.fill('#from', '2026-07-20');
