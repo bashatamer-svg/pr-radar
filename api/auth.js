@@ -10,7 +10,7 @@
 // create an account or sign in. Accounts are created pre-confirmed via the admin
 // API, so NO confirmation email is sent — password login needs no email at all.
 
-import { roleFor, requireRole, auditReq, adminSetPassword, ipOf } from '../lib/auth.js';
+import { roleFor, requireRole, auditReq, adminSetPassword, adminFindUser, ipOf } from '../lib/auth.js';
 import { authFailuresSince, addAudit, requestAccess } from '../lib/db.js';
 import { sendBulletin } from '../lib/email.js';
 
@@ -74,7 +74,14 @@ export default async function handler(req, res) {
       if (role === 'admin') return res.status(403).json({ error: 'Admin accounts are set up by ops, not self-created. Ask ops to set your password.' });
       try {
         const outcome = await adminCreateUser(email, password);
-        if (outcome === 'exists') return res.status(409).json({ error: 'an account already exists for this email — sign in instead', exists: true });
+        if (outcome === 'exists') {
+          // Tell the user WHEN the account was created — the password they just
+          // typed was NOT saved (deliberate: re-signup must never overwrite an
+          // existing account's password). Fail-soft on the date lookup.
+          let created_at = null;
+          try { created_at = (await adminFindUser(email))?.created_at || null; } catch { /* date is a nicety */ }
+          return res.status(409).json({ error: 'an account already exists for this email — sign in instead', exists: true, created_at });
+        }
         await auditReq(req, { actor: email, role }, 'auth.signup', email, null);
         const tok = await passwordGrant(email, password);           // auto sign-in
         if (tok) return res.status(200).json({ ok: true, ...tok, role });

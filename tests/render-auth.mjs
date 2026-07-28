@@ -49,7 +49,7 @@ globalThis.fetch = async (url, opts = {}) => {
       if (authUsers.has(em)) return { ok: false, status: 422, json: async () => ({}), text: async () => 'User already registered' };
       authUsers.set(em, { id: 'u_' + em, password: b.password }); return ok({ id: 'u_' + em, email: em });
     }
-    if (m === 'GET') { return ok({ users: [...authUsers.entries()].map(([em, v]) => ({ id: v.id, email: em })) }); }
+    if (m === 'GET') { return ok({ users: [...authUsers.entries()].map(([em, v]) => ({ id: v.id, email: em, created_at: '2026-07-23T12:58:00Z' })) }); }
     if (m === 'PUT') {
       const id = u.split('/auth/v1/admin/users/')[1].split('?')[0]; const b = JSON.parse(opts.body);
       for (const [, v] of authUsers) if (v.id === id) v.password = b.password;
@@ -220,7 +220,9 @@ const su = await call(authHandler, { method: 'POST', body: { mode: 'signup', ema
 assert.strictEqual(su.code, 200, 'allowlisted viewer signup succeeds');
 assert.ok(su.body.access_token && su.body.role === 'viewer', 'viewer signup returns a session + role (auto sign-in, pre-confirmed, no email)');
 assert.ok(authUsers.has('signup.viewer@vodafone.com'), 'viewer account created in Supabase');
-assert.strictEqual((await call(authHandler, { method: 'POST', body: { mode: 'signup', email: 'signup.viewer@vodafone.com', password: 'password1' } })).code, 409, 'duplicate viewer signup → 409 (no password takeover)');
+const dup = await call(authHandler, { method: 'POST', body: { mode: 'signup', email: 'signup.viewer@vodafone.com', password: 'password1' } });
+assert.strictEqual(dup.code, 409, 'duplicate viewer signup → 409 (no password takeover)');
+assert.ok(dup.body.exists === true && dup.body.created_at === '2026-07-23T12:58:00Z', '409 body says WHEN the account was created');
 assert.ok(audit.some((a) => a.action === 'auth.signup'), 'signup audited');
 // ops provisions the admin account server-side (Task 1b bootstrap), then admin signs in
 authUsers.set('boss@vodafone.com', { id: 'u_boss', password: 'password1' });

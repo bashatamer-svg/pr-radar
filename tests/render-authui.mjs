@@ -19,6 +19,7 @@ const server = createServer((req, res) => {
     if (req.method === 'POST') { let b = ''; req.on('data', d => b += d); req.on('end', () => { const p = JSON.parse(b || '{}'); posted.push(p);
       if (p.mode === 'change_password') { if (p.current === 'secret123') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}'); } else { res.writeHead(401, { 'content-type': 'application/json' }); res.end('{"error":"your current password is incorrect"}'); } return; }
       if (p.mode === 'request') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}'); return; }
+      if (p.mode === 'signup' && p.email === 'exists@vodafone.com') { res.writeHead(409, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'an account already exists for this email — sign in instead', exists: true, created_at: '2026-07-23T12:58:00Z' })); return; }
       if (p.password === 'secret123' || p.mode === 'signup') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, access_token: 'viewer-token', refresh_token: 'r', role: 'viewer' })); } else { res.writeHead(401, { 'content-type': 'application/json' }); res.end('{"error":"wrong email or password"}'); } }); return; }
     if (view === 'config') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"supabaseUrl":"","anonKey":""}'); return; }
     if (view === 'me') {
@@ -101,6 +102,29 @@ const errs = [];
   assert.ok(/\/$|localhost:8903\/$/.test(page.url()), 'signed in and navigated to the board, got ' + page.url());
   assert.strictEqual(await page.getAttribute('body', 'data-role'), 'viewer', 'board loaded as viewer after sign-in');
   assert.ok(posted.some(p => p.mode === 'signin' && p.email === 'viewer@vodafone.com' && p.password === 'secret123'), 'posted a signin with email+password');
+  await page.close();
+}
+
+// 4a-bis) Re-signup on an EXISTING account: clear 409 message that says WHEN the
+// account was created and that the new password was NOT saved — and it must stay
+// VISIBLE after the auto-switch to the Sign-in tab (setMode used to clear it).
+{
+  const page = await browser.newPage();
+  page.on('pageerror', (e) => errs.push('dup:' + e.message));
+  await page.goto('http://localhost:8903/login', { waitUntil: 'networkidle' });
+  await page.click('#tabSignup');
+  await page.fill('#email', 'exists@vodafone.com');
+  await page.fill('#password', 'freshpassword1');
+  await page.fill('#confirm', 'freshpassword1');
+  await page.click('#btn');
+  await page.waitForSelector('#msg.err', { timeout: 3000 });
+  await page.waitForTimeout(150);   // would catch a late clearMsg() wipe
+  const dupMsg = await page.$eval('#msg', el => el.textContent);
+  assert.ok(await page.$eval('#msg', el => el.classList.contains('show')), '409 message is VISIBLE (not wiped by the tab switch)');
+  assert.ok(/23 July 2026/.test(dupMsg), '409 message names the creation date: ' + dupMsg);
+  assert.ok(/not saved/i.test(dupMsg) && /reset/i.test(dupMsg), '409 message says the new password was not saved + how to reset');
+  assert.strictEqual((await page.$eval('#btn', el => el.textContent)).trim(), 'Sign in', 'auto-switched to the Sign-in tab');
+  posted = posted.filter(p => p.email !== 'exists@vodafone.com');   // don't pollute later "no signup posted" checks
   await page.close();
 }
 

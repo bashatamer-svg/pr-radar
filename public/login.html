@@ -165,7 +165,13 @@
       const d=await r.json().catch(()=>({}));
       if(r.ok && d.access_token){ saveSession(d); location.href='/'; return; }
       if(r.ok){ show('ok','Account ready — signing you in…'); location.href='/'; return; }
-      if(r.status===409){ show('err','An account already exists for this email. Switch to <b>Sign in</b>.'); setMode('signin'); }
+      if(r.status===409){
+        // setMode FIRST — it ends with clearMsg(), which used to wipe this
+        // message the instant it was shown (why users missed it entirely).
+        setMode('signin');
+        const when=d.created_at?` on <b>${new Date(d.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</b>`:' before';
+        show('err',`This account was already created${when}, so the password you just typed was <b>not</b> saved. Sign in with the password chosen back then — or, if it's forgotten, ask an admin to reset it (Admin → Users → “Set password”).`);
+      }
       else if(r.status===403){ show('err', (d.error || "This email isn't authorised.") + ' Use <b>Request access</b> to ask an admin.'); }
       else if(r.status===401){ show('err','Wrong email or password.'); }
       else { show('err', d.error || 'Something went wrong. Please try again.'); }
