@@ -1,0 +1,108 @@
+// Task 16 — admin.html Users + Audit tabs (session auth, mocked /api/admin).
+import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
+import { chromium } from 'playwright-core';
+import assert from 'node:assert';
+
+const DIR = new URL('..', import.meta.url).pathname + '/public';
+const iso = '2026-07-20T00:00:00Z';
+let users = [
+  { id: 1, email: 'admin@vodafone.com', role: 'admin', active: true, created_at: iso },
+  { id: 2, email: 'viewer@vodafone.com', role: 'viewer', active: true, created_at: iso },
+];
+let audit = [{ id: 1, actor: 'admin@vodafone.com', actor_role: 'admin', action: 'user.add', target: 'viewer@vodafone.com', detail: { role: 'viewer' }, created_at: iso }];
+let requests = [{ id: 5, email: 'newcomer@vodafone.com', created_at: iso }];
+let nextId = 6;
+
+const server = createServer((req, res) => {
+  const u = new URL(req.url, 'http://x');
+  const j = (d) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(d)); };
+  const nc = () => { res.writeHead(204); res.end(); };
+  if (u.pathname === '/api/auth') {
+    if (u.searchParams.get('view') === 'config') return j({ supabaseUrl: '', anonKey: '' });
+    if (u.searchParams.get('view') === 'me') return j({ email: 'admin@vodafone.com', role: 'admin', kind: 'user' });
+  }
+  if (u.pathname === '/api/admin') {
+    const view = u.searchParams.get('view'); const resource = u.searchParams.get('resource');
+    if (req.method === 'GET') {
+      if (view === 'users') return j(users);
+      if (view === 'requests') return j(requests);
+      if (view === 'audit') return j(audit);
+      if (view === 'author-gap') return j({ missing: 5, days: 7 });
+      if (view === 'whatsapp-status') return j({ enabled: true, hasToken: true, hasPhoneId: true, recipients: 2, template: 'pr_urgent' });
+      if (view === 'feedback') return j([]);
+      return j([]); // subscribers (boot probe)
+    }
+    if (req.method === 'POST' && resource === 'backfill-authors') { let b = ''; req.on('data', d => b += d); req.on('end', () => j({ ok: true, days: 7, limit: 40, scanned: 3, filled: 2, remaining: 1, unresolved: 1, fetchFailed: 0, noByline: 0, writeFailed: 0, aiEnabled: true })); return; }
+    if (req.method === 'POST' && resource === 'whatsapp-test') { let b = ''; req.on('data', d => b += d); req.on('end', () => j({ ok: true, sent: 2, failed: 0, recipients: 2 })); return; }
+    if (req.method === 'POST' && resource === 'users') { let b = ''; req.on('data', d => b += d); req.on('end', () => { const row = { id: nextId++, ...JSON.parse(b), active: true, created_at: iso }; users.push(row); audit.unshift({ id: 9, actor: 'admin@vodafone.com', actor_role: 'admin', action: 'user.add', target: row.email, created_at: iso }); j({ ok: true, user: row }); }); return; }
+    if (req.method === 'PATCH') { let b = ''; req.on('data', d => b += d); req.on('end', () => { if (resource === 'requests') { const id = JSON.parse(b || '{}').id; requests = requests.filter(x => x.id !== id); } nc(); }); return; }
+    if (req.method === 'DELETE') { const id = Number(u.searchParams.get('id')); if (resource === 'requests') { requests = requests.filter(x => x.id !== id); } else { users = users.filter(x => x.id !== id); } return nc(); }
+  }
+  const f = u.pathname === '/admin' ? '/admin.html' : (u.pathname === '/' ? '/index.html' : u.pathname);
+  try { const b = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(b); } catch { res.writeHead(404); res.end('nf'); }
+});
+await new Promise((r) => server.listen(8904, r));
+
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const page = await browser.newPage({ viewport: { width: 900, height: 1000 } });
+const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('dialog', d => d.accept());
+await page.addInitScript(() => localStorage.setItem('pr_session', JSON.stringify({ access_token: 'admin-token', refresh_token: 'r' })));
+await page.goto('http://localhost:8904/admin', { waitUntil: 'networkidle' });
+await page.waitForSelector('#tabs:not([hidden])', { timeout: 4000 });
+
+// Users tab
+await page.click('.tab[data-tab="users"]');
+await page.waitForTimeout(200);
+assert.strictEqual((await page.$$('.row')).length, 2, 'two users listed');
+await page.fill('#uEmail', 'new.person@vodafone.com');
+await page.selectOption('#uRole', 'admin');
+await page.click('#uAddBtn');
+await page.waitForTimeout(250);
+assert.ok(users.find(u => u.email === 'new.person@vodafone.com' && u.role === 'admin'), 'admin added a new admin user');
+assert.strictEqual((await page.$$('.row')).length, 3, 'user list grew to 3');
+
+// Requests tab — a pending access request can be approved
+await page.click('.tab[data-tab="requests"]');
+await page.waitForTimeout(200);
+assert.ok(/newcomer@vodafone\.com/.test(await page.$eval('#content', el => el.textContent)), 'pending request shown');
+assert.strictEqual((await page.$$('.row')).length, 1, 'one pending request');
+await page.click('.row[data-id="5"] .btn.sm');   // Approve (viewer)
+await page.waitForTimeout(250);
+assert.ok(!requests.find(r => r.id === 5), 'approved request removed from the pending list');
+assert.strictEqual((await page.$$('.row')).length, 0, 'requests list now empty');
+
+// Audit tab
+await page.click('.tab[data-tab="audit"]');
+await page.waitForTimeout(250);
+const auditText = await page.$eval('#content', el => el.textContent);
+assert.ok(/user\.add/.test(auditText), 'audit tab shows a user.add entry');
+
+// Tools tab — the "Backfill authors" button runs the sweep and shows the summary
+await page.click('.tab[data-tab="tools"]');
+await page.waitForTimeout(200);
+assert.ok(await page.$('#baBtn'), 'Backfill authors button present');
+const gapText = await page.$eval('#baGap', el => el.textContent);
+assert.ok(/5 cards still missing an author in the last 7 days/.test(gapText), 'backlog indicator shows the count: ' + gapText);
+await page.click('#baBtn');
+await page.waitForTimeout(300);
+const baMsg = await page.$eval('#baMsg', el => el.textContent);
+assert.ok(/Filled 2 of 3/.test(baMsg) && /1 still missing/.test(baMsg) && /run again/.test(baMsg), 'backfill result shown with counts + repeat hint: ' + baMsg);
+assert.ok(/1 link wouldn.t resolve/.test(baMsg), 'backfill result explains WHY (unresolved link): ' + baMsg);
+
+// WhatsApp card — status shown, test button enabled + sends
+await page.waitForTimeout(150);
+const waStatus = await page.$eval('#waStatus', el => el.textContent);
+assert.ok(/Configured/.test(waStatus) && /2 recipients/.test(waStatus) && /pr_urgent/.test(waStatus), 'whatsapp status shows configured + recipients + template: ' + waStatus);
+assert.ok(!(await page.$eval('#waTestBtn', el => el.disabled)), 'test button enabled when configured');
+await page.click('#waTestBtn');
+await page.waitForTimeout(250);
+const waMsg = await page.$eval('#waMsg', el => el.textContent);
+assert.ok(/Sent to 2 of 2/.test(waMsg), 'whatsapp test result shown: ' + waMsg);
+
+await page.screenshot({ path: new URL('./out/', import.meta.url).pathname + 'admin-users.png', fullPage: true });
+const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+await browser.close(); server.close();
+if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }
+if (overflow > 1) { console.error('overflow', overflow); process.exit(1); }
+console.log('ALL TASK 16 ADMIN-UI TESTS PASSED — users list + add, audit tab render');
