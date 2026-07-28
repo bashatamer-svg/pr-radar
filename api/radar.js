@@ -817,6 +817,11 @@ export default async function handler(req, res) {
     const adminRecipients = previewTo
       ? [{ name: previewName, email: previewTo }]
       : parseNamedRecipients(process.env.RADAR_TO);
+    // Misconfiguration must be VISIBLE: with RADAR_TO unset this loop simply
+    // never ran — 200 OK, no error, no email, for days. Scream instead.
+    if (!adminRecipients.length && !dry) {
+      console.error('DAILY BULLETIN NOT SENT — RADAR_TO is unset/empty (no recipients). Set RADAR_TO in the Vercel env.');
+    }
     let adminCount = 0;
     for (const r of adminRecipients) {
       const html = renderBulletin({ items: digest, broken, scanned: raw.length, variant: 'admin', greetingName: r.name || null, unclassified: unclassifiedCount });
@@ -921,6 +926,14 @@ export default async function handler(req, res) {
     semanticDropped,
     digestCount: digest.length,
     emailed: bulletinSent ? digest.length : 0,
+    // Cron responses aren't read by a human, but ops curls are — name the
+    // reason a daily produced no email instead of leaving emailed:0 to guess at.
+    bulletinSkipped: !urgentOnly && !bulletinSent
+      ? (dailyAlreadySent ? 'already sent today'
+        : dry ? 'dry run'
+        : !process.env.RADAR_TO && !previewTo ? 'RADAR_TO not set — configure it in the Vercel env'
+        : 'send failed — see logs')
+      : null,
     dailyAlreadySent,
     urgent: urgent.length,
     watchlist: watchlistSent,
