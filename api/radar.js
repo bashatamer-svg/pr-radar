@@ -10,7 +10,7 @@ import { sendWhatsAppUrgent } from '../lib/whatsapp.js';
 import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
 import { renderBulletin, renderUrgent, sendBulletin } from '../lib/email.js';
 import { authorFromEntry, fetchAuthor, cleanAuthor } from '../lib/author.js';
-import { resolveUrl, isGoogleNews } from '../lib/resolve.js';
+import { resolveUrl, isGoogleNews, isNonArticlePage } from '../lib/resolve.js';
 import { safeEqual } from '../lib/auth.js';
 
 export const config = { maxDuration: 60 };
@@ -485,6 +485,16 @@ export default async function handler(req, res) {
           let resolved = primary.url;
           try { resolved = await resolveUrl(primary.url); } catch { /* keep original */ }
           if (resolved && !isGoogleNews(resolved)) {
+            // A tag/keyword/search archive is NOT an article — it has no real
+            // headline or byline, so the classifier fabricates an event and the
+            // author scrape returns page furniture ("كلمة البحث هنا"). Kill the
+            // card here, before it reaches the board, alerts or reports.
+            if (isNonArticlePage(resolved)) {
+              it.is_relevant = false;
+              it.reason = 'tag/archive page, not an article';
+              it.resolved_url = resolved;
+              return;
+            }
             it.resolved_url = resolved;            // cache onto the card row
             if (insts[0]) insts[0].url = resolved; // primary instance gets the clean link
           }

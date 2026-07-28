@@ -1,6 +1,7 @@
-// VERIFY step 3 — 13 author unit checks (must be 13/13).
+// VERIFY step 3 — 20 author unit checks (must be 20/20).
 import assert from 'node:assert';
-import { extractAuthorFromHtml, cleanAuthor } from '../lib/author.js';
+import { extractAuthorFromHtml, cleanAuthor, fetchAuthorProbe } from '../lib/author.js';
+import { isNonArticlePage } from '../lib/resolve.js';
 
 let pass = 0;
 const check = (label, actual, expected) => {
@@ -36,6 +37,23 @@ check('cleanAuthor Al-Mal - John Smith', cleanAuthor('Al-Mal - John Smith', 'Al-
 check('cleanAuthor plain person', cleanAuthor('Ahmed Salah', 'Youm7'), 'Ahmed Salah');
 // 13. rel=author visible byline
 check('rel=author byline', extractAuthorFromHtml('<a rel="author" href="/x">Nourhan Fahmy</a>'), 'Nourhan Fahmy');
+// 14. UI junk — search-box placeholder scraped as byline (the real production
+//     bug: "كلمة البحث هنا" = "search word here", Sada El-Balad's template)
+check('UI junk كلمة البحث هنا', cleanAuthor('كلمة البحث هنا', 'صدى البلد'), null);
+// 15. UI junk — English template furniture
+check('UI junk Search Keywords', cleanAuthor('Search Keywords', 'Youm7'), null);
+// 16. هنا is ALSO a real given name — must still pass as a person
+check('هنا الزاهد still a person', cleanAuthor('هنا الزاهد', 'Youm7'), 'هنا الزاهد');
+// 17-19. non-article pages: tag/keyword archives caught, WP permalink NOT
+check('keyword page flagged', isNonArticlePage('https://besraha.com/keyword/318029/1'), true);
+check('tag page flagged', isNonArticlePage('https://elghad.news/tag/%D8%B4%D8%B1%D9%83%D8%A9/'), true);
+check('WP /archives/ permalink NOT flagged', isNonArticlePage('https://alahalygate.com/archives/341270'), false);
+// 20. probe refuses to scrape a non-article page (no fetch attempted)
+let fetches = 0;
+globalThis.fetch = async () => { fetches++; throw new Error('must not fetch a tag page'); };
+const probe = await fetchAuthorProbe('https://besraha.com/keyword/318029/1');
+assert.strictEqual(fetches, 0, 'probe fetched a tag page');
+check('probe skips tag page', `${probe.author}|${probe.outcome}`, 'null|no-byline');
 
-console.log(`\n${pass}/13 PASS`);
-assert.strictEqual(pass, 13, 'not all 13 passed');
+console.log(`\n${pass}/20 PASS`);
+assert.strictEqual(pass, 20, 'not all 20 passed');
