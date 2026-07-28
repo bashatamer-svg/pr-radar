@@ -30,6 +30,7 @@ are **skipped**, the unit suite still runs.
 | Trends narratives (clustering incl. real-data regression) | `render-narrative-cluster`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives` |
 | DB helpers (row-cap warnings) | `db-caps` |
 | Guide page | `render-guide` |
+| Link previews & branding (OG/Twitter tags, favicon, PNG assets) | `render-og` |
 
 `narr-fixture.mjs` is data (real production items captured 2026-07-27), not a test.
 
