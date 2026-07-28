@@ -135,7 +135,9 @@ const errs = [];
   await page.goto('http://localhost:8903/login', { waitUntil: 'networkidle' });
   await page.click('#tabRequest');
   assert.strictEqual((await page.$eval('#btn', el => el.textContent)).trim(), 'Request access', 'switches to Request access');
-  assert.strictEqual(await page.$eval('#password', el => getComputedStyle(el).display), 'none', 'password field hidden in request mode');
+  // hidden via its wrapper now (the in-field eye toggle wraps the input), so
+  // test actual visibility: offsetParent is null inside a display:none ancestor.
+  assert.strictEqual(await page.$eval('#password', el => el.offsetParent === null), true, 'password field hidden in request mode');
   await page.fill('#email', 'newcomer@vodafone.com');
   await page.click('#btn');
   await page.waitForSelector('#msg.ok', { timeout: 3000 });
