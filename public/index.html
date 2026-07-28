@@ -57,6 +57,7 @@
   .account .acctlink.guide{width:28px;height:28px;padding:0;border-radius:50%;display:grid;place-items:center;font-weight:800}
   @media (max-width:560px){
     .account .who,.account .acctlink.pw{display:none}
+    #reportsLink .tlabel{display:none}   /* icon-only Reports pill on phones */
     .top .clock,.ttl .sub{display:none}   /* declutter the header row on phones */
     .top{gap:8px;padding:0 12px}
   }
@@ -294,6 +295,7 @@
     <div class="mark" aria-hidden="true"><span class="sweep"></span><span class="glyph">PR</span></div>
     <div class="ttl"><div class="h1">PR Radar</div><div class="sub">Brand &amp; Reputation · Vodafone Egypt</div></div>
     <a class="trends" id="trendsLink" href="/stats" title="Trends — charts: share of voice &amp; sentiment over time"><span class="tic">📈</span> Trends</a>
+    <a class="trends" id="reportsLink" href="/reports" title="Reports — pick any date range, export as PDF or Word"><span class="tic">📄</span><span class="tlabel"> Reports</span></a>
     <div class="account" id="account"></div>
     <div class="clock"><div class="t" id="clockTime">—</div><div class="d" id="clockDate">—</div></div>
   </header>

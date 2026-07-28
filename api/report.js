@@ -1,68 +1,83 @@
-// Weekly / monthly PR report — printable HTML + opt-in Resend send.
+// PR report — printable HTML, Word download, opt-in Resend send.
 //
-//   GET /api/report?t=<RADAR_TOKEN>&period=week            → printable HTML
-//   GET /api/report?t=<RADAR_TOKEN>&period=month&days=30   → month view
-//   GET /api/report?...&send=1                             → also email it,
-//        but ONLY when REPORT_EMAIL_ENABLED=1 (off by default). A send request
-//        with the flag unset returns the HTML plus a note; it never emails.
+//   GET /api/report?period=week                    → printable weekly HTML
+//   GET /api/report?period=month&days=30           → month view
+//   GET /api/report?from=2026-07-01&to=2026-07-27  → CUSTOM range (Cairo days,
+//        inclusive) with executive summary + full coverage-log appendix
+//   …&format=doc                                   → same report as a Word
+//        (.doc) download — Word-flavoured HTML, no libraries, opens natively
+//   …&send=1                                       → also email it (admins /
+//        cron only), and ONLY when REPORT_EMAIL_ENABLED=1.
 //
-// Auth mirrors api/radar.js: RADAR_TOKEN (?t= or Bearer) for a human opening it,
-// or CRON_SECRET (Bearer, injected by Vercel Cron) for the optional weekly cron
-// in vercel.json. The cron passes &send=1, so it emails only when the env flag
-// is on — the schedule can sit dormant until the team opts in.
+// Auth: any signed-in user (viewer+) can VIEW/EXPORT — requireRole('viewer')
+// also accepts the RADAR_TOKEN (read-only) and CRON_SECRET service bearers.
+// The EMAIL send stays admin-only (cron's CRON_SECRET maps to a service admin).
 
-import { buildReport, renderReport } from '../lib/report.js';
+import { buildReport, buildReportRange, parseCairoRange, renderReport } from '../lib/report.js';
 import { sendBulletin } from '../lib/email.js';
-import { safeEqual } from '../lib/auth.js';
+import { requireRole } from '../lib/auth.js';
 
 export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
-  // Bearer only (no ?t= query token), constant-time.
-  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  const ok =
-    (process.env.CRON_SECRET && safeEqual(bearer, process.env.CRON_SECRET)) ||
-    (process.env.RADAR_TOKEN && safeEqual(bearer, process.env.RADAR_TOKEN));
-  if (!ok) return res.status(401).json({ error: 'unauthorized' });
+  const who = await requireRole(req, res, 'viewer');
+  if (!who) return; // 401/403 already sent
 
-  // Period → window. ?days wins if given (clamped); else week=7 / month=30.
-  const period = req.query?.period === 'month' ? 'month' : 'week';
-  const days = Math.max(1, Math.min(Number(req.query?.days) || (period === 'month' ? 30 : 7), 92));
-
-  let data;
-  try {
-    data = await buildReport({ days });
-  } catch (e) {
-    console.error('report build failed', e.message);
-    return res.status(500).json({ error: 'report build failed', detail: e.message });
-  }
-  const html = renderReport(data, { period });
-
-  // Opt-in email: default OFF. Only sends when the caller asked (send=1) AND
-  // REPORT_EMAIL_ENABLED=1. Recipients: REPORT_TO, falling back to RADAR_TO.
   const wantSend = req.query?.send === '1';
-  const enabled = process.env.REPORT_EMAIL_ENABLED === '1';
-  let sent = false;
-  let note = null;
-  if (wantSend && enabled) {
-    const to = process.env.REPORT_TO || process.env.RADAR_TO;
-    const subject = `PR Radar — ${period === 'month' ? 'Monthly' : 'Weekly'} report · ${data.totals.items} items, ${data.totals.negatives} negative`;
-    try {
-      await sendBulletin(html, subject, to);
-      sent = true;
-    } catch (e) {
-      console.error('report send failed', e.message);
-      note = `send failed: ${e.message}`;
+  const format = req.query?.format === 'doc' ? 'doc' : 'html';
+  const from = req.query?.from, to = req.query?.to;
+
+  let data, opts;
+  try {
+    if (from || to) {
+      // Custom range: exec summary + appendix, titled by its dates.
+      const range = parseCairoRange(from, to);
+      data = await buildReportRange(range);
+      const fmt = (ms, y) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(y ? { year: 'numeric' } : {}), timeZone: 'Africa/Cairo' });
+      const rangeText = `${fmt(range.fromMs, false)} – ${fmt(range.toMs - 1, true)}`;
+      opts = { title: 'Coverage report', rangeText, appendix: true, period: 'custom' };
+    } else {
+      const period = req.query?.period === 'month' ? 'month' : 'week';
+      const days = Math.max(1, Math.min(Number(req.query?.days) || (period === 'month' ? 30 : 7), 92));
+      data = await buildReport({ days });
+      opts = { period };
     }
-  } else if (wantSend && !enabled) {
-    note = 'REPORT_EMAIL_ENABLED not set — email skipped (printable report still returned)';
+  } catch (e) {
+    const bad = /must be|invalid date|before the|limited to/.test(e.message);
+    if (!bad) console.error('report build failed', e.message);
+    return res.status(bad ? 400 : 500).json({ error: bad ? e.message : 'report build failed' });
+  }
+  const html = renderReport(data, opts);
+
+  // Opt-in email: default OFF; admin/cron only; needs REPORT_EMAIL_ENABLED=1.
+  if (wantSend) {
+    if (who.role !== 'admin') return res.status(403).json({ error: 'sending the report is admin-only' });
+    const enabled = process.env.REPORT_EMAIL_ENABLED === '1';
+    let sent = false, note = null;
+    if (enabled) {
+      const to2 = process.env.REPORT_TO || process.env.RADAR_TO;
+      const subject = `PR Radar — ${opts.title || (opts.period === 'month' ? 'Monthly' : 'Weekly')} report · ${data.totals.items} items, ${data.totals.negatives} negative`;
+      try { await sendBulletin(html, subject, to2); sent = true; }
+      catch (e) { console.error('report send failed', e.message); note = `send failed: ${e.message}`; }
+    } else {
+      note = 'REPORT_EMAIL_ENABLED not set — email skipped (printable report still returned)';
+    }
+    return res.status(200).json({ period: opts.period, days: data.days, items: data.totals.items, negatives: data.totals.negatives, sent, note });
   }
 
-  // A send request (cron or explicit) gets a JSON status; a plain view request
-  // gets the printable HTML page.
-  if (wantSend) {
-    return res.status(200).json({ period, days, items: data.totals.items, negatives: data.totals.negatives, sent, note });
+  if (format === 'doc') {
+    // Word-flavoured HTML: Word (and Google Docs) open it natively — zero deps.
+    // The Office namespaces + mso print-view block make Word treat it as a
+    // print-layout document rather than "web layout".
+    const doc = html
+      .replace('<html lang="en"', '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" lang="en"')
+      .replace('<head>', `<head><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->`);
+    const name = from && to ? `pr-radar-report-${from}-to-${to}.doc` : `pr-radar-report-${data.days}d.doc`;
+    res.setHeader('Content-Type', 'application/msword; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    return res.status(200).send(doc);
   }
+
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   return res.status(200).send(html);
 }

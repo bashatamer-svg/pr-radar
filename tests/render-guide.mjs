@@ -20,6 +20,7 @@ for (const w of [390, 900]) {
   assert.ok(/tap to update/.test(text), 'auto-refresh pill explained');
   assert.ok(/Everything is clickable/.test(text), 'clickable Trends explained');
   assert.ok(/emailed the moment it lands/.test(text), 'urgent alerts explained');
+  assert.ok(/any date range/.test(text) && /Word/.test(text), 'Reports section explained');
   assert.ok(/sector-wide mobile-market news/.test(text), 'market-sector scope explained');
   assert.ok(/every Vodafone mention including regulatory/.test(text), 'Vodafone regulatory exception explained');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
