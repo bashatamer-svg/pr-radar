@@ -13,6 +13,7 @@ let users = [
 let audit = [{ id: 1, actor: 'admin@vodafone.com', actor_role: 'admin', action: 'user.add', target: 'viewer@vodafone.com', detail: { role: 'viewer' }, created_at: iso }];
 let requests = [{ id: 5, email: 'newcomer@vodafone.com', created_at: iso }];
 let nextId = 6;
+const patched = [];
 
 const server = createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
@@ -36,7 +37,7 @@ const server = createServer((req, res) => {
     if (req.method === 'POST' && resource === 'backfill-authors') { let b = ''; req.on('data', d => b += d); req.on('end', () => j({ ok: true, days: 7, limit: 40, scanned: 3, filled: 2, remaining: 1, unresolved: 1, fetchFailed: 0, noByline: 0, writeFailed: 0, aiEnabled: true })); return; }
     if (req.method === 'POST' && resource === 'whatsapp-test') { let b = ''; req.on('data', d => b += d); req.on('end', () => j({ ok: true, sent: 2, failed: 0, recipients: 2 })); return; }
     if (req.method === 'POST' && resource === 'users') { let b = ''; req.on('data', d => b += d); req.on('end', () => { const row = { id: nextId++, ...JSON.parse(b), active: true, created_at: iso }; users.push(row); audit.unshift({ id: 9, actor: 'admin@vodafone.com', actor_role: 'admin', action: 'user.add', target: row.email, created_at: iso }); j({ ok: true, user: row }); }); return; }
-    if (req.method === 'PATCH') { let b = ''; req.on('data', d => b += d); req.on('end', () => { if (resource === 'requests') { const id = JSON.parse(b || '{}').id; requests = requests.filter(x => x.id !== id); } nc(); }); return; }
+    if (req.method === 'PATCH') { let b = ''; req.on('data', d => b += d); req.on('end', () => { const body = JSON.parse(b || '{}'); patched.push({ resource, body }); if (resource === 'requests') { requests = requests.filter(x => x.id !== body.id); } nc(); }); return; }
     if (req.method === 'DELETE') { const id = Number(u.searchParams.get('id')); if (resource === 'requests') { requests = requests.filter(x => x.id !== id); } else { users = users.filter(x => x.id !== id); } return nc(); }
   }
   const f = u.pathname === '/admin' ? '/admin.html' : (u.pathname === '/' ? '/index.html' : u.pathname);
@@ -46,7 +47,10 @@ await new Promise((r) => server.listen(8904, r));
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const page = await browser.newPage({ viewport: { width: 900, height: 1000 } });
-const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('dialog', d => d.accept());
+const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+// Record every dialog; accept prompts WITH their default value (accept() alone
+// submits '' — which would fail the reset flow's generated-password prompt).
+const dialogs = []; page.on('dialog', d => { dialogs.push({ type: d.type(), msg: d.message(), def: d.defaultValue() }); d.accept(d.defaultValue()); });
 await page.addInitScript(() => localStorage.setItem('pr_session', JSON.stringify({ access_token: 'admin-token', refresh_token: 'r' })));
 await page.goto('http://localhost:8904/admin', { waitUntil: 'networkidle' });
 await page.waitForSelector('#tabs:not([hidden])', { timeout: 4000 });
@@ -61,6 +65,19 @@ await page.click('#uAddBtn');
 await page.waitForTimeout(250);
 assert.ok(users.find(u => u.email === 'new.person@vodafone.com' && u.role === 'admin'), 'admin added a new admin user');
 assert.strictEqual((await page.$$('.row')).length, 3, 'user list grew to 3');
+
+// Reset password — a strong temp password is GENERATED (admin doesn't invent
+// one), PATCHed to the API, then shown once for copying.
+dialogs.length = 0; patched.length = 0;
+await page.click('text=Reset password');   // first user row
+await page.waitForTimeout(300);
+assert.strictEqual(dialogs.length, 2, `reset flow shows 2 prompts, got ${dialogs.length}`);
+assert.ok(dialogs[0].def.length >= 12, 'a temp password is pre-generated');
+assert.ok(!/[01OIl]/.test(dialogs[0].def), 'temp password avoids ambiguous characters');
+const pwPatch = patched.find(p => p.resource === 'users' && p.body.password);
+assert.ok(pwPatch, 'reset PATCHed a password to the API');
+assert.strictEqual(pwPatch.body.password, dialogs[0].def, 'the generated password is what was applied');
+assert.ok(/Copy it now/.test(dialogs[1].msg) && dialogs[1].def === dialogs[0].def, 'password shown once for copying after apply');
 
 // Requests tab — a pending access request can be approved
 await page.click('.tab[data-tab="requests"]');

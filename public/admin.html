@@ -246,7 +246,7 @@ function userRow(u){
       <div class="nm">${u.name?esc(u.name):'—'} · added ${when(u.created_at)}${u.last_seen_at?` · seen ${when(u.last_seen_at)}`:''}</div>
     </div>
     <div class="acts">
-      <button class="btn ghost sm" type="button" title="Set a new password for this user" onclick="setUserPassword(${u.id},'${esc(u.email)}')">Set password</button>
+      <button class="btn ghost sm" type="button" title="Reset this user's password — generates a secure temporary one" onclick="setUserPassword(${u.id},'${esc(u.email)}')">Reset password</button>
       <button class="btn ghost sm" type="button" title="Toggle admin/viewer" onclick="toggleRole(${u.id},'${esc(u.role)}','${esc(u.email)}',this)">${u.role==='admin'?'Make viewer':'Make admin'}</button>
       <button class="toggle" type="button" aria-pressed="${!!u.active}" title="${u.active?'Active — click to block':'Blocked — click to allow'}" onclick="toggleUser(${u.id},'${esc(u.email)}',this)"></button>
       <button class="x" type="button" title="Remove user" onclick="removeUser(${u.id},'${esc(u.email)}')">✕</button>
@@ -286,11 +286,26 @@ async function addUser(){
     msg.textContent='Added ✓'; msg.className='formmsg ok'; await loadUsers();
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; btn.disabled=false; }
 }
+// RESET, not "change": a strong temporary password is GENERATED (the admin
+// never has to invent one) and pre-filled — accept it as-is, or type your own.
+// Shown once after applying so it can be copied and shared; the user changes
+// it themselves after signing in (Password link on the board).
+function genTempPassword(){
+  // unambiguous set (no 0/O, 1/l/I) — this gets read out over the phone
+  const chars='abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const buf=new Uint32Array(12); crypto.getRandomValues(buf);
+  return Array.from(buf,(v)=>chars[v%chars.length]).join('');
+}
 async function setUserPassword(id,email){
-  const pw=prompt(`Set a new password for ${email} (min 8 characters). Share it with them; they can change it later.`);
+  const gen=genTempPassword();
+  const pw=prompt(`Reset the password for ${email}.\n\nA secure temporary password has been generated — press OK to use it, or type your own (min 8 characters). They can change it after signing in.`, gen);
   if(pw==null) return;
   if(pw.length<8){ alert('Password must be at least 8 characters.'); return; }
-  try{ const r=await api({method:'PATCH',q:'&resource=users',body:{id,email,password:pw}}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } alert('Password updated for '+email+'.'); }catch(e){ alert('Network error.'); }
+  try{
+    const r=await api({method:'PATCH',q:'&resource=users',body:{id,email,password:pw}});
+    if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; }
+    prompt(`Password reset for ${email}. Copy it now — it won't be shown again:`, pw);
+  }catch(e){ alert('Network error.'); }
 }
 async function toggleRole(id,cur,email,btn){
   const next=cur==='admin'?'viewer':'admin';
