@@ -1,96 +1,157 @@
-# PR Radar — project guide for Claude
+# PR Radar — working brief for AI sessions
+
+## Keeping this file current (do this every session)
+
+A stale CLAUDE.md is worse than none. Update it **in the same commit** as the
+change it describes. Amend or delete stale lines — this is a brief, not a
+changelog. Verify every claim before adding it. Never include secrets, keys,
+project refs/IDs, or model identifiers.
+
+| If you changed… | Update section… |
+|---|---|
+| a table, column, or query shape | Data model |
+| an env var, cron, or vercel.json | Services / Deploy flow |
+| auth, tokens, roles | Hard rules |
+| the author pipeline, dedup, or classifier prompt | Layout notes + Gotchas |
+| email/report renderers | Gotchas (byte-identical rule) |
+| test suite structure or a new test | Commands + `tests/README.md` |
+| branch/deploy workflow | Deploy flow |
+| found repo↔live drift | Drift table |
+
+## What this is
 
 Daily brand & reputation monitor for **Vodafone Egypt** (vs Orange, WE, e&).
-Scans Egyptian press + Google News, AI-classifies each story (brand, tone,
-reach, PR angle), and serves a live board, trends, reports, and email/WhatsApp
-alerts to the PR & Communications team.
+Scans Egyptian press + Google News RSS, AI-classifies each story (brand, tone,
+reach 1–5, PR angle), serves a live board / trends / date-range reports, and
+sends email + WhatsApp alerts. Pure ESM Node on Vercel serverless + Supabase
+(PostgREST) + Resend. No framework, no build step. Production:
+`pr-radar.approvalavengers.com` — beta with real users.
 
-Production: `pr-radar.approvalavengers.com` (Vercel). Beta; users are being
-onboarded — breakage is visible to real people.
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `npm test` | Full suite (tests/run.mjs, one process per file). **Must be green before every commit.** |
+| `npm test -- <substr>` | Only tests whose filename matches |
+| `node --check <file>` | Syntax-check every changed file before commit |
+| `node scripts/make-og.mjs` | Regenerate OG card + favicon (only after redesigning them) |
+
+Browser tests need Chromium (`CHROMIUM_PATH`, default sandbox path) and skip
+gracefully without it. `tests/README.md` maps what covers what. Every shipped
+behaviour gets a regression test in the same commit.
+
+## Layout — where logic belongs
+
+| Path | What lives here |
+|---|---|
+| `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends + narrative clustering; `report.js` weekly/custom reports + Word export; `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
+| `lib/*.js` | ALL shared logic. `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit), `email.js` (email-client-safe renderer), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js` |
+| `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
+| `scripts/` | One-off generators run manually (OG images) |
+| `tests/*.mjs` | The suite. `narr-fixture.mjs` is captured production data, not a test |
+
+New shared behaviour goes in `lib/` and is imported by `api/`; never duplicate
+logic into a function file. New pages get a rewrite in `vercel.json`.
+
+## Services
+
+| Cron (vercel.json) | Schedule (UTC) | Notes |
+|---|---|---|
+| `/api/radar` | daily 05:00 | full run: ingest + daily bulletin (`RADAR_TO` + subscribers) + stored-author backfill |
+| `/api/radar?urgentOnly=1` | every 30 min | ingest + severity-5 instant email/WhatsApp; skips bulletin |
+| `/api/report?period=week&send=1` | Mon 06:00 | no-op unless `REPORT_EMAIL_ENABLED=1` |
+| `/api/geo?send=1` | Mon 07:00 | no-op unless `GEO_ENABLED=1` |
+
+Integrations: Supabase (service-role key, PostgREST), Anthropic (classifier +
+byline fallback), Resend (all email), WhatsApp Cloud API (dormant until
+`WHATSAPP_*` set — official API cannot post to groups, DMs only).
+
+Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
+`SURGE_ALERTS_ENABLED`, `SURGE_ROLLING`, `GEO_ENABLED`, `WHATSAPP_*`.
+
+## Data model (`pr_*` tables — live-verified)
+
+| Table | Role |
+|---|---|
+| `pr_items` | One story card. `author` NULL (never '') = shown as newsroom; `is_relevant=false` = hidden everywhere; `team_share` tri-state (true pin / false hide / null algorithm); `importance` 1–5 |
+| `pr_instances` | Every outlet that ran the story (coverage spread), FK → items |
+| `pr_users` / `pr_audit` | Sign-in allowlist + roles; audit trail. **Live-only: missing from schema.sql** (see Drift) |
+| `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency) |
+| `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users) |
+| `pr_context` | Admin-editable house knowledge injected into classification |
+| `pr_feed_health` | Per-feed failure streaks (bulletin footer) |
+| `pr_feedback` | In-app feedback form |
+
+RLS is ON with **no policies**: only the service-role key reads/writes; anon
+gets nothing. All queries live in `lib/db.js`.
 
 ## Hard rules (non-negotiable)
 
-- **Shared Supabase project.** The database also hosts a SEPARATE app's
-  `radar_*` tables. Touch **`pr_*` tables only** — never read, write, or
-  migrate `radar_*`. Read-only diagnostic SQL via the Supabase MCP is fine;
-  data-fixing writes only on the user's explicit request; **ask before any
-  schema/DDL change**.
-- **Zero build step, zero heavy runtime deps.** Pure ESM (`type: module`),
-  plain Node on Vercel serverless, static HTML in `public/` (no framework,
-  no bundler). `playwright-core` is a devDependency for tests only. Solve
-  problems without adding libraries (e.g. Word export = Word-flavoured HTML;
-  OG images = generated once via headless Chromium in `scripts/`).
-- **Tokens in the Authorization header ONLY** — never `?t=` query params
-  (they leak into logs/Referer; this was purged deliberately, don't
-  reintroduce). Human auth = Supabase JWT sessions; `RADAR_TOKEN` = read-only
-  service viewer; `CRON_SECRET` = service admin.
-- **Fail-soft I/O.** Every new fetch/DB call gets try/catch; a broken feed or
-  side-channel must never kill the pipeline. But never fail SILENTLY on the
-  critical path — misconfiguration should scream in logs and response fields
-  (see `bulletinSkipped`, the `sendBulletin` no-recipients throw).
-- **Never fabricate content.** No invented authors (honest "newsroom"
-  fallback), no invented events (classifier must not read a title-mention as
-  an appointment), no numbers the data doesn't support.
-- **One task = one commit**, descriptive message, test note included.
-  Do NOT put the model id in commits, PRs, or code.
+- **Shared Supabase project** with a separate app's `radar_*` tables. Touch
+  `pr_*` ONLY. Read-only diagnostic SQL via MCP is fine; data-fix writes only
+  on explicit user request; **ask before any schema/DDL change**.
+- **Zero build step, zero heavy runtime deps** (only `fast-xml-parser`;
+  `playwright-core` is dev-only). Solve without adding libraries.
+- **Tokens in the Authorization header ONLY** — never `?t=` (deliberately
+  purged; don't reintroduce). `RADAR_TOKEN`=viewer, `CRON_SECRET`=admin,
+  humans = Supabase JWT.
+- **Fail-soft I/O, never silent on the critical path** — try/catch every
+  fetch/DB call, but misconfiguration must scream (`bulletinSkipped`,
+  `sendBulletin` throws on empty recipients).
+- **Never fabricate** — no invented authors (newsroom fallback), no invented
+  events (a title-mention is not an appointment), no unsupported numbers.
+- One task = one commit, descriptive message + test note. No model ids in
+  commits/PRs/code.
 
-## Workflow
+## Deploy flow
 
-- Develop on branch `prradar/improvements`.
-- **"Merge" means push to BOTH**: `claude/pr-radar-improvements-q2yxwr`
-  (preview) **and** `main` (production — deploys via Vercel webhook).
-- Before committing: `node --check` changed files and run `npm test`
-  (must be green). Browser tests need Chromium (`CHROMIUM_PATH`, default
-  sandbox path) and skip gracefully without it. `tests/README.md` maps
-  what covers what; every shipped behaviour gets a regression test.
+- Develop on `prradar/improvements`. **"Merge" = push to BOTH**
+  `claude/pr-radar-improvements-q2yxwr` (preview) **and** `main`
+  (production — auto-deploys via Vercel webhook, ~1–2 min).
+- Does NOT ship with a deploy: env vars (Vercel dashboard only), DB schema
+  (manual SQL, ask first), OG images (committed PNGs; regenerate by script).
 
-## Architecture map
+## Drift (repo ↔ live, verified 2026-07-30)
 
-- `api/*.js` — Vercel functions. `radar.js` = ingest pipeline (feeds →
-  dedup layers → Haiku classify → store → alerts/bulletins/backfills);
-  `stats.js` (trends + narrative clustering), `report.js` (weekly/monthly +
-  custom-range reports, Word/PDF export), `admin.js`, `auth.js`, `go.js`,
-  `geo.js`, `verify.js`.
-- `lib/*.js` — shared logic. `db.js` (PostgREST helper `rest()` + all
-  queries), `auth.js` (roles/audit), `email.js` (email-client-safe renderer:
-  tables + inline styles; the weekly email output must stay byte-identical
-  unless intentionally changed), `classify.js` (classifier prompt; cached
-  system prompt — repeat calls read it at ~10% input price), `author.js`
-  (byline extraction, see below), `resolve.js` (Google News URL decode +
-  `isNonArticlePage` tag/archive guard), `report.js`, `surge.js`,
-  `whatsapp.js`, `notify.js`, `geo.js`, `author-backfill.js`.
-- `public/*.html` — self-contained pages (inline CSS/JS): `index` (board),
-  `stats` (trends), `reports`, `admin`, `login`, `account`, `guide`,
-  `context`. Session pattern: `pr_session` in localStorage + `afetch()`
-  adding the Bearer; API downloads must go fetch→blob (links can't carry
-  the header).
-- Crons (`vercel.json`): daily full run 05:00 UTC (bulletin to `RADAR_TO` +
-  subscribers), urgent poll `*/30` (severity-5 → instant email/WhatsApp),
-  Monday report + GEO (both env-gated).
+| Where | Fact |
+|---|---|
+| `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
+| Vercel env | `RADAR_TO` was unset → daily brief + urgent emails silently dead 22–30 Jul. Code now fails loud; the var must still be set in the dashboard |
+| `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
 
-## Domain conventions
+## Gotchas (each cost real debugging time)
 
-- Time is **Cairo days** (`Africa/Cairo`, DST-correct via Intl) for all
-  user-facing windows; storage is UTC ISO.
-- Author pipeline: RSS byline → page fetch → candidate collection from ALL
-  sources (JSON-LD → metas → visible bylines) with **first VALID candidate
-  wins** (full person validation: no emails, no UI junk, no outlet names,
-  no photo credits) → AI fallback reading the article body (per-RUN budget
-  `AUTHOR_AI_MAX`, reset each run — warm lambdas persist module state!).
-  Admin → Tools has "Backfill authors" + "Verify verdicts" (live evidence).
-- Dedup is layered: exact hash → summary hash → Jaccard clustering →
-  semantic (Haiku) → pre-send digest sweep. Narrative clustering in stats.js
-  is pinned against real production data (`tests/narr-fixture.mjs`).
-- Vodafone-only action framing: "needs response" / "wins" lanes and KPIs are
-  Vodafone-only; competitors are market intel. Analytics count everything.
+- **Warm lambdas persist module state.** Any counter/cache at module scope
+  survives between invocations — the AI byline budget must be reset per run
+  (`resetAuthorAiBudget()`); think before adding module-level state.
+- **This sandbox cannot reach production or news sites** (egress proxy 403s
+  arbitrary hosts) and has no production secrets. Verify via Supabase/Vercel/
+  Resend MCPs, or ship an admin diagnostic (pattern: Tools → "Verify
+  verdicts") and let production prove it.
+- **Author extraction is first-VALID-wins** across all sources (JSON-LD →
+  metas → visible bylines) — junk in a high source must never mask a lower
+  real byline. Junk classes already filtered: outlet names, UI placeholders,
+  emails, photo credits (تصوير/أرشيفية). Tag/keyword/search archive URLs are
+  killed at ingest (`isNonArticlePage`).
+- **The weekly email output must stay byte-identical** unless intentionally
+  changed — `buildReportRange` was added *beside* `buildReport` for this
+  reason. Email HTML is table-layout + inline styles only.
+- **Narrative clustering is pinned to real production data**
+  (`tests/narr-real.mjs` + fixture). If it fails after a change, the change
+  broke clustering — don't "fix" the fixture.
+- **Cairo days** (`Africa/Cairo`, DST via Intl) for every user-facing window;
+  storage is UTC ISO. Board/stats/report windows must reconcile.
+- Vodafone-only action framing: needs-response/wins lanes + those KPIs are
+  Vodafone-only; competitors are market intel; analytics count everything.
+- WhatsApp preview caches are sticky — test OG changes with a `?v=N` URL.
 
-## Environment notes
+## Verifying work
 
-- Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
-  `SURGE_ALERTS_ENABLED`, `SURGE_ROLLING`, `GEO_ENABLED`, `WHATSAPP_*`.
-  `RADAR_TO` drives the daily bulletin + urgent emails (its absence once
-  silently killed the daily brief — hence the loud guards).
-- The dev sandbox has **no production secrets** and its egress proxy 403s
-  arbitrary hosts: you cannot curl production APIs or news sites from here.
-  Use the Supabase MCP (diagnostics), Vercel MCP (logs/deploys), Resend MCP
-  (email history), or ship an admin diagnostic and let production prove it.
+1. `node --check` changed files; `npm test` green (browser tests need Chromium).
+2. Pipeline changes: `/api/radar?dry=1` (no side effects), `?debug=1`
+  (per-story funnel trace), `?to=you@x` (real daily send to one address).
+3. Author work: Admin → Tools → "Backfill authors" + "Verify verdicts"
+  (live per-card evidence: outcome, page text, per-profile fetch statuses).
+4. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
+  Supabase MCP read-only SQL (did rows change). `pr_state.daily_bulletin_sent`
+  tells you when the brief last actually went out.
