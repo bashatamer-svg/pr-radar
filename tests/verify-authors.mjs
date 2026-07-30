@@ -1,4 +1,4 @@
-// VERIFY step 3 — 22 author unit checks (must be 22/22).
+// VERIFY step 3 — 23 author unit checks (must be 23/23).
 import assert from 'node:assert';
 import { extractAuthorFromHtml, cleanAuthor, fetchAuthorProbe } from '../lib/author.js';
 import { isNonArticlePage } from '../lib/resolve.js';
@@ -53,6 +53,11 @@ check('WP /archives/ permalink NOT flagged', isNonArticlePage('https://alahalyga
 //     "Name <email>" feed shape still yields the human part.
 check('bare email rejected', cleanAuthor('melfaramawy416@gmail.com', 'ekhbary24'), null);
 check('Name <email> keeps the name', cleanAuthor('Ahmed Salah <a.salah@youm7.com>', 'Youm7'), 'Ahmed Salah');
+// the ekhbary24 shape: CMS email in the meta must NOT stop the cascade — it
+// falls through to the article's visible "كتب:" byline (the real author)
+check('email meta falls through to visible byline',
+  extractAuthorFromHtml('<meta name="author" content="melfaramawy416@gmail.com"><p>كتب: أحمد عبد السلام</p>'),
+  'أحمد عبد السلام');
 // 20. probe refuses to scrape a non-article page (no fetch attempted)
 let fetches = 0;
 globalThis.fetch = async () => { fetches++; throw new Error('must not fetch a tag page'); };
@@ -60,5 +65,5 @@ const probe = await fetchAuthorProbe('https://besraha.com/keyword/318029/1');
 assert.strictEqual(fetches, 0, 'probe fetched a tag page');
 check('probe skips tag page', `${probe.author}|${probe.outcome}`, 'null|no-byline');
 
-console.log(`\n${pass}/22 PASS`);
-assert.strictEqual(pass, 22, 'not all 22 passed');
+console.log(`\n${pass}/23 PASS`);
+assert.strictEqual(pass, 23, 'not all 23 passed');
