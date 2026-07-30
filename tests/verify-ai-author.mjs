@@ -17,7 +17,11 @@ globalThis.fetch = async (url, opts) => {
   const u = String(url);
   if (u.includes('api.anthropic.com')) {
     anthropicCalls++;
-    try { lastAiText = JSON.parse(opts.body).messages[0].content; } catch { lastAiText = ''; }
+    try {
+      const body = JSON.parse(opts.body);
+      lastAiText = body.messages[0].content;
+      globalThis.__aiSystem = body.system;
+    } catch { lastAiText = ''; }
     return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: anthropicReturn }] }) };
   }
   // article page fetch (status scriptable to exercise the retry)
@@ -74,6 +78,9 @@ pageHtml = `<html><body><nav>${nav}</nav><h1>Fintech news</h1><p>Finteck Gate: R
 assert.strictEqual(await fetchAuthor('https://outlet.example/f'), 'Riham Ali', 'byline behind a huge nav still extracted');
 assert.ok(lastAiText.includes('Riham Ali'), 'the byline is INSIDE the text window the model reads');
 assert.ok(!lastAiText.includes('قسم الأخبار رقم 0'), 'nav chrome before the headline is skipped');
+// prompt teaches the Egyptian unlabelled-byline pattern and excludes photo credits
+assert.ok(/UNLABELLED/.test(globalThis.__aiSystem) && /الرئيسية/.test(globalThis.__aiSystem), 'prompt covers bare-name-before-breadcrumb bylines');
+assert.ok(/أرشيفية/.test(globalThis.__aiSystem) && /PHOTO credits/.test(globalThis.__aiSystem), 'prompt excludes photo credits (تصوير/أرشيفية)');
 
 // 7. The AI cap is a PER-RUN budget: exhausting it must not poison the next
 //    sweep in the same warm process (the bug that made a second "Backfill
