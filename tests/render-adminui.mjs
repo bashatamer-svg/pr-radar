@@ -30,6 +30,10 @@ const server = createServer((req, res) => {
       if (view === 'requests') return j(requests);
       if (view === 'audit') return j(audit);
       if (view === 'author-gap') return j({ missing: 5, days: 7 });
+      if (view === 'author-inspect') return j({ days: 30, count: 2, rows: [
+        { id: 11, source: 'جريدة كابيتال', headline: 'قصة بلا توقيع', url: 'https://x/1', outcome: 'no-byline', status: 200, author: null, textStart: 'القاهرة — نص وكالة بدون توقيع', candidates: [] },
+        { id: 12, source: 'الشروق', headline: 'قصة محجوبة', url: 'https://x/2', outcome: 'fetch-failed', status: 403, author: null, textStart: '', candidates: [] },
+      ] });
       if (view === 'whatsapp-status') return j({ enabled: true, hasToken: true, hasPhoneId: true, recipients: 2, template: 'pr_urgent' });
       if (view === 'feedback') return j([]);
       return j([]); // subscribers (boot probe)
@@ -106,6 +110,14 @@ await page.waitForTimeout(300);
 const baMsg = await page.$eval('#baMsg', el => el.textContent);
 assert.ok(/Filled 2 of 3/.test(baMsg) && /1 still missing/.test(baMsg) && /run again/.test(baMsg), 'backfill result shown with counts + repeat hint: ' + baMsg);
 assert.ok(/1 link wouldn.t resolve/.test(baMsg), 'backfill result explains WHY (unresolved link): ' + baMsg);
+
+// Verify verdicts — live re-probe evidence rendered per stuck card
+await page.click('#aiBtn');
+await page.waitForTimeout(300);
+const aiRows = await page.$eval('#aiRows', el => el.textContent);
+assert.ok(/no byline on page/.test(aiRows), 'no-byline verdict shown');
+assert.ok(/page opens:/.test(aiRows) && /نص وكالة/.test(aiRows), 'opening text shown as evidence');
+assert.ok(/blocked \/ unreachable \(403\)/.test(aiRows), 'blocked verdict shown with HTTP status');
 
 // WhatsApp card — status shown, test button enabled + sends
 await page.waitForTimeout(150);

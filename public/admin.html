@@ -379,6 +379,11 @@ function renderTools(){
       </div>
       <div class="nm" id="baGap" style="margin-top:9px;font-weight:700;color:var(--ink-2)">Checking backlog…</div>
       <div class="nm" style="margin-top:4px;color:var(--faint)">days back · max per pass. Each pass fills up to the AI-byline cap; a big backlog may need a few runs.</div>
+      <div class="form" style="margin-top:12px">
+        <button class="btn ghost" id="aiBtn" type="button" title="Re-probe a sample of the authorless cards live and show the evidence — what each page contained">Verify verdicts</button>
+        <div class="formmsg" id="aiMsg"></div>
+      </div>
+      <div id="aiRows"></div>
     </div>
     <div class="card">
       <h2>WhatsApp urgent alerts</h2>
@@ -390,6 +395,7 @@ function renderTools(){
       </div>
     </div>`;
   $('#baBtn').onclick=runBackfill;
+  $('#aiBtn').onclick=runAuthorInspect;
   $('#baDays').addEventListener('change',loadAuthorGap);
   loadAuthorGap();
   $('#waTestBtn').onclick=runWhatsappTest;
@@ -420,6 +426,34 @@ async function runWhatsappTest(){
     if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
     else if(d.skipped){ msg.textContent='WhatsApp isn’t configured yet.'; msg.className='formmsg err'; }
     else{ msg.className='formmsg '+(d.failed?'err':'ok'); msg.textContent=`Sent to ${d.sent} of ${d.recipients}`+(d.failed?` · ${d.failed} failed (check logs)`:' ✓'); }
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
+  btn.disabled=false; btn.textContent=label;
+}
+// Evidence view: re-probe a sample of the authorless cards LIVE and show what
+// each page actually contained, so "no byline" / "blocked" can be checked by
+// eye instead of trusted. Read-only.
+async function runAuthorInspect(){
+  const btn=$('#aiBtn'), msg=$('#aiMsg'), box=$('#aiRows');
+  const days=Math.max(1,Math.min(Number($('#baDays').value)||30,45));
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Probing…'; msg.textContent='Re-fetching a sample of the stuck articles…'; msg.className='formmsg'; box.innerHTML='';
+  try{
+    const r=await api({q:`&view=author-inspect&days=${days}&limit=10`});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
+    else{
+      const OUT={found:['#0c7a43','byline found'],['no-byline']:['#8a5a00','no byline on page'],['fetch-failed']:['#b60009','blocked / unreachable'],['not-article']:['#b60009','not an article page']};
+      msg.className='formmsg ok'; msg.textContent=`Probed ${d.count} stuck cards live:`;
+      box.innerHTML=(d.rows||[]).map(x=>{
+        const [col,lab]=OUT[x.outcome]||['var(--muted)',x.outcome];
+        return `<div style="border-top:1px solid var(--hair);padding:9px 0">
+          <div style="font-size:12px"><b style="color:${col}">${esc(lab)}${x.status&&x.outcome==='fetch-failed'?' ('+esc(String(x.status))+')':''}</b>
+            ${x.author?` — <b dir="auto">${esc(x.author)}</b> (will fill on the next backfill)`:''} · <span class="nm">${esc(x.source||'')}</span></div>
+          <div dir="auto" style="font-size:12px;color:var(--ink-2);margin-top:2px">${esc(x.headline||'')}</div>
+          ${x.outcome==='no-byline'&&x.textStart?`<div dir="auto" style="font-size:11px;color:var(--faint);margin-top:4px;line-height:1.5">page opens: “${esc(x.textStart.slice(0,200))}…”</div>`:''}
+          ${x.candidates&&x.candidates.length?`<div dir="auto" style="font-size:11px;color:var(--faint);margin-top:2px">rejected candidates: ${esc(x.candidates.join(' · '))}</div>`:''}
+        </div>`;
+      }).join('');
+    }
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
   btn.disabled=false; btn.textContent=label;
 }

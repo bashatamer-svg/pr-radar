@@ -27,7 +27,7 @@ globalThis.fetch = async (url, opts) => {
   return { ok: true, status: 200, text: async () => pageHtml };
 };
 
-const { fetchAuthor, resetAuthorAiBudget } = await import(new URL('..', import.meta.url).pathname + '/lib/author.js');
+const { fetchAuthor, resetAuthorAiBudget, inspectAuthorPage } = await import(new URL('..', import.meta.url).pathname + '/lib/author.js');
 
 // 1. <meta name="author"> hit → deterministic, NO Anthropic call.
 anthropicCalls = 0;
@@ -103,6 +103,20 @@ assert.strictEqual(anthropicCalls, 0, 'meta byline on retry → no AI call');
 articleAttempts = 0; statuses = [403, 403];
 assert.strictEqual(await fetchAuthor('https://blocked.example/a'), null, 'persistent 403 → null');
 assert.strictEqual(articleAttempts, 2, 'retried once, then gave up');
+statuses = null;
+
+// ── inspectAuthorPage returns EVIDENCE, not just a label (admin Verify verdicts) ──
+resetAuthorAiBudget();
+anthropicReturn = '{"author": null}';
+pageHtml = '<html><body><h1>Wire copy</h1><p>Cairo — plain agency text carrying no byline whatsoever, published as-is by the desk without attribution of any kind.</p></body></html>';
+const insp = await inspectAuthorPage('https://outlet.example/h');
+assert.strictEqual(insp.outcome, 'no-byline', 'inspect: verdict matches probe');
+assert.ok(insp.textStart.includes('Wire copy'), 'inspect: opening article text returned as evidence');
+assert.deepStrictEqual(insp.candidates, [], 'inspect: no candidates on a truly bylineless page');
+statuses = [403, 403]; articleAttempts = 0;
+const insp2 = await inspectAuthorPage('https://blocked.example/h');
+assert.strictEqual(insp2.outcome, 'fetch-failed', 'inspect: blocked page labelled');
+assert.strictEqual(insp2.status, 403, 'inspect: HTTP status surfaced');
 statuses = null;
 
 console.log('AI-AUTHOR OK — meta hit skips AI; plain-text byline → 1 AI call; no byline → null; AUTHOR_AI=0 disables; junk name rejected; 403 retried once (recovers soft-blocks, gives up on hard blocks)');

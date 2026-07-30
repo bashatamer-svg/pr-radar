@@ -14,10 +14,12 @@ import {
   allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber,
   allFeedback, setFeedbackResolved,
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
-  recentAudit, pendingRequests, countMissingAuthor,
+  recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor,
 } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
+import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
+import { isGoogleNews } from '../lib/resolve.js';
 import { sendWhatsAppUrgent, whatsappStatus } from '../lib/whatsapp.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
@@ -44,6 +46,23 @@ export default async function handler(req, res) {
         return res.status(200).json({ missing, days });
       }
       if (resource === 'whatsapp-status') return res.status(200).json(whatsappStatus());
+      if (resource === 'author-inspect') {
+        // Evidence view for the authorless backlog: re-probe each card LIVE
+        // (same fetch + extraction as the backfill, from production where
+        // egress works) and return what the page actually contained — outcome,
+        // opening text, raw candidates — so "no byline" is verifiable, not
+        // taken on faith. Read-only: nothing is written.
+        const days = Math.max(1, Math.min(Number(req.query.days) || 30, 45));
+        const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 15));
+        resetAuthorAiBudget();
+        const stale = await itemsMissingAuthor({ days, limit });
+        const rows = await Promise.all((stale || []).map(async (it) => {
+          const url = [it.resolved_url, it.url].find((u) => u && !isGoogleNews(u)) || null;
+          const probe = await inspectAuthorPage(url, it.source);
+          return { id: it.id, source: it.source, headline: (it.headline || '').slice(0, 100), url, ...probe };
+        }));
+        return res.status(200).json({ days, count: rows.length, rows });
+      }
       return res.status(200).json(await allSubscribers());
     }
 
