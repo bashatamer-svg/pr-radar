@@ -11,10 +11,13 @@ let anthropicReturn = '{"author": "Riham Ali"}';
 let articleAttempts = 0;
 let statuses = null;   // e.g. [403, 200] to script successive article-fetch statuses; null → always 200
 
+let lastAiText = '';   // what the model was actually given to read
+
 globalThis.fetch = async (url, opts) => {
   const u = String(url);
   if (u.includes('api.anthropic.com')) {
     anthropicCalls++;
+    try { lastAiText = JSON.parse(opts.body).messages[0].content; } catch { lastAiText = ''; }
     return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: anthropicReturn }] }) };
   }
   // article page fetch (status scriptable to exercise the retry)
@@ -60,6 +63,17 @@ anthropicCalls = 0;
 anthropicReturn = '{"author": "News Desk"}';
 pageHtml = '<html><body><h1>x</h1><p>Cairo — the company issued a detailed statement on Sunday describing the incident, its causes, and the remediation steps now under way across the network.</p></body></html>';
 assert.strictEqual(await fetchAuthor('https://outlet.example/e'), null, 'a desk name from the model is rejected by cleanName');
+
+// 6. The model reads the ARTICLE, not the site chrome: with >4k chars of nav
+//    links before the story, the byline next to the headline must still land
+//    inside the text the model is given (cut from <h1>/<article> onward).
+anthropicCalls = 0;
+anthropicReturn = '{"author": "Riham Ali"}';
+const nav = Array.from({ length: 300 }, (_, i) => `<a href="/cat${i}">قسم الأخبار رقم ${i}</a>`).join(' ');
+pageHtml = `<html><body><nav>${nav}</nav><h1>Fintech news</h1><p>Finteck Gate: Riham Ali</p><p>Cairo — the company issued a detailed statement on Sunday describing the incident, its causes, and the remediation steps now under way across the network.</p></body></html>`;
+assert.strictEqual(await fetchAuthor('https://outlet.example/f'), 'Riham Ali', 'byline behind a huge nav still extracted');
+assert.ok(lastAiText.includes('Riham Ali'), 'the byline is INSIDE the text window the model reads');
+assert.ok(!lastAiText.includes('قسم الأخبار رقم 0'), 'nav chrome before the headline is skipped');
 
 // ── retry: a soft 403 on the first hit is recovered with a same-origin referer ──
 articleAttempts = 0; statuses = [403, 200]; anthropicCalls = 0;
