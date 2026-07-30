@@ -18,6 +18,11 @@ project refs/IDs, or model identifiers.
 | branch/deploy workflow | Deploy flow |
 | found repo↔live drift | Drift table |
 
+Enforced narrowly: a Stop hook (`.claude/settings.json`) blocks ending a
+session when `vercel.json`, `schema.sql`, `package.json`, or `lib/auth.js`
+changed without a CLAUDE.md update — those four almost always invalidate this
+brief. Everything else relies on the table above.
+
 ## What this is
 
 Daily brand & reputation monitor for **Vodafone Egypt** (vs Orange, WE, e&).

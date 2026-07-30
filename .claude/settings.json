@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); case \"$input\" in *'\"stop_hook_active\":true'*) exit 0;; esac; changed=\"$(git diff --name-only HEAD~1 -- 2>/dev/null; git diff --name-only; git diff --cached --name-only)\"; if echo \"$changed\" | grep -qxE '(vercel\\.json|schema\\.sql|package\\.json|lib/auth\\.js)' && ! echo \"$changed\" | grep -qx 'CLAUDE.md'; then echo 'High-signal file changed (vercel.json / schema.sql / package.json / lib/auth.js) without a CLAUDE.md update. Check the trigger table at the top of CLAUDE.md and update the matching section in the same commit — or state explicitly why no update is needed.' >&2; exit 2; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
