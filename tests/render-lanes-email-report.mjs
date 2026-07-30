@@ -39,8 +39,13 @@ assert.ok(!sliceRisk.includes(H.orgNeg), 'Orange negative is NOT under reputatio
 assert.ok(sliceWins.includes(H.vodPos), 'Vodafone positive is under brand wins');
 assert.ok(!sliceWins.includes(H.orgPos), 'Orange positive is NOT under brand wins');
 assert.ok(sliceMkt.includes(H.orgNeg) && sliceMkt.includes(H.orgPos), 'competitor items live in the market section');
-// competitor cards keep their true pill (both a Positive and a Negative pill live in the market slice)
-assert.ok(sliceMkt.includes('Positive') && sliceMkt.includes('Negative'), 'competitors keep true sentiment pills in market section');
+// Competitor pills are relabelled so the Vodafone-standpoint convention reads
+// correctly in the inbox: stored negative = the rival won (counts against us),
+// stored positive = the rival stumbled. Vodafone cards keep the plain wording.
+assert.ok(sliceMkt.includes('Competitor win') && sliceMkt.includes('Competitor setback'), 'competitor pills are relabelled in the market section');
+assert.ok(!sliceMkt.includes('>Negative<') && !sliceMkt.includes('>Positive<'), 'no bare sentiment pill on a competitor card');
+assert.ok(sliceRisk.includes('>Negative<'), 'Vodafone card keeps the plain Negative pill');
+assert.ok(sliceWins.includes('>Positive<'), 'Vodafone card keeps the plain Positive pill');
 console.log('EMAIL OK — reputational risk & brand wins are Vodafone-only; competitors → market');
 
 // ---- Report (buildReport hits the DB via fetch; mock it) ----

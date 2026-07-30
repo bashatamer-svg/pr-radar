@@ -69,13 +69,25 @@ await page.click('#sentRow .chip[data-v="neutral"]'); await page.waitForTimeout(
 const mktCards = await page.$$eval('.card', els => els.map(e => e.id).sort());
 assert.deepStrictEqual(mktCards, ['item-2', 'item-4', 'item-5'], 'Market filter = all competitor items + neutral');
 
-// the card still shows its true sentiment badge (Positive) even in the market lane
+// Competitor cards relabel the pill so the Vodafone-standpoint convention is
+// self-explanatory: stored "positive" = the rival stumbled (good for us),
+// stored "negative" = the rival won (counts against us). Colour/lane unchanged.
 await page.click('#sentRow .chip[data-v="all"]'); await page.waitForTimeout(150);
-const badge2 = await page.$eval('#item-2 .sent', e => e.textContent.trim().toLowerCase());
-assert.ok(badge2.includes('positive'), 'competitor card keeps its Positive sentiment badge');
+const badge2 = await page.$eval('#item-2 .sent', e => e.textContent.trim());
+assert.strictEqual(badge2, 'Competitor setback', 'competitor positive reads as a rival stumble');
+assert.ok(await page.$eval('#item-2 .sent', e => e.classList.contains('positive')), 'colour still encodes Vodafone impact');
+const badge5 = await page.$eval('#item-5 .sent', e => e.textContent.trim());
+assert.strictEqual(badge5, 'Competitor win', 'competitor negative reads as a rival win');
+const badge4 = await page.$eval('#item-4 .sent', e => e.textContent.trim());
+assert.strictEqual(badge4, 'Competitor note', 'competitor neutral reads as market colour');
+// Vodafone cards keep the plain sentiment wording
+const badge1 = await page.$eval('#item-1 .sent', e => e.textContent.trim());
+assert.strictEqual(badge1, 'Positive', 'Vodafone card keeps the plain Positive pill');
+const badge3 = await page.$eval('#item-3 .sent', e => e.textContent.trim());
+assert.strictEqual(badge3, 'Negative', 'Vodafone card keeps the plain Negative pill');
 
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 await browser.close(); server.close();
 if (errors.length) { console.error('PAGE ERRORS:\n' + errors.join('\n')); process.exit(1); }
 if (overflow > 1) { console.error('overflow', overflow); process.exit(1); }
-console.log('LANE TEST PASSED — Wins=Vodafone-only; competitor positive is Market & noted; badge unchanged');
+console.log('LANE TEST PASSED — Wins=Vodafone-only; competitor positive is Market & noted; competitor pills relabelled (win/setback/note), Vodafone pills plain');

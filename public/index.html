@@ -440,6 +440,15 @@ function clock(){
 clock(); setInterval(clock,30000);
 
 const sentOf = it => SENT[it.sentiment]?it.sentiment:'neutral';
+// Tone is ALWAYS judged from Vodafone's standpoint, so a rival's good news is
+// stored as "negative" (it moves the market against us). On a competitor card
+// a bare "Negative" pill reads as a mislabel, so those pills say what the story
+// IS while the colour keeps saying what it MEANS for us (red = counts against
+// Vodafone). Display-only: the stored sentiment, lanes and KPIs are unchanged.
+const COMP_LABEL = { negative:'Competitor win', positive:'Competitor setback', neutral:'Competitor note' };
+const isCompetitor = it => BRANDS.includes(it.brand) && it.brand!=='Vodafone';
+const sentLabel = it => isCompetitor(it) ? COMP_LABEL[sentOf(it)] : SENT[sentOf(it)].label;
+const SENT_TIP = 'Tone is judged from Vodafone Egypt’s standpoint — a rival’s win counts against us.';
 // Section lane (what WE do about it) — distinct from the item's own sentiment.
 // The action lanes ("Needs a response", "Wins to amplify") are Vodafone-only:
 // a competitor's story — good or bad — is market intel, so it drops to the
@@ -566,7 +575,7 @@ function cardHtml(it){
     <div class="c-top"><div class="metas">${brand}${spreadBadge}${cat}${ageEl}${confPip(it)}${pinMark}</div>
       <div class="dots" title="Reach / impact ${it.importance||1} of 5"><span class="dlab">Reach</span>${dots(it.importance)}</div></div>
     <h3 class="headline"><a href="${esc(href)}" target="_blank" rel="noopener">${esc(it.headline)}</a></h3>
-    <div class="subrow"><span class="sent ${sent}">${s.label}</span>${by}${dueEl}</div>
+    <div class="subrow"><span class="sent ${sent}"${isCompetitor(it)?` title="${SENT_TIP}"`:''}>${sentLabel(it)}</span>${by}${dueEl}</div>
     ${it.summary?`<p class="summary">${esc(it.summary)}</p>`:''}
     ${angleHtml(it.pr_angle)}
     ${coverageHtml(it.instances)}
@@ -585,7 +594,7 @@ function actionLine(it){ const m=String(it.pr_angle||'').split(/\r?\n+/).map(l=>
 async function copyBrief(id,btn){
   const it=ITEMS.find(x=>x.id===id); if(!it) return;
   const s=SENT[sentOf(it)]; const spread=spreadOf(it);
-  const head=`${s.tag} ${s.label.toUpperCase()} · ${it.brand||'Market'}${spread>1?` · ${spread} outlets`:''}`;
+  const head=`${s.tag} ${sentLabel(it).toUpperCase()} · ${it.brand||'Market'}${spread>1?` · ${spread} outlets`:''}`;
   const act=actionLine(it);
   const text=[head,it.headline,act?`Action: ${act}`:'',linkOf(it)].filter(Boolean).join('\n');
   try{ await navigator.clipboard.writeText(text); }catch(e){ const t=document.createElement('textarea'); t.value=text; document.body.appendChild(t); t.select(); try{document.execCommand('copy');}catch(_){} t.remove(); }
@@ -808,7 +817,7 @@ function snapshotCard(id){
   const brand=it.brand||'Market';
   c.font='800 18px '+SANS; const bw=c.measureText(brand).width+28; c.fillStyle=BRAND_COLOR[it.brand]||'#6c7480'; roundRect(c,80,y-26,bw,34,9); c.fill();
   c.fillStyle='#fff'; c.fillText(brand,94,y-2);
-  c.fillStyle=SENTC[sent]; c.font='800 18px '+SANS; c.fillText(SENT[sent].label.toUpperCase(),80+bw+16,y-2);
+  c.fillStyle=SENTC[sent]; c.font='800 18px '+SANS; c.fillText(sentLabel(it).toUpperCase(),80+bw+16,y-2);
   if(spread>1){ c.fillStyle='#6c7480'; c.font='700 17px '+SANS; c.textAlign='right'; c.fillText(`◱ ${spread} outlets`,SNAPW-80,y-2); c.textAlign='left'; }
   // headline (RTL-aware)
   y+=54; c.fillStyle='#16191f'; c.font='800 34px '+SANS;
