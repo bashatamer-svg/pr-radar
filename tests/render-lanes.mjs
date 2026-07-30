@@ -86,6 +86,19 @@ assert.strictEqual(badge1, 'Positive', 'Vodafone card keeps the plain Positive p
 const badge3 = await page.$eval('#item-3 .sent', e => e.textContent.trim());
 assert.strictEqual(badge3, 'Negative', 'Vodafone card keeps the plain Negative pill');
 
+// Pulse tiles + status counter must not read backwards on competitors: a rival
+// story scored "negative" is a WIN for them, so "N neg" on their tile would say
+// the opposite of the truth.
+const orangeTile = await page.$eval('.tile[data-b="Orange"] .tc-cnt', e => e.textContent.replace(/\s+/g, ' ').trim());
+assert.strictEqual(orangeTile, '1 win · 2', `Orange tile counts wins, not "neg" (got ${orangeTile})`);
+const weTile = await page.$eval('.tile[data-b="WE"] .tc-cnt', e => e.textContent.replace(/\s+/g, ' ').trim());
+assert.strictEqual(weTile, '0 wins · 1', `WE tile pluralises correctly (got ${weTile})`);
+const statusTxt = await page.$eval('#status', e => e.textContent.replace(/\s+/g, ' ').trim());
+assert.ok(/2 against us/.test(statusTxt), `status counts what moved against Vodafone (got ${statusTxt})`);
+assert.ok(!/negative/.test(statusTxt), 'status no longer says "negative" (it mixes our bad news with rivals\' wins)');
+// the Vodafone hero keeps the plain wording — it is Vodafone-only
+assert.ok(/negative/.test(await page.$eval('.hero', e => e.textContent)), 'Vodafone hero still reads "negative"');
+
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 await browser.close(); server.close();
 if (errors.length) { console.error('PAGE ERRORS:\n' + errors.join('\n')); process.exit(1); }

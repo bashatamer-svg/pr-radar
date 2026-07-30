@@ -495,8 +495,12 @@ function buildPulse(){
     const neg=rows.filter(i=>sentOf(i)==='negative').length, pos=rows.filter(i=>sentOf(i)==='positive').length, neu=rows.length-neg-pos, tot=rows.length||1;
     const seg=(n,c)=>n?`<i data-w="${(n/tot*100).toFixed(1)}%" style="background:${c}"></i>`:'';
     const bar=rows.length?seg(neg,'#e60000')+seg(neu,'var(--seg-neu)')+seg(pos,'#0f9d58'):`<i data-w="100%" style="background:var(--seg-empty)"></i>`;
-    const cnt=rows.length?`<span class="${neg?'neg':''}"><b>${neg}</b></span> neg · ${rows.length}`:'no items';
-    return `<button class="tile" type="button" data-b="${esc(b)}" aria-pressed="${fBrand===b}" style="--tc:${BRAND_COLOR[b]}">
+    // A rival's story scored "negative" IS a win for them (tone is measured
+    // from Vodafone's standpoint), so the tile must not read "N neg" — on a
+    // competitor tile that reads as bad news ABOUT them, the exact opposite.
+    const cnt=rows.length?`<span class="${neg?'neg':''}"><b>${neg}</b></span> ${neg===1?'win':'wins'} · ${rows.length}`:'no items';
+    const tileTip=rows.length?`${b}: ${neg} win${neg===1?'':'s'} of ${rows.length} stor${rows.length===1?'y':'ies'} — a rival's win counts against Vodafone`:`${b}: no stories in this window`;
+    return `<button class="tile" type="button" data-b="${esc(b)}" aria-pressed="${fBrand===b}" title="${esc(tileTip)}" style="--tc:${BRAND_COLOR[b]}">
       <span class="tt"><span class="tdot" style="background:${BRAND_COLOR[b]}"></span><span class="tb">${esc(b)}</span></span>
       <span class="tbar">${bar}</span><span class="tc-cnt">${cnt}</span></button>`;
   }).join('');
@@ -636,7 +640,10 @@ function render(){
   const shown=ITEMS.filter(pass).sort((a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(laneOf(a))-rank(laneOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0); });
   const neg=ITEMS.filter(i=>sentOf(i)==='negative').length;
   const brandNote=fBrand==='all'?'':` · <b>${esc(fBrand)}</b>`;
-  $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg">${neg} negative</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>`;
+  // "against us" not "negative": the count mixes OUR bad news with RIVALS' wins
+  // (both score negative from Vodafone's standpoint), so the neutral wording is
+  // the only one true for both.
+  $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg" title="Stories that moved against Vodafone — our own negatives plus rivals’ wins">${neg} against us</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>`;
   // Deep-link filter banner (arrived from Trends) with a one-click clear.
   const df=deepFilter(); const dfEl=$('#dfilter');
   if(df){ dfEl.innerHTML=`<span><span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}</span><button class="dfx" type="button" onclick="clearDeepFilter()">✕ Clear filter</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
