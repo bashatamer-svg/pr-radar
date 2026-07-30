@@ -151,9 +151,11 @@ gets nothing. All queries live in `lib/db.js`.
 - **Sentiment is the direction for VODAFONE, not the story's own tone** — a
   rival's win is stored `negative`. The classifier drifted to story-own-tone on
   competitor items (live-verified 2026-07-30), so the prompt now carries an
-  explicit invert-for-competitors test + worked examples. Board/email pills on
-  competitor cards render as Competitor win / setback / note (display-only —
-  stored sentiment, lanes and KPIs unchanged).
+  explicit invert-for-competitors test + worked examples; the 8 inverted
+  historical rows were corrected in `pr_items` at the same time. Board/email
+  pills on competitor cards render as Competitor win / setback / note
+  (display-only — stored sentiment, lanes and KPIs unchanged). Some competitor
+  wins still sit at `neutral` (understated, not inverted) — left as-is.
 - WhatsApp preview caches are sticky — test OG changes with a `?v=N` URL.
 
 ## Verifying work
