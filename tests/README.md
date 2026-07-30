@@ -28,6 +28,7 @@ are **skipped**, the unit suite still runs.
 | Surge detection (calendar + rolling windows) | `smoke-task7`, `render-surge-rolling` |
 | Board UI (lanes, filters, deep links, auto-refresh, bylines, coverage) | `render-task11..15`, `render-lanes`, `render-deeplink`, `render-autorefresh`, `render-desk-byline`, `render-coverage`, `verify-bidi` |
 | Trends narratives (clustering incl. real-data regression) | `render-narrative-cluster`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives` |
+| Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | DB helpers (row-cap warnings) | `db-caps` |
 | Guide page | `render-guide` |
 | Link previews & branding (OG/Twitter tags, favicon, PNG assets) | `render-og` |

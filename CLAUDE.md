@@ -156,6 +156,10 @@ gets nothing. All queries live in `lib/db.js`.
   pills on competitor cards render as Competitor win / setback / note
   (display-only — stored sentiment, lanes and KPIs unchanged). Some competitor
   wins still sit at `neutral` (understated, not inverted) — left as-is.
+  **Wording rule:** any surface mixing brands (board counter, pulse tiles,
+  every Trends chart/legend/table) says "against us / in our favour", never a
+  bare "negative" — that reads backwards on a rival's row. Only explicitly
+  Vodafone-scoped labels keep the plain word. Pinned by `render-trends-wording`.
 - WhatsApp preview caches are sticky — test OG changes with a `?v=N` URL.
 
 ## Verifying work
