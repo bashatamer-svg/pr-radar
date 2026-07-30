@@ -27,7 +27,7 @@ globalThis.fetch = async (url, opts) => {
   return { ok: true, status: 200, text: async () => pageHtml };
 };
 
-const { fetchAuthor } = await import(new URL('..', import.meta.url).pathname + '/lib/author.js');
+const { fetchAuthor, resetAuthorAiBudget } = await import(new URL('..', import.meta.url).pathname + '/lib/author.js');
 
 // 1. <meta name="author"> hit → deterministic, NO Anthropic call.
 anthropicCalls = 0;
@@ -74,6 +74,23 @@ pageHtml = `<html><body><nav>${nav}</nav><h1>Fintech news</h1><p>Finteck Gate: R
 assert.strictEqual(await fetchAuthor('https://outlet.example/f'), 'Riham Ali', 'byline behind a huge nav still extracted');
 assert.ok(lastAiText.includes('Riham Ali'), 'the byline is INSIDE the text window the model reads');
 assert.ok(!lastAiText.includes('قسم الأخبار رقم 0'), 'nav chrome before the headline is skipped');
+
+// 7. The AI cap is a PER-RUN budget: exhausting it must not poison the next
+//    sweep in the same warm process (the bug that made a second "Backfill
+//    authors" click return identical results with zero AI reads).
+process.env.AUTHOR_AI_MAX = '1';
+resetAuthorAiBudget();
+anthropicCalls = 0;
+anthropicReturn = '{"author": "Riham Ali"}';
+pageHtml = '<html><body><h1>Fintech news</h1><p>Finteck Gate: Riham Ali</p><p>Cairo — the company issued a detailed statement on Sunday describing the incident, its causes, and the remediation steps now under way across the network.</p></body></html>';
+assert.strictEqual(await fetchAuthor('https://outlet.example/g1'), 'Riham Ali', 'first AI call within budget');
+assert.strictEqual(await fetchAuthor('https://outlet.example/g2'), null, 'budget exhausted → no AI read');
+assert.strictEqual(anthropicCalls, 1, 'cap enforced within a run');
+resetAuthorAiBudget();   // what each new sweep/run now does
+assert.strictEqual(await fetchAuthor('https://outlet.example/g3'), 'Riham Ali', 'reset restores the budget for the next run');
+assert.strictEqual(anthropicCalls, 2, 'AI reads again after reset');
+delete process.env.AUTHOR_AI_MAX;
+resetAuthorAiBudget();
 
 // ── retry: a soft 403 on the first hit is recovered with a same-origin referer ──
 articleAttempts = 0; statuses = [403, 200]; anthropicCalls = 0;

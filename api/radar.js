@@ -9,7 +9,7 @@ import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
 import { sendWhatsAppUrgent } from '../lib/whatsapp.js';
 import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
 import { renderBulletin, renderUrgent, sendBulletin } from '../lib/email.js';
-import { authorFromEntry, fetchAuthor, cleanAuthor } from '../lib/author.js';
+import { authorFromEntry, fetchAuthor, cleanAuthor, resetAuthorAiBudget } from '../lib/author.js';
 import { resolveUrl, isGoogleNews, isNonArticlePage } from '../lib/resolve.js';
 import { safeEqual } from '../lib/auth.js';
 
@@ -278,6 +278,8 @@ export default async function handler(req, res) {
     (process.env.RADAR_TOKEN && safeEqual(bearer, process.env.RADAR_TOKEN));
   if (!ok) return res.status(401).json({ error: 'unauthorized' });
 
+  resetAuthorAiBudget();   // fresh per-run AI byline budget (warm lambdas persist the counter)
+
   const dry = req.query?.dry === '1';
   // Coverage diagnostic (?debug=1): run the pipeline THROUGH classify, then
   // return a per-story funnel trace (which feed fetched it, where it was
@@ -518,7 +520,8 @@ export default async function handler(req, res) {
             [resolved, ...insts.map((x) => x.url)].filter((u) => u && !isGoogleNews(u))
           )];
           for (const u of urls) {
-            const person = cleanAuthor(await fetchAuthor(u), (insts[0] && insts[0].outlet) || it.source);
+            const outlet = (insts[0] && insts[0].outlet) || it.source;
+            const person = cleanAuthor(await fetchAuthor(u, outlet), outlet);
             if (person) { it.author = person; if (insts[0]) insts[0].author = person; break; }
           }
         })
