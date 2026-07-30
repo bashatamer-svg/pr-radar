@@ -1,4 +1,4 @@
-// VERIFY step 3 — 23 author unit checks (must be 23/23).
+// VERIFY step 3 — 26 author unit checks (must be 26/26).
 import assert from 'node:assert';
 import { extractAuthorFromHtml, cleanAuthor, fetchAuthorProbe } from '../lib/author.js';
 import { isNonArticlePage } from '../lib/resolve.js';
@@ -53,11 +53,21 @@ check('WP /archives/ permalink NOT flagged', isNonArticlePage('https://alahalyga
 //     "Name <email>" feed shape still yields the human part.
 check('bare email rejected', cleanAuthor('melfaramawy416@gmail.com', 'ekhbary24'), null);
 check('Name <email> keeps the name', cleanAuthor('Ahmed Salah <a.salah@youm7.com>', 'Youm7'), 'Ahmed Salah');
-// the ekhbary24 shape: CMS email in the meta must NOT stop the cascade — it
-// falls through to the article's visible "كتب:" byline (the real author)
+// FIRST VALID WINS: junk in a high-priority source must never mask a real
+// byline in a lower one — the PERMANENT fix for the whole class (ekhbary24's
+// CMS email was one species; outlet names and UI placeholders are others).
 check('email meta falls through to visible byline',
   extractAuthorFromHtml('<meta name="author" content="melfaramawy416@gmail.com"><p>كتب: أحمد عبد السلام</p>'),
   'أحمد عبد السلام');
+check('outlet-name meta falls through to visible byline',
+  extractAuthorFromHtml('<meta name="author" content="بوابة الأهرام"><div class="byline">بقلم: سارة حسن</div>'),
+  'سارة حسن');
+check('UI-junk JSON-LD falls through to meta person',
+  extractAuthorFromHtml('<script type="application/ld+json">{"author":{"name":"كلمة البحث هنا"}}</script><meta name="author" content="Mona Zaki">'),
+  'Mona Zaki');
+check('outlet param sharpens the outlet check',
+  extractAuthorFromHtml('<meta name="author" content="Techno Time"><p>كتب: أحمد سمير</p>', 'Technotime'),
+  'أحمد سمير');
 // 20. probe refuses to scrape a non-article page (no fetch attempted)
 let fetches = 0;
 globalThis.fetch = async () => { fetches++; throw new Error('must not fetch a tag page'); };
@@ -65,5 +75,5 @@ const probe = await fetchAuthorProbe('https://besraha.com/keyword/318029/1');
 assert.strictEqual(fetches, 0, 'probe fetched a tag page');
 check('probe skips tag page', `${probe.author}|${probe.outcome}`, 'null|no-byline');
 
-console.log(`\n${pass}/23 PASS`);
-assert.strictEqual(pass, 23, 'not all 23 passed');
+console.log(`\n${pass}/26 PASS`);
+assert.strictEqual(pass, 26, 'not all 26 passed');
