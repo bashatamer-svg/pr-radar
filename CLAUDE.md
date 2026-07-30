@@ -141,6 +141,16 @@ gets nothing. All queries live in `lib/db.js`.
 - **The weekly email output must stay byte-identical** unless intentionally
   changed — `buildReportRange` was added *beside* `buildReport` for this
   reason. Email HTML is table-layout + inline styles only.
+- **One design system across surfaces.** `lib/email.js` carries the BOARD's
+  tokens (`public/index.html` `:root`) and exports them as `THEME` for
+  `lib/report.js`, so bulletin + urgent + report + board match. Change a board
+  token → update the email constants in the same commit (`render-email-design`
+  reads `:root` and fails otherwise). Card vocabulary is shared too: Reach,
+  "What to do with this", and the lane names Needs a response / Wins to
+  amplify / Market & noted.
+- **Inline styles sit inside `style="…"`** — never use double quotes within a
+  declaration (a `"Segoe UI"` in the font stack truncated every property after
+  it and silently killed colours). Single quotes only; the test guards it.
 - **Narrative clustering is pinned to real production data**
   (`tests/narr-real.mjs` + fixture). If it fails after a change, the change
   broke clustering — don't "fix" the fixture.

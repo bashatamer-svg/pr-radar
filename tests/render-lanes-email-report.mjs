@@ -26,18 +26,18 @@ const { renderBulletin } = await import(new URL('..', import.meta.url).pathname 
 const html = renderBulletin({ items, broken: [], scanned: 5, greetingName: 'Team' });
 
 // Locate section boundaries by their labels, then check which headlines fall in each.
-const idxRisk = html.indexOf('reputational risk');
-const idxWins = html.indexOf('brand wins');
-const idxMkt  = html.indexOf('market &');
-assert.ok(idxRisk >= 0 && idxWins >= 0 && idxMkt >= 0, 'all three email sections present');
+const idxRisk = html.indexOf('Needs a response');
+const idxWins = html.indexOf('Wins to amplify');
+const idxMkt  = html.indexOf('Market &amp; noted');
+assert.ok(idxRisk >= 0 && idxWins >= 0 && idxMkt >= 0, 'all three email sections present, named like the board lanes');
 // section order in source is negative, positive, neutral
 const sliceRisk = html.slice(idxRisk, idxWins);
 const sliceWins = html.slice(idxWins, idxMkt);
 const sliceMkt  = html.slice(idxMkt);
-assert.ok(sliceRisk.includes(H.vodNeg), 'Vodafone negative is under reputational risk');
-assert.ok(!sliceRisk.includes(H.orgNeg), 'Orange negative is NOT under reputational risk');
-assert.ok(sliceWins.includes(H.vodPos), 'Vodafone positive is under brand wins');
-assert.ok(!sliceWins.includes(H.orgPos), 'Orange positive is NOT under brand wins');
+assert.ok(sliceRisk.includes(H.vodNeg), 'Vodafone negative is under Needs a response');
+assert.ok(!sliceRisk.includes(H.orgNeg), 'Orange negative is NOT under Needs a response');
+assert.ok(sliceWins.includes(H.vodPos), 'Vodafone positive is under Wins to amplify');
+assert.ok(!sliceWins.includes(H.orgPos), 'Orange positive is NOT under Wins to amplify');
 assert.ok(sliceMkt.includes(H.orgNeg) && sliceMkt.includes(H.orgPos), 'competitor items live in the market section');
 // Competitor pills are relabelled so the Vodafone-standpoint convention reads
 // correctly in the inbox: stored negative = the rival won (counts against us),
@@ -46,7 +46,7 @@ assert.ok(sliceMkt.includes('Competitor win') && sliceMkt.includes('Competitor s
 assert.ok(!sliceMkt.includes('>Negative<') && !sliceMkt.includes('>Positive<'), 'no bare sentiment pill on a competitor card');
 assert.ok(sliceRisk.includes('>Negative<'), 'Vodafone card keeps the plain Negative pill');
 assert.ok(sliceWins.includes('>Positive<'), 'Vodafone card keeps the plain Positive pill');
-console.log('EMAIL OK — reputational risk & brand wins are Vodafone-only; competitors → market');
+console.log('EMAIL OK — Needs a response & Wins to amplify are Vodafone-only (board lane names); competitors → Market & noted');
 
 // ---- Report (buildReport hits the DB via fetch; mock it) ----
 globalThis.fetch = async (url) => {
