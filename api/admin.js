@@ -53,7 +53,7 @@ export default async function handler(req, res) {
         // opening text, raw candidates — so "no byline" is verifiable, not
         // taken on faith. Read-only: nothing is written.
         const days = Math.max(1, Math.min(Number(req.query.days) || 30, 45));
-        const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 15));
+        const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 60));
         resetAuthorAiBudget();
         const stale = await itemsMissingAuthor({ days, limit });
         const rows = await Promise.all((stale || []).map(async (it) => {

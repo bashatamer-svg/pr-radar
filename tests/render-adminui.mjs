@@ -32,7 +32,7 @@ const server = createServer((req, res) => {
       if (view === 'author-gap') return j({ missing: 5, days: 7 });
       if (view === 'author-inspect') return j({ days: 30, count: 2, rows: [
         { id: 11, source: 'جريدة كابيتال', headline: 'قصة بلا توقيع', url: 'https://x/1', outcome: 'no-byline', status: 200, author: null, textStart: 'القاهرة — نص وكالة بدون توقيع', candidates: [] },
-        { id: 12, source: 'الشروق', headline: 'قصة محجوبة', url: 'https://x/2', outcome: 'fetch-failed', status: 403, author: null, textStart: '', candidates: [] },
+        { id: 12, source: 'الشروق', headline: 'قصة محجوبة', url: 'https://x/2', outcome: 'fetch-failed', status: 403, author: null, textStart: '', candidates: [], tried: [{ profile: 'desktop', status: 403 }, { profile: 'desktop+referer', status: 403 }, { profile: 'mobile', status: 403 }] },
       ] });
       if (view === 'whatsapp-status') return j({ enabled: true, hasToken: true, hasPhoneId: true, recipients: 2, template: 'pr_urgent' });
       if (view === 'feedback') return j([]);
@@ -118,6 +118,7 @@ const aiRows = await page.$eval('#aiRows', el => el.textContent);
 assert.ok(/no byline on page/.test(aiRows), 'no-byline verdict shown');
 assert.ok(/page opens:/.test(aiRows) && /نص وكالة/.test(aiRows), 'opening text shown as evidence');
 assert.ok(/blocked \/ unreachable \(403\)/.test(aiRows), 'blocked verdict shown with HTTP status');
+assert.ok(/tried: desktop → 403 · desktop\+referer → 403 · mobile → 403/.test(aiRows), 'per-profile attempt evidence shown');
 
 // WhatsApp card — status shown, test button enabled + sends
 await page.waitForTimeout(150);

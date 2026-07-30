@@ -437,7 +437,7 @@ async function runAuthorInspect(){
   const days=Math.max(1,Math.min(Number($('#baDays').value)||30,45));
   btn.disabled=true; const label=btn.textContent; btn.textContent='Probing…'; msg.textContent='Re-fetching a sample of the stuck articles…'; msg.className='formmsg'; box.innerHTML='';
   try{
-    const r=await api({q:`&view=author-inspect&days=${days}&limit=10`});
+    const r=await api({q:`&view=author-inspect&days=${days}&limit=60`});
     const d=await r.json().catch(()=>({}));
     if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
     else{
@@ -449,6 +449,7 @@ async function runAuthorInspect(){
           <div style="font-size:12px"><b style="color:${col}">${esc(lab)}${x.status&&x.outcome==='fetch-failed'?' ('+esc(String(x.status))+')':''}</b>
             ${x.author?` — <b dir="auto">${esc(x.author)}</b> (will fill on the next backfill)`:''} · <span class="nm">${esc(x.source||'')}</span></div>
           <div dir="auto" style="font-size:12px;color:var(--ink-2);margin-top:2px">${esc(x.headline||'')}</div>
+          ${x.outcome==='fetch-failed'&&x.tried&&x.tried.length?`<div style="font-size:11px;color:var(--faint);margin-top:2px">tried: ${esc(x.tried.map(t=>t.profile+' → '+t.status).join(' · '))}</div>`:''}
           ${x.outcome==='no-byline'&&x.textStart?`<div dir="auto" style="font-size:11px;color:var(--faint);margin-top:4px;line-height:1.5">page opens: “${esc(x.textStart.slice(0,200))}…”</div>`:''}
           ${x.candidates&&x.candidates.length?`<div dir="auto" style="font-size:11px;color:var(--faint);margin-top:2px">rejected candidates: ${esc(x.candidates.join(' · '))}</div>`:''}
         </div>`;

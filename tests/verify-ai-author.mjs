@@ -106,10 +106,16 @@ assert.strictEqual(await fetchAuthor('https://retry.example/a'), 'Sara Adel', 'a
 assert.strictEqual(articleAttempts, 2, 'exactly one retry after the 403');
 assert.strictEqual(anthropicCalls, 0, 'meta byline on retry → no AI call');
 
-// ── persistent block → null after the single retry (no infinite loop) ──
-articleAttempts = 0; statuses = [403, 403];
+// ── mobile-profile recovery: desktop 403s but the mobile identity gets through ──
+articleAttempts = 0; statuses = [403, 403, 200]; anthropicCalls = 0;
+pageHtml = '<html><head><meta name="author" content="Sara Adel"></head><body><h1>x</h1></body></html>';
+assert.strictEqual(await fetchAuthor('https://uagate.example/a'), 'Sara Adel', 'mobile profile recovers a desktop-only block');
+assert.strictEqual(articleAttempts, 3, 'desktop, desktop+referer, then mobile');
+
+// ── persistent block → null after all three profiles (no infinite loop) ──
+articleAttempts = 0; statuses = [403, 403, 403];
 assert.strictEqual(await fetchAuthor('https://blocked.example/a'), null, 'persistent 403 → null');
-assert.strictEqual(articleAttempts, 2, 'retried once, then gave up');
+assert.strictEqual(articleAttempts, 3, 'all three profiles tried, then gave up');
 statuses = null;
 
 // ── inspectAuthorPage returns EVIDENCE, not just a label (admin Verify verdicts) ──
@@ -120,10 +126,12 @@ const insp = await inspectAuthorPage('https://outlet.example/h');
 assert.strictEqual(insp.outcome, 'no-byline', 'inspect: verdict matches probe');
 assert.ok(insp.textStart.includes('Wire copy'), 'inspect: opening article text returned as evidence');
 assert.deepStrictEqual(insp.candidates, [], 'inspect: no candidates on a truly bylineless page');
-statuses = [403, 403]; articleAttempts = 0;
+statuses = [403, 403, 403]; articleAttempts = 0;
 const insp2 = await inspectAuthorPage('https://blocked.example/h');
 assert.strictEqual(insp2.outcome, 'fetch-failed', 'inspect: blocked page labelled');
 assert.strictEqual(insp2.status, 403, 'inspect: HTTP status surfaced');
+assert.deepStrictEqual(insp2.tried.map(t => t.profile), ['desktop', 'desktop+referer', 'mobile'], 'inspect: all three profiles logged as evidence');
+assert.ok(insp2.tried.every(t => t.status === 403), 'inspect: per-attempt statuses recorded');
 statuses = null;
 
 console.log('AI-AUTHOR OK — meta hit skips AI; plain-text byline → 1 AI call; no byline → null; AUTHOR_AI=0 disables; junk name rejected; 403 retried once (recovers soft-blocks, gives up on hard blocks)');
