@@ -165,9 +165,22 @@ gets nothing. All queries live in `lib/db.js`.
 - **Inline styles sit inside `style="…"`** — never use double quotes within a
   declaration (a `"Segoe UI"` in the font stack truncated every property after
   it and silently killed colours). Single quotes only; the test guards it.
+- **Narratives are two-stage** (`lib/narratives.js`): a deterministic token
+  pre-pass, then an LLM pass (Haiku, `NARRATIVE_MODEL`) that re-groups and
+  writes the English title. Stage 2 is fail-soft and optional — no
+  `ANTHROPIC_API_KEY`, a timeout (12s), a malformed reply or an id it invented
+  and stage 1's answer stands, so the section always renders. Model output is
+  untrusted: ids are validated against the input, duplicates and <2-story groups
+  dropped. Memoised in module scope per (window, exact id set) — warm-lambda
+  persistence used deliberately here; `_resetNarrativeCache()` for tests.
+  Token overlap alone can't separate two stories that share PR vocabulary (an
+  ad campaign vs a plagiarism row about its music) — that's the LLM's job; the
+  fallback deliberately errs toward splitting, since a false merge reports one
+  number for two unrelated things.
 - **Narrative clustering is pinned to real production data**
-  (`tests/narr-real.mjs` + fixture). If it fails after a change, the change
-  broke clustering — don't "fix" the fixture.
+  (`tests/narr-real.mjs` + fixture, recaptured 2026-07-31, 100 rows). If it
+  fails after a change, the change broke clustering — don't "fix" the fixture;
+  recapture it from `pr_items` if the data genuinely moved on.
 - **A narrative's `ids` ARE the board view.** Trends counts a cluster's stories,
   but tapping the row opens the board by fetching exactly those ids — so any cap
   on the id list silently shows fewer cards than the row promised (a 27-story

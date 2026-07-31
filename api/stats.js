@@ -12,6 +12,7 @@
 import { itemsForStats, instancesForItems } from '../lib/db.js';
 import { isOutletName } from '../lib/author.js';
 import { requireRole } from '../lib/auth.js';
+import { buildNarratives } from '../lib/narratives.js';
 
 const BRANDS = ['Vodafone', 'Orange', 'WE', 'e&'];
 const SERIES = [...BRANDS, 'Market'];               // fixed order — stack + legend order
@@ -29,166 +30,6 @@ const dayOf = (it) => {
   const d = new Date(t);
   return Number.isNaN(d.getTime()) ? null : cairoDay.format(d);
 };
-
-// ── narrative clustering ──
-// A "narrative" is several DISTINCT stories on one theme ("Vodafone Cash
-// outage", "roaming price backlash") — not the dedupe pass (that collapses the
-// SAME story). Group within a category by headline+summary token overlap, then
-// name each cluster from its most frequent distinctive headline tokens.
-const NARR_STOP = new Set([
-  'the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'for', 'and', 'or', 'but', 'is', 'are', 'was', 'were',
-  'by', 'with', 'from', 'as', 'that', 'this', 'these', 'those', 'says', 'said', 'has', 'have', 'will',
-  'new', 'news', 'report', 'reports', 'after', 'over', 'amid', 'its', 'their', 'egypt', 'egyptian',
-  'مصر', 'في', 'من', 'على', 'عن', 'إلى', 'الى', 'مع', 'بعد', 'خلال', 'حول', 'شركة',
-]);
-// Brand tokens steer clustering but are stripped from the generated NAME (the
-// name shows the theme; the brand is a separate field/prefix).
-const NARR_BRAND = new Set([
-  'vodafone', 'فودافون', 'ڤودافون', 'orange', 'اورنج', 'أورنج', 'we', 'وي', 'etisalat', 'اتصالات', 'telecom', 'e&',
-  // Company-name morphology: "المصرية للاتصالات" is Telecom Egypt's NAME — its
-  // two words were counting as two shared "theme" tokens and glued every WE
-  // corporate story together.
-  'المصرية', 'للاتصالات', 'والاتصالات',
-  'cash', 'كاش',   // product token: "Vodafone Cash" steers like a brand, it isn't a theme
-]);
-// Generic sector vocabulary. In a MOBILE-market monitor every second story says
-// "mobile", "operators", "four", "network", "service" — so these can never make
-// two stories "the same theme". Without this, a ticketing how-to and a crypto
-// settlement piece clustered because both said "four ... mobile ...". Excluded
-// from the distinctive-token bridge AND from generated cluster names.
-const NARR_GENERIC = new Set([
-  'mobile', 'phone', 'phones', 'operator', 'operators', 'network', 'networks',
-  'four', 'major', 'service', 'services', 'company', 'companies', 'customers',
-  'app', 'apps', 'digital', 'launch', 'launches', 'launched', 'announces', 'announced',
-  'million', 'billion', 'first', 'largest', 'through', 'across',
-  // Corporate-PR filler — every partnership/deal story says these, so they can't
-  // link two stories ("strategic partnership", "implementation", "agreement"
-  // merged TE's unified-card story with Orange's carry-on project).
-  'implementation', 'cooperation', 'partnership', 'partnerships', 'strategic',
-  'project', 'projects', 'agreement', 'agreements', 'discuss', 'discusses', 'discussed', 'government',
-  'محمول', 'المحمول', 'موبايل', 'شبكة', 'شبكات', 'خدمة', 'خدمات', 'شركات', 'الشركات',
-  'هاتف', 'الهاتف', 'عملاء', 'العملاء', 'مليون', 'مليار',
-  'شراكة', 'تعاون', 'التعاون', 'استراتيجية', 'استراتيجي', 'اتفاقية', 'اتفاق',
-]);
-const narrTokens = (s) => String(s || '')
-  .toLowerCase().replace(/[^a-z0-9؀-ۿ ]/g, ' ').split(/\s+/)
-  .filter((w) => w.length >= 3 && !NARR_STOP.has(w));
-// Distinctive tokens — long enough + non-brand + non-generic — are what make two
-// stories "the same theme" even when their overall wording barely overlaps
-// ("roaming price" shared across otherwise-different headlines). Mirrors
-// dedupe-semantic's strong-token bridge.
-const strongToks = (s) => new Set([...narrTokens(s)].filter((w) => w.length >= 4 && !NARR_BRAND.has(w) && !NARR_GENERIC.has(w)));
-const jaccard = (a, b) => { if (!a.size || !b.size) return 0; let i = 0; for (const x of a) if (b.has(x)) i++; return i / (a.size + b.size - i); };
-const sharedCount = (a, b) => { let i = 0; for (const x of a) if (b.has(x)) i++; return i; };
-const titleCase = (s) => s.replace(/\b\p{L}/gu, (m) => m.toUpperCase());
-
-// Cluster relevant items into named narratives with a per-day volume series,
-// sentiment split, and a "rising" flag (accelerating in the back third of the
-// window). Returns the top `limit` narratives, rising first.
-// Catch-all categories carry no theme information of their own, so two stories
-// there must share MORE distinctive tokens to count as one narrative — generic
-// business pairs ("stake sale", "strategic partnership") glued different
-// companies' corporate stories together. Focused categories (pricing, network,
-// vodafone_cash…) already narrow the theme, so 2 shared tokens stay enough
-// ("price increases", "roaming price").
-const NARR_CATCHALL = new Set(['corporate', 'other', 'competitor']);
-
-// How many item ids a narrative hands the board's ?ids= deep link. Must stay
-// <= the cap inside itemsByIds() (lib/db.js), which is what actually fetches
-// them — a bigger number here would ask for rows the API refuses to return.
-const NARR_IDS_MAX = 100;
-
-function buildNarratives(items, days, dayIdx, { minStories = 2, threshold = 0.22, limit = 12 } = {}) {
-  const clusters = [];
-  for (const it of items) {
-    const toks = new Set([...narrTokens(it.headline), ...narrTokens(it.summary)]);
-    if (!toks.size) continue;
-    const strong = strongToks(`${it.headline} ${it.summary}`);
-    const cat = it.category || 'other';
-    const need = NARR_CATCHALL.has(cat) ? 3 : 2;
-    // Join the best same-category cluster where the item matches SOME MEMBER
-    // pairwise — never the cluster's pooled tokens. Pooling snowballed: every
-    // join grew the pool, so a big cluster eventually matched anything in its
-    // category (the 16-story "corporate" mega-cluster). Pairwise keeps a chain
-    // honest: each link must resemble an actual story, not the pile.
-    let best = null, bestScore = 0;
-    for (const c of clusters) {
-      if (c.category !== cat) continue;
-      let score = 0, qualifies = false;
-      for (const m of c.members) {
-        const j = jaccard(m.toks, toks);
-        const sh = sharedCount(m.strong, strong);
-        if (j >= threshold || sh >= need) qualifies = true;
-        const s = Math.max(j, sh >= need ? 0.2 + 0.02 * sh : 0);
-        if (s > score) score = s;
-      }
-      if (qualifies && score > bestScore) { bestScore = score; best = c; }
-    }
-    if (best) {
-      best.items.push(it);
-      best.members.push({ toks, strong });
-    } else {
-      clusters.push({ category: cat, members: [{ toks, strong }], items: [it] });
-    }
-  }
-
-  const zeros = () => days.map(() => 0);
-  const out = [];
-  for (const c of clusters) {
-    if (c.items.length < minStories) continue;
-    const series = zeros();
-    let negative = 0, neutral = 0, positive = 0;
-    const brandCount = {};
-    const freq = new Map();
-    for (const it of c.items) {
-      const idx = dayIdx.get(dayOf(it));
-      if (idx !== undefined) series[idx]++;
-      const s = sentOf(it);
-      if (s === 'negative') negative++; else if (s === 'positive') positive++; else neutral++;
-      const b = brandOf(it);
-      brandCount[b] = (brandCount[b] || 0) + 1;
-      for (const t of new Set(narrTokens(it.headline))) if (!NARR_BRAND.has(t) && !NARR_GENERIC.has(t)) freq.set(t, (freq.get(t) || 0) + 1);
-    }
-    const brand = Object.entries(brandCount).sort((a, b) => b[1] - a[1])[0][0];
-    const ranked = [...freq.entries()].sort((a, b) => b[1] - a[1]);
-    const shared = ranked.filter(([, n]) => n >= 2).slice(0, 3).map(([t]) => t);
-    const keyToks = (shared.length ? shared : ranked.slice(0, 2).map(([t]) => t));
-    const rep = c.items.slice().sort((a, b) => (b.importance || 0) - (a.importance || 0))[0];
-    const name = keyToks.length
-      ? (brand === 'Market' ? '' : `${brand} · `) + titleCase(keyToks.join(' '))
-      : String(rep.headline || c.category).split(/\s+/).slice(0, 6).join(' ');
-
-    // rising: recent (back third) rate vs earlier rate.
-    const cut = Math.floor(series.length * 2 / 3);
-    const earlier = series.slice(0, cut).reduce((s, v) => s + v, 0);
-    const recent = series.slice(cut).reduce((s, v) => s + v, 0);
-    const earlierRate = earlier / Math.max(1, cut);
-    const recentRate = recent / Math.max(1, series.length - cut);
-    const rising = recent >= 2 && recentRate > earlierRate * 1.5;
-    // Ratio only when there's a real baseline to divide by; a from-nothing
-    // narrative reports null (the UI shows a plain "rising", not "400×").
-    const risingScore = earlier > 0 ? Math.min(99, Math.round((recentRate / earlierRate) * 10) / 10) : null;
-
-    out.push({
-      name, brand, category: c.category, total: c.items.length,
-      negative, neutral, positive, series, rising, risingScore,
-      headline: rep.headline || null,
-      // The board opens a narrative by fetching THESE ids, so a short list is a
-      // silently wrong board: a 27-story narrative shipped 20 ids and showed 20
-      // cards, dropping its only negative (live-reported 2026-07-31). Cap now
-      // matches itemsByIds()'s own 100 limit — raising it further needs that
-      // limit raised too — and the list is ordered by importance so a cluster
-      // that ever does exceed 100 keeps its biggest stories. `idsTotal` lets the
-      // board say when it is showing a subset instead of quietly under-reporting.
-      ids: c.items.slice().sort((a, b) => (b.importance || 0) - (a.importance || 0))
-        .map((i) => i.id).filter(Boolean).slice(0, NARR_IDS_MAX),
-      idsTotal: c.items.filter((i) => i.id).length,
-    });
-  }
-  return out
-    .sort((a, b) => (Number(b.rising) - Number(a.rising)) || (b.risingScore - a.risingScore) || (b.total - a.total))
-    .slice(0, limit);
-}
 
 export default async function handler(req, res) {
   const who = await requireRole(req, res, 'viewer');
@@ -299,7 +140,12 @@ export default async function handler(req, res) {
     .slice(0, 15)
     .map((a) => ({ ...a, outlets: [...a.outlets].slice(0, 3) }));
 
-  const narratives = buildNarratives(items, days, dayIdx);
+  // Fail-soft: narratives are one card on the page, never a reason the whole
+  // trends screen 500s. buildNarratives already swallows its own LLM errors;
+  // this catches anything else so the charts still render.
+  let narratives = [];
+  try { narratives = await buildNarratives(items, days, dayIdx); }
+  catch (e) { console.error('narratives failed, section omitted —', e.message); }
 
   return res.status(200).json({
     meta: { days: windowDays, generatedAt: new Date().toISOString(), items: items.length },

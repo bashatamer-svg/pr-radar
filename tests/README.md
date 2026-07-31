@@ -27,7 +27,7 @@ are **skipped**, the unit suite still runs.
 | Custom date-range reports (exec summary, appendix, Word/PDF export) | `smoke-report-range` (backend), `render-reports-page` (browser) |
 | Surge detection (calendar + rolling windows) | `smoke-task7`, `render-surge-rolling` |
 | Board UI (lanes, filters, deep links, auto-refresh, bylines, coverage) | `render-task11..15`, `render-lanes`, `render-deeplink`, `render-autorefresh`, `render-desk-byline`, `render-coverage`, `verify-bidi` |
-| Trends narratives (clustering, real-data regression, deep-link integrity) | `render-narrative-cluster`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives`, `render-deeplink` |
+| Trends narratives (token clustering, LLM grouping + fallbacks, real-data regression, deep-link integrity) | `render-narrative-cluster`, `narr-ai`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives`, `render-deeplink` |
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |
@@ -35,7 +35,12 @@ are **skipped**, the unit suite still runs.
 | Guide page | `render-guide` |
 | Link previews & branding (OG/Twitter tags, favicon, PNG assets) | `render-og` |
 
-`narr-fixture.mjs` is data (real production items captured 2026-07-27), not a test.
+`narr-fixture.mjs` is data (real production items, captured 2026-07-27 and
+recaptured 2026-07-31 — 100 rows), not a test.
+
+The narrative LLM pass is mocked in `narr-ai` — the sandbox has no
+`ANTHROPIC_API_KEY`. That test pins the contract and every failure mode; the
+grouping quality itself is verified in production.
 
 Historical note: an early `smoke-task4` (weekly report endpoint) was dropped —
 it predated the Bearer-only auth and Vodafone-only report lanes; its subject is
