@@ -290,14 +290,14 @@ function sovChart(el){
       const i=Number(r.dataset.i);
       const show=(e)=>{ const pt=e.touches?e.touches[0]:e;
         tipShow(pt.clientX,pt.clientY,fmtDay(days[i])+' — '+totals[i]+' item'+(totals[i]===1?'':'s'),
-          active.map(b=>({color:CHART[b],label:b,value:sov[b].mentions[i]+(sov[b].negatives[i]?` (${sov[b].negatives[i]} unfavourable)`:'')})));
+          active.map(b=>({color:CHART[b],label:b,value:sov[b].mentions[i]+(sov[b].negatives[i]?` (${sov[b].negatives[i]} negative)`:'')})));
       };
       r.addEventListener('pointermove',show); r.addEventListener('pointerdown',show);
       r.addEventListener('pointerleave',tipHide);
     });
   };
   const table=()=>{
-    let h='<table><caption class="axis" style="text-align:left;padding:2px 0 6px;color:var(--faint)">Mentions per brand per day (unfavourable stories in parentheses)</caption><thead><tr><th scope="col">Day</th>'+active.map(b=>`<th scope="col">${esc(b)}</th>`).join('')+'<th scope="col">Total</th></tr></thead><tbody>';
+    let h='<table><caption class="axis" style="text-align:left;padding:2px 0 6px;color:var(--faint)">Mentions per brand per day (negative stories in parentheses)</caption><thead><tr><th scope="col">Day</th>'+active.map(b=>`<th scope="col">${esc(b)}</th>`).join('')+'<th scope="col">Total</th></tr></thead><tbody>';
     days.forEach((d,i)=>{ if(!totals[i]) return;
       h+=`<tr><td>${esc(fmtDay(d))}</td>`+active.map(b=>{const m=sov[b].mentions[i],x=sov[b].negatives[i];return `<td>${m}${x?` (${x})`:''}</td>`;}).join('')+`<td><b>${totals[i]}</b></td></tr>`; });
     return h+'</tbody></table>';
@@ -305,10 +305,10 @@ function sovChart(el){
   return {legend:legendHtml(active,'rect'),svg,bind,table};
 }
 
-/* Unfavourable coverage per day — 2px brand-colored lines, crosshair tooltip.
-   Every series counts items scored negative FROM VODAFONE'S STANDPOINT, so a
-   rival's line rises when the rival WINS. Labelled "unfavourable" everywhere,
-   never a bare "negative", which reads backwards on a competitor series. */
+/* Negative coverage per day — 2px brand-colored lines, crosshair tooltip.
+   Every series counts items scored negative FOR THE BRAND THEY ARE ABOUT, so a
+   rival's line rises when the rival is having a bad week. Same scale for all
+   four brands — nothing here is inverted. */
 function negChart(el){
   const {days,sov}=DATA;
   const active=SERIES.filter(b=>b!=='Market'&&sov[b].negatives.some(v=>v>0));
@@ -328,7 +328,7 @@ function negChart(el){
     const pts=days.map((_,i)=>`${xs(i).toFixed(1)},${y(sov[b].negatives[i]).toFixed(1)}`).join(' ');
     lines+=`<polyline points="${pts}" fill="none" stroke="${CHART[b]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
   }
-  const svg=`<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Coverage unfavourable to Vodafone, per brand per day">
+  const svg=`<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Negative coverage per brand per day">
     ${g}<line class="baseline" x1="${padL}" x2="${W-padR}" y1="${y(0)}" y2="${y(0)}"></line>${lines}
     <line class="xh" x1="0" x2="0" y1="${padT}" y2="${padT+plotH}" stroke="var(--faint)" stroke-width="1" opacity="0"></line>
     <g class="dots"></g>
@@ -345,7 +345,7 @@ function negChart(el){
       dots.replaceChildren(...all.map(b=>{ const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
         c.setAttribute('cx',xs(i)); c.setAttribute('cy',y(sov[b].negatives[i])); c.setAttribute('r','4.5');
         c.setAttribute('fill',CHART[b]); c.setAttribute('stroke','var(--card)'); c.setAttribute('stroke-width','2'); return c; }));
-      tipShow(pt.clientX,pt.clientY,fmtDay(days[i])+' — unfavourable',
+      tipShow(pt.clientX,pt.clientY,fmtDay(days[i])+' — negative',
         all.map(b=>({color:CHART[b],label:b,value:String(sov[b].negatives[i])})));
     };
     const leave=()=>{ xh.setAttribute('opacity','0'); dots.replaceChildren(); tipHide(); };
@@ -403,20 +403,20 @@ function sentimentChart(el){
       const b=r.dataset.b, d=s[b];
       const show=(e)=>{ const pt=e.touches?e.touches[0]:e;
         tipShow(pt.clientX,pt.clientY,b+' — '+d.total+' item'+(d.total===1?'':'s'),[
-          {color:NEG,label:'Unfavourable',value:String(d.negative)},
+          {color:NEG,label:'Negative',value:String(d.negative)},
           {color:NEU,label:'Neutral',value:String(d.neutral)},
-          {color:POS,label:'Favourable',value:String(d.positive)},
+          {color:POS,label:'Positive',value:String(d.positive)},
         ]); };
       r.addEventListener('pointermove',show); r.addEventListener('pointerdown',show);
       r.addEventListener('pointerleave',tipHide);
     });
   };
   const table=()=>{
-    let h='<table><thead><tr><th scope="col">Brand</th><th scope="col">Unfavourable</th><th scope="col">Neutral</th><th scope="col">Favourable</th><th scope="col">Total</th></tr></thead><tbody>';
+    let h='<table><thead><tr><th scope="col">Brand</th><th scope="col">Negative</th><th scope="col">Neutral</th><th scope="col">Positive</th><th scope="col">Total</th></tr></thead><tbody>';
     rows.forEach(b=>{ const d=s[b]; h+=`<tr><td>${esc(b)}</td><td>${d.negative}</td><td>${d.neutral}</td><td>${d.positive}</td><td><b>${d.total}</b></td></tr>`; });
     return h+'</tbody></table>';
   };
-  return {legend:`<div class="legend"><a class="li" href="${boardLink('sent','negative')}" title="Show the unfavourable cards"><span class="sw" style="background:${NEG}"></span>Unfavourable</a><a class="li" href="${boardLink('sent','neutral')}" title="Show neutral cards"><span class="sw" style="background:${NEU}"></span>Neutral</a><a class="li" href="${boardLink('sent','positive')}" title="Show the favourable cards"><span class="sw" style="background:${POS}"></span>Favourable</a></div>`,svg,bind,table};
+  return {legend:`<div class="legend"><a class="li" href="${boardLink('sent','negative')}" title="Show the negative cards"><span class="sw" style="background:${NEG}"></span>Negative</a><a class="li" href="${boardLink('sent','neutral')}" title="Show neutral cards"><span class="sw" style="background:${NEU}"></span>Neutral</a><a class="li" href="${boardLink('sent','positive')}" title="Show the positive cards"><span class="sw" style="background:${POS}"></span>Positive</a></div>`,svg,bind,table};
 }
 
 /* Sparkline for category rows — single muted line, 1.5px, no axis. */
@@ -427,7 +427,7 @@ function sparkSvg(series,w,h){
   return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--faint)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"></polyline></svg>`;
 }
 
-/* Categories — table-chart hybrid rows: total bar with the unfavourable share as
+/* Categories — table-chart hybrid rows: total bar with the negative share as
    the red emphasis segment, plus a per-day sparkline. Values printed on every
    row (this IS the table channel, so full labelling is correct here). */
 function categoryRows(){
@@ -441,11 +441,11 @@ function categoryRows(){
       <span class="nm">${esc(name)}</span>
       <span class="spark">${sparkSvg(c.series,72,20)}</span>
       <span class="bar" aria-hidden="true">${c.negative?`<i style="width:${negW}%;background:${NEG}"></i>`:''}${c.total-c.negative?`<i style="width:${restW}%;background:var(--neu);opacity:.35"></i>`:''}</span>
-      <span class="val"><b>${c.total}</b>${c.negative?` · <b class="neg">${c.negative} unfavourable</b>`:''}</span>
+      <span class="val"><b>${c.total}</b>${c.negative?` · <b class="neg">${c.negative} negative</b>`:''}</span>
     </a>`;
   }).join('');
   const table=()=>{
-    let h='<table><thead><tr><th scope="col">Category</th><th scope="col">Items</th><th scope="col">Unfavourable</th><th scope="col">Vodafone-negative</th></tr></thead><tbody>';
+    let h='<table><thead><tr><th scope="col">Category</th><th scope="col">Items</th><th scope="col">Negative</th><th scope="col">Vodafone-negative</th></tr></thead><tbody>';
     cats.forEach(c=>{ h+=`<tr><td>${esc(String(c.category).replace(/_/g,' '))}</td><td>${c.total}</td><td>${c.negative}</td><td>${c.vodNeg}</td></tr>`; });
     return h+'</tbody></table>';
   };
@@ -473,7 +473,7 @@ function narrativeRows(list){
     </a>`;
   }).join('');
   const table=()=>{
-    let h='<table><thead><tr><th scope="col">Narrative</th><th scope="col">Brand</th><th scope="col">Stories</th><th scope="col">Unfavourable</th><th scope="col">Neutral</th><th scope="col">Favourable</th><th scope="col">Rising</th></tr></thead><tbody>';
+    let h='<table><thead><tr><th scope="col">Narrative</th><th scope="col">Brand</th><th scope="col">Stories</th><th scope="col">Negative</th><th scope="col">Neutral</th><th scope="col">Positive</th><th scope="col">Rising</th></tr></thead><tbody>';
     list.forEach(n=>{ h+=`<tr><td>${esc(n.name)}</td><td>${esc(n.brand)}</td><td>${n.total}</td><td>${n.negative}</td><td>${n.neutral}</td><td>${n.positive}</td><td>${n.rising?('▲'+(n.risingScore?' '+n.risingScore+'×':'')):'—'}</td></tr>`; });
     return h+'</tbody></table>';
   };
@@ -484,10 +484,9 @@ function narrativeRows(list){
    VOLUME (mentions vs the busiest), split into their own negative/neutral/
    positive SENTIMENT mix; a sparkline shows their activity over the window; and
    repeat-negative behaviour is flagged. "Repeat critic" = 2+ Vodafone-negative
-   stories; "runs unfavourable" = ≥3 stories and a majority scoring unfavourable for
-   Vodafone — which includes glowing RIVAL coverage, so it flags a writer whose
-   output works unfavourable, not necessarily a hostile one. Tone is always read
-   from Vodafone's standpoint, hence the wording (never a bare "negative"). */
+   stories; "leans negative" = ≥3 stories and a majority of their output scoring
+   negative for whichever brand it covers — a tone signal about the writer, which
+   is not the same thing as hostility to us (that is what Vod-neg is for). */
 function leaderboardRows(list,kind){
   if(!list.length) return {rows:`<div class="empty" style="padding:22px">No ${kind} data in this window.</div>`,table:()=>''};
   const max=Math.max(...list.map(o=>o.mentions));
@@ -496,7 +495,7 @@ function leaderboardRows(list,kind){
     const negShare=pct(o.negative,o.mentions);
     const critic=kind==='author'&&o.vodNeg>=2;
     const leaning=o.mentions>=3&&negShare>=50;
-    const flags=`${critic?`<span class="badge">repeat critic</span>`:''}${leaning?`<span class="badge lean">leans unfavourable</span>`:''}`;
+    const flags=`${critic?`<span class="badge">repeat critic</span>`:''}${leaning?`<span class="badge lean">leans negative</span>`:''}`;
     const sub=kind==='author'&&o.outlets&&o.outlets.length?`<span class="sub">${esc(o.outlets.join(' · '))}</span>`:'';
     // Volume-scaled sentiment bar: segment widths are % of the busiest row, so
     // bar LENGTH reads as volume and the colour split reads as sentiment mix.
@@ -507,11 +506,11 @@ function leaderboardRows(list,kind){
       <span class="nm">${esc(name)}${flags}${sub}</span>
       <span class="spark">${spark}</span>
       <span class="bar" aria-hidden="true">${bar}</span>
-      <span class="val" title="${o.mentions} stories · ${negShare}% of their coverage was unfavourable to Vodafone${o.vodNeg?` · ${o.vodNeg} Vodafone-negative`:''}"><b>${o.mentions}</b> · ${negShare}% unfavourable${o.vodNeg?` · <b class="neg">${o.vodNeg} Vod-neg</b>`:''}</span>
+      <span class="val" title="${o.mentions} stories · ${negShare}% of their coverage ran negative${o.vodNeg?` · ${o.vodNeg} negative about Vodafone`:''}"><b>${o.mentions}</b> · ${negShare}% negative${o.vodNeg?` · <b class="neg">${o.vodNeg} Vod-neg</b>`:''}</span>
     </a>`;
   }).join('');
   const table=()=>{
-    let h=`<table><thead><tr><th scope="col">${kind==='outlet'?'Outlet':'Author'}</th><th scope="col">Stories</th><th scope="col">Unfavourable</th><th scope="col">Neutral</th><th scope="col">Favourable</th><th scope="col">Vod-neg</th></tr></thead><tbody>`;
+    let h=`<table><thead><tr><th scope="col">${kind==='outlet'?'Outlet':'Author'}</th><th scope="col">Stories</th><th scope="col">Negative</th><th scope="col">Neutral</th><th scope="col">Positive</th><th scope="col">Vod-neg</th></tr></thead><tbody>`;
     list.forEach(o=>{ h+=`<tr><td>${esc(kind==='outlet'?o.outlet:o.author)}</td><td>${o.mentions}</td><td>${o.negative}</td><td>${o.neutral}</td><td>${o.positive}</td><td>${o.vodNeg}</td></tr>`; });
     return h+'</tbody></table>';
   };
@@ -544,8 +543,8 @@ function cardHtml(id,title,sub){
 
 const CHARTS=[
   {id:'c-sov',   title:'Share of voice',      sub:'mentions per brand per day', build:el=>sovChart(el)},
-  {id:'c-neg',   title:'Unfavourable coverage', sub:'our negatives + rivals\u2019 wins, per day', build:el=>negChart(el)},
-  {id:'c-sent',  title:'Sentiment by brand',  sub:'unfavourable ◂ neutral ▸ favourable', build:el=>sentimentChart(el)},
+  {id:'c-neg',   title:'Negative coverage', sub:'negative stories per brand, per day', build:el=>negChart(el)},
+  {id:'c-sent',  title:'Sentiment by brand',  sub:'negative ◂ neutral ▸ positive', build:el=>sentimentChart(el)},
 ];
 
 function renderCharts(){
@@ -573,8 +572,8 @@ function render(){
   c.innerHTML=kpiHtml()
     +CHARTS.map(x=>cardHtml(x.id,x.title,x.sub)).join('')
     +cardHtml('c-narr','Narratives','same-theme stories grouped · rising flagged')
-    +cardHtml('c-cat','Categories','volume · trend · unfavourable share')
-    +cardHtml('c-out','Outlet intelligence','volume · sentiment split · trend · unfavourable-leaning flagged')
+    +cardHtml('c-cat','Categories','volume · trend · negative share')
+    +cardHtml('c-out','Outlet intelligence','volume · sentiment split · trend · negative-leaning flagged')
     +cardHtml('c-auth','Journalist intelligence','volume · sentiment split · trend · repeat critics flagged')
     +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Narratives group distinct stories that share a theme (same category + overlapping wording); outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
   renderCharts();

@@ -39,11 +39,13 @@ assert.ok(!sliceRisk.includes(H.orgNeg), 'Orange negative is NOT under Needs a r
 assert.ok(sliceWins.includes(H.vodPos), 'Vodafone positive is under Wins to amplify');
 assert.ok(!sliceWins.includes(H.orgPos), 'Orange positive is NOT under Wins to amplify');
 assert.ok(sliceMkt.includes(H.orgNeg) && sliceMkt.includes(H.orgPos), 'competitor items live in the market section');
-// Competitor pills are relabelled so the Vodafone-standpoint convention reads
-// correctly in the inbox: stored negative = the rival won (unfavourable for us),
-// stored positive = the rival stumbled. Vodafone cards keep the plain wording.
-assert.ok(sliceMkt.includes('Competitor win') && sliceMkt.includes('Competitor setback'), 'competitor pills are relabelled in the market section');
-assert.ok(!sliceMkt.includes('>Negative<') && !sliceMkt.includes('>Positive<'), 'no bare sentiment pill on a competitor card');
+// Pills read the same on every brand — the tone for the brand the story is
+// ABOUT, plainly named. Competitor cards are NOT relabelled; what keeps a
+// rival's win out of our wins column is the lane, asserted above.
+assert.ok(sliceMkt.includes('>Negative<') && sliceMkt.includes('>Positive<'), 'competitor cards carry plain sentiment pills');
+for (const gone of ['Competitor win', 'Competitor setback', 'Competitor note']) {
+  assert.ok(!html.includes(gone), `retired competitor pill wording must not reappear: ${gone}`);
+}
 assert.ok(sliceRisk.includes('>Negative<'), 'Vodafone card keeps the plain Negative pill');
 assert.ok(sliceWins.includes('>Positive<'), 'Vodafone card keeps the plain Positive pill');
 console.log('EMAIL OK — Needs a response & Wins to amplify are Vodafone-only (board lane names); competitors → Market & noted');

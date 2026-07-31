@@ -1,7 +1,8 @@
-// Trends must never label a COMPETITOR series "negative": tone is measured from
-// Vodafone's standpoint, so a rival's negative is that rival WINNING. Every
-// mixed-brand surface reads "unfavourable" / "favourable"; only the explicitly
-// Vodafone-scoped KPI keeps the plain word.
+// Sentiment is the tone for the brand a story is ABOUT — the same scale for
+// Vodafone and for rivals, never inverted. So every Trends surface names it
+// plainly: Negative / Neutral / Positive. This test pins that wording and
+// guards against the retired "unfavourable / favourable" vocabulary, which
+// existed only to paper over the old Vodafone-standpoint inversion.
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
@@ -15,7 +16,7 @@ const STATS = {
   days,
   sov: {
     Vodafone: series([2, 1, 1], [1, 0, 0]),
-    Orange: series([1, 2, 1], [0, 2, 1]),   // rival wins
+    Orange: series([1, 2, 1], [0, 2, 1]),   // Orange's own bad press
     WE: series([1, 1, 0], [1, 0, 0]),
     'e&': series([0, 1, 1], [0, 1, 1]),
     Market: series([0, 0, 0], [0, 0, 0]),
@@ -51,36 +52,28 @@ await page.waitForSelector('.cardc', { timeout: 5000 });
 
 const text = await page.evaluate(() => document.body.innerText);
 
-// the per-brand chart that plots negatives is framed as "unfavourable"
-assert.ok(/Unfavourable coverage/.test(text), 'the negatives-per-brand chart is titled "Unfavourable coverage"');
-assert.ok(/rivals’ wins/.test(text), 'its subtitle explains the mix (our negatives + rivals\' wins)');
-// the sentiment split legend uses standpoint wording, not bare sentiment
-assert.ok(/Unfavourable/.test(text) && /Favourable/.test(text), 'sentiment legend reads from Vodafone\'s standpoint');
-// the Vodafone-only KPI keeps the plain word — it is unambiguous there
+// the per-brand chart that plots negatives says exactly that
+assert.ok(/Negative coverage/.test(text), 'the negatives-per-brand chart is titled "Negative coverage"');
+assert.ok(/negative stories per brand/.test(text), 'its subtitle says what the series are');
+// the sentiment split legend uses the plain sentiment words
+assert.ok(/Negative/.test(text) && /Positive/.test(text), 'sentiment legend reads Negative / Positive');
+// the Vodafone-only KPI is unchanged
 assert.ok(/Vodafone negative/.test(text), 'Vodafone-scoped KPI still says "Vodafone negative"');
 
-// No mixed-brand surface may show a bare "Negative"/"Positive"/"neg" label.
-// Explicitly Vodafone-scoped labels (e.g. "3 Vod-neg") are fine — the brand is
-// named, so there is nothing to misread.
-const bare = await page.evaluate(() => {
-  const out = [];
-  document.querySelectorAll('.legend a, .chead .ct, .chead .cs, .lrow .val, .kpi .kl').forEach((el) => {
-    const t = el.textContent.trim();
-    if (/vod/i.test(t)) return;                       // Vodafone-scoped: allowed
-    if (/^(Negative|Positive)$/i.test(t) || /\bneg\b/i.test(t)) out.push(t);
-  });
-  return out;
-});
-assert.deepStrictEqual(bare, [], `no bare sentiment labels on mixed-brand surfaces (found: ${bare.join(' | ')})`);
+// The retired standpoint vocabulary must not survive anywhere on the page — it
+// only made sense while competitor sentiment was inverted.
+for (const gone of [/unfavourable/i, /favourable/i, /against us/i, /rivals’ wins/]) {
+  assert.ok(!gone.test(text), `retired wording still on the Trends page: ${gone}`);
+}
 
-// a11y data tables carry the same wording
+// a11y data tables carry the same plain wording
 const heads = await page.evaluate(() => {
   document.querySelectorAll('.tgl').forEach((b) => b.click());
   return [...document.querySelectorAll('table th')].map((t) => t.textContent.trim());
 });
-assert.ok(heads.includes('Unfavourable'), 'data tables use "Unfavourable" instead of "Negative"');
-assert.ok(!heads.includes('Negative') && !heads.includes('Neg'), `no "Negative" table header (got ${heads.join(',')})`);
+assert.ok(heads.includes('Negative') && heads.includes('Positive'), `data tables use Negative/Positive (got ${heads.join(',')})`);
+assert.ok(!heads.includes('Unfavourable') && !heads.includes('Favourable'), `no standpoint wording in table headers (got ${heads.join(',')})`);
 
 await browser.close(); server.close();
 if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }
-console.log('TRENDS-WORDING OK — charts, legend, rows and data tables read "unfavourable / favourable"; Vodafone-only KPI keeps the plain word');
+console.log('TRENDS-WORDING OK — charts, legend, rows and data tables read "negative / positive"; no inverted-standpoint vocabulary left on the page');

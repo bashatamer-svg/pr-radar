@@ -1,4 +1,6 @@
 // Verify "Wins to amplify" is Vodafone-only; competitor positives → "Market & noted".
+// Also pins the sentiment convention: every card shows the tone for the brand it
+// is ABOUT (never inverted for Vodafone), labelled plainly Negative/Neutral/Positive.
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
@@ -69,38 +71,43 @@ await page.click('#sentRow .chip[data-v="neutral"]'); await page.waitForTimeout(
 const mktCards = await page.$$eval('.card', els => els.map(e => e.id).sort());
 assert.deepStrictEqual(mktCards, ['item-2', 'item-4', 'item-5'], 'Market filter = all competitor items + neutral');
 
-// Competitor cards relabel the pill so the Vodafone-standpoint convention is
-// self-explanatory: stored "positive" = the rival stumbled (good for us),
-// stored "negative" = the rival won (unfavourable for us). Colour/lane unchanged.
+// Sentiment is the brand's OWN tone — the identical scale on every card, with
+// no per-brand relabelling. A rival's win is Positive (positive for them); a
+// rival's stumble is Negative. Lanes stay Vodafone-only (asserted above), which
+// is what keeps a rival's good news out of "Wins to amplify".
 await page.click('#sentRow .chip[data-v="all"]'); await page.waitForTimeout(150);
-const badge2 = await page.$eval('#item-2 .sent', e => e.textContent.trim());
-assert.strictEqual(badge2, 'Competitor setback', 'competitor positive reads as a rival stumble');
-assert.ok(await page.$eval('#item-2 .sent', e => e.classList.contains('positive')), 'colour still encodes Vodafone impact');
-const badge5 = await page.$eval('#item-5 .sent', e => e.textContent.trim());
-assert.strictEqual(badge5, 'Competitor win', 'competitor negative reads as a rival win');
-const badge4 = await page.$eval('#item-4 .sent', e => e.textContent.trim());
-assert.strictEqual(badge4, 'Competitor note', 'competitor neutral reads as market colour');
-// Vodafone cards keep the plain sentiment wording
-const badge1 = await page.$eval('#item-1 .sent', e => e.textContent.trim());
-assert.strictEqual(badge1, 'Positive', 'Vodafone card keeps the plain Positive pill');
-const badge3 = await page.$eval('#item-3 .sent', e => e.textContent.trim());
-assert.strictEqual(badge3, 'Negative', 'Vodafone card keeps the plain Negative pill');
+const badges = {};
+for (const id of [1, 2, 3, 4, 5]) badges[id] = await page.$eval(`#item-${id} .sent`, e => e.textContent.trim());
+assert.deepStrictEqual(badges, {
+  1: 'Positive',   // Vodafone award
+  2: 'Positive',   // Orange MoU — positive FOR ORANGE, not relabelled
+  3: 'Negative',   // Vodafone Cash outage
+  4: 'Neutral',    // WE corporate note
+  5: 'Negative',   // Orange billing glitch — negative FOR ORANGE
+}, `every card shows the plain sentiment of the brand it is about (got ${JSON.stringify(badges)})`);
+assert.ok(await page.$eval('#item-2 .sent', e => e.classList.contains('positive')), 'colour matches the label');
+assert.ok(await page.$eval('#item-5 .sent', e => e.classList.contains('negative')), 'colour matches the label');
+// No surface may reintroduce the old inverted vocabulary.
+const bodyTxt = await page.$eval('body', e => e.innerText);
+for (const gone of ['Competitor win', 'Competitor setback', 'Competitor note', 'unfavourable', 'Unfavourable']) {
+  assert.ok(!bodyTxt.includes(gone), `retired wording must not reappear: ${gone}`);
+}
 
-// Pulse tiles + status counter must not read backwards on competitors: a rival
-// story scored "negative" is a WIN for them, so "N neg" on their tile would say
-// the opposite of the truth.
+// A rival's tile counts THEIR wins — their positive coverage, the thing that
+// invites a comparative response. Same number as before the convention flipped,
+// read off the other end of the scale.
 const orangeTile = await page.$eval('.tile[data-b="Orange"] .tc-cnt', e => e.textContent.replace(/\s+/g, ' ').trim());
-assert.strictEqual(orangeTile, '1 win · 2', `Orange tile counts wins, not "neg" (got ${orangeTile})`);
+assert.strictEqual(orangeTile, '1 win · 2', `Orange tile counts their positive stories (got ${orangeTile})`);
 const weTile = await page.$eval('.tile[data-b="WE"] .tc-cnt', e => e.textContent.replace(/\s+/g, ' ').trim());
 assert.strictEqual(weTile, '0 wins · 1', `WE tile pluralises correctly (got ${weTile})`);
+// Status counts negatives across every brand — now literally true, so it says so.
 const statusTxt = await page.$eval('#status', e => e.textContent.replace(/\s+/g, ' ').trim());
-assert.ok(/2 unfavourable/.test(statusTxt), `status counts what moved against Vodafone (got ${statusTxt})`);
-assert.ok(!/negative/.test(statusTxt), 'status no longer says "negative" (it mixes our bad news with rivals\' wins)');
-// the Vodafone hero keeps the plain wording — it is Vodafone-only
+assert.ok(/2 negative/.test(statusTxt), `status counts negative stories plainly (got ${statusTxt})`);
+// the Vodafone hero is Vodafone-only and unchanged
 assert.ok(/negative/.test(await page.$eval('.hero', e => e.textContent)), 'Vodafone hero still reads "negative"');
 
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 await browser.close(); server.close();
 if (errors.length) { console.error('PAGE ERRORS:\n' + errors.join('\n')); process.exit(1); }
 if (overflow > 1) { console.error('overflow', overflow); process.exit(1); }
-console.log('LANE TEST PASSED — Wins=Vodafone-only; competitor positive is Market & noted; competitor pills relabelled (win/setback/note), Vodafone pills plain');
+console.log('LANE TEST PASSED — Wins=Vodafone-only; competitor positive is Market & noted; every pill reads the brand\'s own plain sentiment, no inversion left anywhere');

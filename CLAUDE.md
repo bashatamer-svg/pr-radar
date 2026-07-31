@@ -172,20 +172,21 @@ gets nothing. All queries live in `lib/db.js`.
   storage is UTC ISO. Board/stats/report windows must reconcile.
 - Vodafone-only action framing: needs-response/wins lanes + those KPIs are
   Vodafone-only; competitors are market intel; analytics count everything.
-- **Sentiment is the direction for VODAFONE, not the story's own tone** — a
-  rival's win is stored `negative`. The classifier drifted to story-own-tone on
-  competitor items (live-verified 2026-07-30), so the prompt now carries an
-  explicit invert-for-competitors test + worked examples; the 8 inverted
-  historical rows were corrected in `pr_items` at the same time. Board/email
-  pills on competitor cards render as Competitor win / setback / note
-  (display-only — stored sentiment, lanes and KPIs unchanged). Some competitor
-  wins still sit at `neutral` (understated, not inverted) — left as-is.
-  **Wording rule:** any surface mixing brands (board counter, pulse tiles,
-  every Trends chart/legend/table) says "unfavourable / favourable" — the
-  standard PR-measurement pair, brand-relative by definition — never a bare
-  "negative" (reads backwards on a rival's row) and never "against us" (reads
-  adversarial, as if the coverage attacked us). Only explicitly Vodafone-scoped
-  labels keep the plain word. Pinned by `render-trends-wording`.
+- **Sentiment is the story's own tone for the brand it names** — the identical
+  scale on all four brands, **never inverted**. A rival's award is stored
+  `positive` (good for them), a rival's outage `negative`. What a competitor
+  story means for US is carried by **severity** (that axis IS Vodafone-centred,
+  by design) and by the **lane** (needs-response / wins are Vodafone-only), never
+  by this field; sector spillover goes in `pr_angle`. Every surface names it
+  plainly **Negative / Neutral / Positive** — competitor pills are not
+  relabelled. Superseded (2026-07-31, user decision) an earlier Vodafone-
+  standpoint convention that stored a rival's win as `negative`; the
+  "Competitor win / setback / note" pills and the "unfavourable / favourable"
+  wording existed only to make that inversion readable and are **retired** —
+  don't reintroduce either. 10 historical competitor rows were re-scored in
+  `pr_items` in the same change. Competitor wins sitting at `neutral`
+  (understated, not inverted) were left as-is. Pinned by `render-lanes`,
+  `render-lanes-email-report`, `render-trends-wording`.
 - WhatsApp preview caches are sticky — test OG changes with a `?v=N` URL.
 
 ## Verifying work
