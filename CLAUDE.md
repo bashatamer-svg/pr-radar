@@ -67,6 +67,11 @@ logic into a function file. New pages get a rewrite in `vercel.json`.
 | `/api/report?period=week&send=1` | Mon 06:00 | no-op unless `REPORT_EMAIL_ENABLED=1` |
 | `/api/geo?send=1` | Mon 07:00 | no-op unless `GEO_ENABLED=1` |
 
+Sources (`lib/sources.js`): 10 brand/market Google-News queries (AR+EN) + 7
+site-scoped sweeps covering the team's named outlet list + 6 direct outlet RSS
+feeds (the only ones that carry a byline) = 23 daily. The 30-min urgent poll
+runs the 10 brand queries only.
+
 Integrations: Supabase (service-role key, PostgREST), Anthropic (classifier +
 byline fallback), Resend (all email), WhatsApp Cloud API (dormant until
 `WHATSAPP_*` set — official API cannot post to groups, DMs only).

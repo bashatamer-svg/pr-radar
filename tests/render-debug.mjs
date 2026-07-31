@@ -67,7 +67,9 @@ const dbg = await run({ debug: '1', brand: 'Vodafone', hours: '24' });
 assert.strictEqual(dbg.code, 200, 'debug returns 200');
 const b = dbg.body;
 assert.ok(b.window && b.window.brand === 'Vodafone' && b.window.hours === 24, 'window echoes brand + hours');
-assert.ok(Array.isArray(b.feeds) && b.feeds.length === 16, 'per-feed counts for all ALL_FEEDS');
+// derived, not hard-coded: adding a source must not break this test
+const { ALL_FEEDS } = await import(new URL('..', import.meta.url).pathname + '/lib/sources.js');
+assert.ok(Array.isArray(b.feeds) && b.feeds.length === ALL_FEEDS.length, `per-feed counts for all ALL_FEEDS (${ALL_FEEDS.length})`);
 assert.ok(b.funnel && typeof b.funnel.rawFetched === 'number' && typeof b.funnel.classifiedRelevant === 'number', 'funnel counts present');
 assert.ok(Array.isArray(b.brandStories) && b.brandStories.length >= 3, `brand stories traced (got ${b.brandStories && b.brandStories.length})`);
 
