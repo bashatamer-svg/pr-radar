@@ -73,6 +73,7 @@ export default async function handler(req, res) {
   const authorAgg = new Map();  // author lower -> {author, mentions, negative, vodNeg, outlets:Set}
 
   let negatives = 0, positives = 0, vodMentions = 0, vodNegatives = 0;
+  const bylinedItems = new Set();   // stories carrying at least one real byline
 
   for (const it of items) {
     const b = brandOf(it);
@@ -128,16 +129,22 @@ export default async function handler(req, res) {
       if (neg && b === 'Vodafone') a.vodNeg++;
       if (idx !== undefined) a.series[idx]++;
       if (outlet) a.outlets.add(outlet);
+      bylinedItems.add(it.id);
     }
   }
 
   const categories = [...catAgg.values()].sort((a, b) => b.total - a.total);
+  // Leaderboards are a TOP-N view, not the whole set — a 60-day window carries
+  // ~86 outlets and ~45 bylines, which is a wall, not intelligence. The totals
+  // ride along so the UI can say "top 15 of 45" instead of looking like the
+  // other 30 journalists don't exist (asked about live, 2026-07-31).
+  const LEADERBOARD_MAX = 15;
   const outlets = [...outletAgg.values()]
     .sort((a, b) => b.vodNeg - a.vodNeg || b.negative - a.negative || b.mentions - a.mentions)
-    .slice(0, 15);
+    .slice(0, LEADERBOARD_MAX);
   const authors = [...authorAgg.values()]
     .sort((a, b) => b.vodNeg - a.vodNeg || b.negative - a.negative || b.mentions - a.mentions)
-    .slice(0, 15)
+    .slice(0, LEADERBOARD_MAX)
     .map((a) => ({ ...a, outlets: [...a.outlets].slice(0, 3) }));
 
   // Fail-soft: narratives are one card on the page, never a reason the whole
@@ -163,6 +170,11 @@ export default async function handler(req, res) {
       neutrals: items.length - negatives - positives,
       vodafone: { mentions: vodMentions, negatives: vodNegatives },
       distinctOutlets: outletAgg.size,
+      distinctAuthors: authorAgg.size,
+      // Most Egyptian wire/desk copy carries no individual byline, so the number
+      // of stories will always dwarf the number of journalists. Surfaced so the
+      // UI can explain the gap rather than leave it looking like missing data.
+      itemsWithByline: bylinedItems.size,
     },
   });
 }

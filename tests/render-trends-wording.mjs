@@ -29,9 +29,10 @@ const STATS = {
   },
   categories: [{ category: 'corporate', total: 5, negative: 3, vodNeg: 1, series: [1, 2, 2] }],
   narratives: [{ name: 'WE search ranking', brand: 'WE', total: 3, negative: 3, neutral: 0, positive: 0, series: [1, 1, 1], ids: [1, 2] }],
+  // One row shown out of several that exist — the leaderboards are a top-N view.
   outlets: [{ outlet: 'Youm7', mentions: 4, negative: 3, neutral: 1, positive: 0, vodNeg: 1, series: [1, 2, 1] }],
   authors: [{ author: 'Sara', outlets: ['Youm7'], mentions: 4, negative: 3, neutral: 1, positive: 0, vodNeg: 1, series: [1, 2, 1] }],
-  totals: { items: 12, negatives: 7, positives: 1, neutrals: 4, vodafone: { mentions: 4, negatives: 1 }, distinctOutlets: 3 },
+  totals: { items: 12, negatives: 7, positives: 1, neutrals: 4, vodafone: { mentions: 4, negatives: 1 }, distinctOutlets: 3, distinctAuthors: 9, itemsWithByline: 5 },
 };
 
 const server = createServer((req, res) => {
@@ -65,6 +66,14 @@ assert.ok(/Vodafone negative/.test(text), 'Vodafone-scoped KPI still says "Vodaf
 for (const gone of [/unfavourable/i, /favourable/i, /against us/i, /rivals’ wins/]) {
   assert.ok(!gone.test(text), `retired wording still on the Trends page: ${gone}`);
 }
+
+// A leaderboard that stops at N must SAY it stopped, and name the true total —
+// "15 journalists" over a 100-story window reads as missing data unless the
+// page explains it is a top-N slice (asked about live, 2026-07-31).
+assert.ok(/top 1 of 9 journalists/.test(text), `journalist card declares the cap and the true total (got: ${text.match(/Journalist intelligence[^\n]*/) || 'n/a'})`);
+assert.ok(/top 1 of 3 outlets/.test(text), 'outlet card declares the cap and the true total');
+// …and the OTHER half of the gap: most desk/wire copy carries no byline at all.
+assert.ok(/5 of 12 stories in this window are signed/.test(text), 'the footnote explains why journalists are fewer than stories');
 
 // a11y data tables carry the same plain wording
 const heads = await page.evaluate(() => {

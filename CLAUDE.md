@@ -191,6 +191,13 @@ gets nothing. All queries live in `lib/db.js`.
   along as `&n=` so the board banner reads "top N of M" instead of under-
   reporting. Pinned by `render-narrative-cluster` + `render-deeplink`.
   General rule: a cap that changes what the user sees must be visible in the UI.
+- **The Trends leaderboards are top-15**, not the full set (a 60-day window
+  holds ~86 outlets and ~45 bylines). `totals.distinctOutlets` /
+  `distinctAuthors` ride along so the cards read "top 15 of 45 journalists".
+  Separately, only about half of stories carry an individual byline — Egyptian
+  wire/desk copy is unsigned — so the journalist count will always be far below
+  the story count; `totals.itemsWithByline` powers the footnote that says so.
+  Pinned by `render-trends-wording`.
 - **Cairo days** (`Africa/Cairo`, DST via Intl) for every user-facing window;
   storage is UTC ISO. Board/stats/report windows must reconcile.
 - Vodafone-only action framing: needs-response/wins lanes + those KPIs are

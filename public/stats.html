@@ -537,6 +537,15 @@ function kpiHtml(){
   </div>`;
 }
 
+/* Leaderboards show a top-N slice. Say so, with the true total — a list that
+   silently stops at 15 reads as "we only found 15 journalists" (asked live).
+   Same rule as the narrative deep link: a cap that changes what the user sees
+   has to be visible in the UI. */
+function topOf(rows,total,noun){
+  const n=(rows||[]).length;
+  if(!total||total<=n) return `all ${n} ${noun}${n===1?'':'s'}`;
+  return `top ${n} of ${total} ${noun}s`;
+}
 function cardHtml(id,title,sub){
   return `<section class="cardc" id="${id}">
     <div class="chead"><span class="ct">${esc(title)}</span><span class="cs">${esc(sub)}</span>
@@ -577,9 +586,9 @@ function render(){
     +CHARTS.map(x=>cardHtml(x.id,x.title,x.sub)).join('')
     +cardHtml('c-narr','Narratives','same-theme stories grouped · rising flagged')
     +cardHtml('c-cat','Categories','volume · trend · negative share')
-    +cardHtml('c-out','Outlet intelligence','volume · sentiment split · trend · negative-leaning flagged')
-    +cardHtml('c-auth','Journalist intelligence','volume · sentiment split · trend · repeat critics flagged')
-    +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Narratives group distinct stories that share a theme (same category + overlapping wording); outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
+    +cardHtml('c-out','Outlet intelligence',topOf(DATA.outlets,DATA.totals.distinctOutlets,'outlet')+' · sentiment split · negative-leaning flagged')
+    +cardHtml('c-auth','Journalist intelligence',topOf(DATA.authors,DATA.totals.distinctAuthors,'journalist')+' · sentiment split · repeat critics flagged')
+    +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Narratives group distinct stories that share a theme (same category + overlapping wording); outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. Journalist counts are lower than story counts because much Egyptian wire and desk copy carries no individual byline${DATA.totals.itemsWithByline!=null?` — ${DATA.totals.itemsWithByline} of ${DATA.totals.items} stories in this window are signed`:''}; the rest are shown as newsroom. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
   renderCharts();
   $('#c-narr .cbody').innerHTML=`<div class="rows">${narr.rows}</div>`; $('#c-narr .tbl').innerHTML=narr.table();
   $('#c-cat .cbody').innerHTML=`<div class="rows">${cats.rows}</div>`; $('#c-cat .tbl').innerHTML=cats.table();
