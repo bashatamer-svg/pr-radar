@@ -71,7 +71,7 @@ assert.deepStrictEqual(mktCards, ['item-2', 'item-4', 'item-5'], 'Market filter 
 
 // Competitor cards relabel the pill so the Vodafone-standpoint convention is
 // self-explanatory: stored "positive" = the rival stumbled (good for us),
-// stored "negative" = the rival won (counts against us). Colour/lane unchanged.
+// stored "negative" = the rival won (unfavourable for us). Colour/lane unchanged.
 await page.click('#sentRow .chip[data-v="all"]'); await page.waitForTimeout(150);
 const badge2 = await page.$eval('#item-2 .sent', e => e.textContent.trim());
 assert.strictEqual(badge2, 'Competitor setback', 'competitor positive reads as a rival stumble');
@@ -94,7 +94,7 @@ assert.strictEqual(orangeTile, '1 win · 2', `Orange tile counts wins, not "neg"
 const weTile = await page.$eval('.tile[data-b="WE"] .tc-cnt', e => e.textContent.replace(/\s+/g, ' ').trim());
 assert.strictEqual(weTile, '0 wins · 1', `WE tile pluralises correctly (got ${weTile})`);
 const statusTxt = await page.$eval('#status', e => e.textContent.replace(/\s+/g, ' ').trim());
-assert.ok(/2 against us/.test(statusTxt), `status counts what moved against Vodafone (got ${statusTxt})`);
+assert.ok(/2 unfavourable/.test(statusTxt), `status counts what moved against Vodafone (got ${statusTxt})`);
 assert.ok(!/negative/.test(statusTxt), 'status no longer says "negative" (it mixes our bad news with rivals\' wins)');
 // the Vodafone hero keeps the plain wording — it is Vodafone-only
 assert.ok(/negative/.test(await page.$eval('.hero', e => e.textContent)), 'Vodafone hero still reads "negative"');

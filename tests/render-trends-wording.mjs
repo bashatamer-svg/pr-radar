@@ -1,6 +1,6 @@
 // Trends must never label a COMPETITOR series "negative": tone is measured from
 // Vodafone's standpoint, so a rival's negative is that rival WINNING. Every
-// mixed-brand surface reads "against us" / "in our favour"; only the explicitly
+// mixed-brand surface reads "unfavourable" / "favourable"; only the explicitly
 // Vodafone-scoped KPI keeps the plain word.
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -51,11 +51,11 @@ await page.waitForSelector('.cardc', { timeout: 5000 });
 
 const text = await page.evaluate(() => document.body.innerText);
 
-// the per-brand chart that plots negatives is framed as "against us"
-assert.ok(/Coverage against us/.test(text), 'the negatives-per-brand chart is titled "Coverage against us"');
+// the per-brand chart that plots negatives is framed as "unfavourable"
+assert.ok(/Unfavourable coverage/.test(text), 'the negatives-per-brand chart is titled "Unfavourable coverage"');
 assert.ok(/rivals’ wins/.test(text), 'its subtitle explains the mix (our negatives + rivals\' wins)');
 // the sentiment split legend uses standpoint wording, not bare sentiment
-assert.ok(/Against us/.test(text) && /In our favour/.test(text), 'sentiment legend reads from Vodafone\'s standpoint');
+assert.ok(/Unfavourable/.test(text) && /Favourable/.test(text), 'sentiment legend reads from Vodafone\'s standpoint');
 // the Vodafone-only KPI keeps the plain word — it is unambiguous there
 assert.ok(/Vodafone negative/.test(text), 'Vodafone-scoped KPI still says "Vodafone negative"');
 
@@ -78,9 +78,9 @@ const heads = await page.evaluate(() => {
   document.querySelectorAll('.tgl').forEach((b) => b.click());
   return [...document.querySelectorAll('table th')].map((t) => t.textContent.trim());
 });
-assert.ok(heads.includes('Against us'), 'data tables use "Against us" instead of "Negative"');
+assert.ok(heads.includes('Unfavourable'), 'data tables use "Unfavourable" instead of "Negative"');
 assert.ok(!heads.includes('Negative') && !heads.includes('Neg'), `no "Negative" table header (got ${heads.join(',')})`);
 
 await browser.close(); server.close();
 if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }
-console.log('TRENDS-WORDING OK — charts, legend, rows and data tables read "against us / in our favour"; Vodafone-only KPI keeps the plain word');
+console.log('TRENDS-WORDING OK — charts, legend, rows and data tables read "unfavourable / favourable"; Vodafone-only KPI keeps the plain word');

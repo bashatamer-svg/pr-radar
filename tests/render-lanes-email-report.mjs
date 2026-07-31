@@ -40,7 +40,7 @@ assert.ok(sliceWins.includes(H.vodPos), 'Vodafone positive is under Wins to ampl
 assert.ok(!sliceWins.includes(H.orgPos), 'Orange positive is NOT under Wins to amplify');
 assert.ok(sliceMkt.includes(H.orgNeg) && sliceMkt.includes(H.orgPos), 'competitor items live in the market section');
 // Competitor pills are relabelled so the Vodafone-standpoint convention reads
-// correctly in the inbox: stored negative = the rival won (counts against us),
+// correctly in the inbox: stored negative = the rival won (unfavourable for us),
 // stored positive = the rival stumbled. Vodafone cards keep the plain wording.
 assert.ok(sliceMkt.includes('Competitor win') && sliceMkt.includes('Competitor setback'), 'competitor pills are relabelled in the market section');
 assert.ok(!sliceMkt.includes('>Negative<') && !sliceMkt.includes('>Positive<'), 'no bare sentiment pill on a competitor card');

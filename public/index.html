@@ -441,14 +441,14 @@ clock(); setInterval(clock,30000);
 
 const sentOf = it => SENT[it.sentiment]?it.sentiment:'neutral';
 // Tone is ALWAYS judged from Vodafone's standpoint, so a rival's good news is
-// stored as "negative" (it moves the market against us). On a competitor card
+// stored as "negative" (unfavourable for us). On a competitor card
 // a bare "Negative" pill reads as a mislabel, so those pills say what the story
 // IS while the colour keeps saying what it MEANS for us (red = counts against
 // Vodafone). Display-only: the stored sentiment, lanes and KPIs are unchanged.
 const COMP_LABEL = { negative:'Competitor win', positive:'Competitor setback', neutral:'Competitor note' };
 const isCompetitor = it => BRANDS.includes(it.brand) && it.brand!=='Vodafone';
 const sentLabel = it => isCompetitor(it) ? COMP_LABEL[sentOf(it)] : SENT[sentOf(it)].label;
-const SENT_TIP = 'Tone is judged from Vodafone Egypt’s standpoint — a rival’s win counts against us.';
+const SENT_TIP = 'Tone is judged from Vodafone Egypt’s standpoint — a rival’s win is unfavourable coverage for us.';
 // Section lane (what WE do about it) — distinct from the item's own sentiment.
 // The action lanes ("Needs a response", "Wins to amplify") are Vodafone-only:
 // a competitor's story — good or bad — is market intel, so it drops to the
@@ -499,7 +499,7 @@ function buildPulse(){
     // from Vodafone's standpoint), so the tile must not read "N neg" — on a
     // competitor tile that reads as bad news ABOUT them, the exact opposite.
     const cnt=rows.length?`<span class="${neg?'neg':''}"><b>${neg}</b></span> ${neg===1?'win':'wins'} · ${rows.length}`:'no items';
-    const tileTip=rows.length?`${b}: ${neg} win${neg===1?'':'s'} of ${rows.length} stor${rows.length===1?'y':'ies'} — a rival's win counts against Vodafone`:`${b}: no stories in this window`;
+    const tileTip=rows.length?`${b}: ${neg} win${neg===1?'':'s'} of ${rows.length} stor${rows.length===1?'y':'ies'} — a rival's win is unfavourable coverage for Vodafone`:`${b}: no stories in this window`;
     return `<button class="tile" type="button" data-b="${esc(b)}" aria-pressed="${fBrand===b}" title="${esc(tileTip)}" style="--tc:${BRAND_COLOR[b]}">
       <span class="tt"><span class="tdot" style="background:${BRAND_COLOR[b]}"></span><span class="tb">${esc(b)}</span></span>
       <span class="tbar">${bar}</span><span class="tc-cnt">${cnt}</span></button>`;
@@ -640,10 +640,10 @@ function render(){
   const shown=ITEMS.filter(pass).sort((a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(laneOf(a))-rank(laneOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0); });
   const neg=ITEMS.filter(i=>sentOf(i)==='negative').length;
   const brandNote=fBrand==='all'?'':` · <b>${esc(fBrand)}</b>`;
-  // "against us" not "negative": the count mixes OUR bad news with RIVALS' wins
+  // "unfavourable" not "negative": the count mixes OUR bad news with RIVALS' wins
   // (both score negative from Vodafone's standpoint), so the neutral wording is
   // the only one true for both.
-  $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg" title="Stories that moved against Vodafone — our own negatives plus rivals’ wins">${neg} against us</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>`;
+  $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg" title="Coverage unfavourable to Vodafone — our own negatives plus rivals’ wins">${neg} unfavourable</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>`;
   // Deep-link filter banner (arrived from Trends) with a one-click clear.
   const df=deepFilter(); const dfEl=$('#dfilter');
   if(df){ dfEl.innerHTML=`<span><span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}</span><button class="dfx" type="button" onclick="clearDeepFilter()">✕ Clear filter</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
