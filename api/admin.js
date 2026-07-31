@@ -58,14 +58,28 @@ export default async function handler(req, res) {
         const list = only ? FEED_CANDIDATES.filter((c) => c.id === only || c.kind === only) : FEED_CANDIDATES;
         const px = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
         const arrOf = (v) => (Array.isArray(v) ? v : v ? [v] : []);
-        const probe = async (url) => {
+        const UAS = [
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+        ];
+        const fetchAs = async (url, ua, ms) => {
           const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 5000);
+          const t = setTimeout(() => ctrl.abort(), ms);
           try {
-            const r = await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers: {
-              'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            return await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers: {
+              'user-agent': ua,
               accept: 'application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8',
+              'accept-language': 'ar-EG,ar;q=0.9,en;q=0.8',
             } });
+          } finally { clearTimeout(t); }
+        };
+        const probe = async (url) => {
+          let r = null;
+          try { r = await fetchAs(url, UAS[0], 5000); } catch { r = null; }
+          // a desktop-UA block is common on Egyptian sites; mobile often passes
+          if (!r || !r.ok) { try { r = await fetchAs(url, UAS[1], 4000); } catch { r = null; } }
+          try {
+            if (!r) return { url, ok: false, status: 'timeout' };
             if (!r.ok) return { url, ok: false, status: r.status };
             const xml = px.parse(await r.text());
             const entries = arrOf(xml?.rss?.channel?.item).concat(arrOf(xml?.feed?.entry));
@@ -75,7 +89,6 @@ export default async function handler(req, res) {
             const title = String(first?.title?.['#text'] ?? first?.title ?? '').trim().slice(0, 70);
             return { url, ok: true, status: r.status, items: entries.length, bylines: withAuthor, sample: title };
           } catch (e) { return { url, ok: false, status: /abort/i.test(e.message) ? 'timeout' : 'error' }; }
-          finally { clearTimeout(t); }
         };
         // Bounded concurrency so ~80 fetches fit inside the function timeout.
         const out = [];
@@ -95,7 +108,14 @@ export default async function handler(req, res) {
           }
         }));
         out.sort((a, b) => (b.working - a.working) || a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
-        await auditReq(req, who, 'feeds.probe', 'candidates', { probed: out.length, working: out.filter((r) => r.working).length });
+        const won = out.filter((r) => r.working);
+        await auditReq(req, who, 'feeds.probe', 'candidates', {
+          probed: out.length,
+          working: won.length,
+          // the useful part: which ones, where, and do they carry bylines
+          feeds: won.map((r) => ({ id: r.id, url: r.url, items: r.items, bylines: r.bylines })),
+          failed: out.filter((r) => !r.working).map((r) => r.id),
+        });
         return res.status(200).json({ probed: out.length, working: out.filter((r) => r.working).length, rows: out });
       }
 
