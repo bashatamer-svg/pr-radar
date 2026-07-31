@@ -44,10 +44,15 @@ const STORIES = [
   'Orange raises mobile bundle prices for the second time',
 ];
 
+// Derived from the real source list: adding a feed must not silently
+// reclassify its fetch as something else in this mock.
+const { DIRECT_FEEDS: _DF } = await import(new URL('..', import.meta.url).pathname + '/lib/sources.js');
+const DIRECT_URLS = _DF.map((f) => f.url);
+
 globalThis.fetch = async (url, opts) => {
   const u = String(url);
   if (u.includes('news.google.com/rss/search')) { fetchedFeedUrls.push(u); return { ok: true, status: 200, text: async () => RSS(STORIES) }; }
-  if (u.includes('/feed') || u.includes('technotime') || u.includes('dailynews') || u.includes('alborsa') || u.includes('egyptindependent') || u.includes('madamasr') || u.includes('amwalalghad')) {
+  if (DIRECT_URLS.some((f) => u.startsWith(f))) {
     fetchedFeedUrls.push(u); return { ok: true, status: 200, text: async () => RSS(['Some outlet story about Telecom Egypt earnings']) };
   }
   if (u.includes('api.anthropic.com')) {

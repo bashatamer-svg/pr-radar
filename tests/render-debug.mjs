@@ -26,11 +26,16 @@ let inserts = 0, instanceWrites = 0, emails = 0, authorFetches = 0;
 let lastInsertBody = null;
 const RSS = (titles) => `<?xml version="1.0"?><rss><channel>${titles.map((t) => `<item><title>${t}</title><link>https://news.google.com/rss/articles/${encodeURIComponent(t).slice(0, 10)}</link><pubDate>${new Date().toUTCString()}</pubDate></item>`).join('')}</channel></rss>`;
 
+// Derived from the real source list: adding a feed must not silently
+// reclassify its fetch as something else in this mock.
+const { DIRECT_FEEDS: _DF } = await import(new URL('..', import.meta.url).pathname + '/lib/sources.js');
+const DIRECT_URLS = _DF.map((f) => f.url);
+
 globalThis.fetch = async (url, opts) => {
   const u = String(url); const m = (opts && opts.method) || 'GET';
   const ok = (body) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
   if (u.includes('news.google.com/rss/search')) return ok(RSS(STORIES));
-  if (u.includes('/feed') || u.includes('technotime') || u.includes('dailynews') || u.includes('alborsa') || u.includes('egyptindependent') || u.includes('madamasr') || u.includes('amwalalghad')) return ok(RSS([]));
+  if (DIRECT_URLS.some((f) => u.startsWith(f))) return ok(RSS([]));
   if (u.includes('api.anthropic.com')) {
     // classify: parse the numbered headlines out of the user message, verdict each.
     const body = JSON.parse(opts.body);
