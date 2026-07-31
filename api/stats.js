@@ -93,6 +93,11 @@ const titleCase = (s) => s.replace(/\b\p{L}/gu, (m) => m.toUpperCase());
 // ("price increases", "roaming price").
 const NARR_CATCHALL = new Set(['corporate', 'other', 'competitor']);
 
+// How many item ids a narrative hands the board's ?ids= deep link. Must stay
+// <= the cap inside itemsByIds() (lib/db.js), which is what actually fetches
+// them — a bigger number here would ask for rows the API refuses to return.
+const NARR_IDS_MAX = 100;
+
 function buildNarratives(items, days, dayIdx, { minStories = 2, threshold = 0.22, limit = 12 } = {}) {
   const clusters = [];
   for (const it of items) {
@@ -167,7 +172,17 @@ function buildNarratives(items, days, dayIdx, { minStories = 2, threshold = 0.22
     out.push({
       name, brand, category: c.category, total: c.items.length,
       negative, neutral, positive, series, rising, risingScore,
-      headline: rep.headline || null, ids: c.items.map((i) => i.id).filter(Boolean).slice(0, 20),
+      headline: rep.headline || null,
+      // The board opens a narrative by fetching THESE ids, so a short list is a
+      // silently wrong board: a 27-story narrative shipped 20 ids and showed 20
+      // cards, dropping its only negative (live-reported 2026-07-31). Cap now
+      // matches itemsByIds()'s own 100 limit — raising it further needs that
+      // limit raised too — and the list is ordered by importance so a cluster
+      // that ever does exceed 100 keeps its biggest stories. `idsTotal` lets the
+      // board say when it is showing a subset instead of quietly under-reporting.
+      ids: c.items.slice().sort((a, b) => (b.importance || 0) - (a.importance || 0))
+        .map((i) => i.id).filter(Boolean).slice(0, NARR_IDS_MAX),
+      idsTotal: c.items.filter((i) => i.id).length,
     });
   }
   return out

@@ -142,6 +142,7 @@
            background:var(--neg-bg);border:1px solid var(--neg-line);border-radius:12px;font-size:13px;color:var(--ink-2)}
   .dfilter.on{display:flex}
   .dfilter .dk{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-right:2px}
+  .dfilter .dfsub{color:var(--muted);font-weight:600}
   .dfilter .dfx{flex:none;cursor:pointer;border:1px solid var(--neg-line);background:#fff;color:var(--red-deep);font-size:11.5px;font-weight:700;border-radius:9px;padding:6px 11px;white-space:nowrap}
   .dfilter .dfx:hover{background:var(--red);color:#fff;border-color:var(--red)}
   /* live auto-refresh: floating "N new" pill when fresh stories land while reading */
@@ -417,13 +418,18 @@ let ITEMS=[]; let fBrand='all', fSent='all', fWin=Number(localStorage.getItem('p
 // there to land on the board showing exactly those cards.
 let fCat=params.get('cat')||'', fOutlet=params.get('outlet')||'', fAuthor=params.get('author')||'';
 let fIds=(params.get('ids')||'').split(',').map(Number).filter(Boolean), fLabel=params.get('label')||'';
+// The narrative's TRUE story count, sent alongside the ids. When it exceeds the
+// ids we were given (a cluster past the API's per-request id cap), the banner
+// must SAY the view is a subset — silently showing fewer cards than Trends
+// promised is the bug this guards.
+let fIdsTotal=Number(params.get('n'))||0;
 if(params.get('brand')) fBrand=params.get('brand');
 if(params.get('sent')) fSent=params.get('sent');
 { const w=Number(params.get('win')); if([1,2,7,30].includes(w)) fWin=w; }
 const itemHasOutlet=(it,o)=>Array.isArray(it.instances)&&it.instances.some(x=>x&&x.outlet===o);
 const itemHasAuthor=(it,a)=>(it.author===a)||(Array.isArray(it.instances)&&it.instances.some(x=>x&&x.author===a));
 function deepFilter(){ if(fIds.length) return{kind:'Narrative',val:fLabel||`${fIds.length} stories`}; if(fCat) return{kind:'Category',val:String(fCat).replace(/_/g,' ')}; if(fOutlet) return{kind:'Outlet',val:fOutlet}; if(fAuthor) return{kind:'Journalist',val:fAuthor}; return null; }
-function clearDeepFilter(){ fCat=fOutlet=fAuthor=''; fIds=[]; fLabel=''; try{ const u=new URL(location.href); ['cat','outlet','author','ids','label'].forEach(k=>u.searchParams.delete(k)); history.replaceState(null,'',u.pathname+(u.search||'')+u.hash); }catch(e){} render(); }
+function clearDeepFilter(){ fCat=fOutlet=fAuthor=''; fIds=[]; fLabel=''; fIdsTotal=0; try{ const u=new URL(location.href); ['cat','outlet','author','ids','label','n'].forEach(k=>u.searchParams.delete(k)); history.replaceState(null,'',u.pathname+(u.search||'')+u.hash); }catch(e){} render(); }
 
 // team_share pins are SERVER state (shared with the team view), but pinned
 // items can be older than the current window — so we also remember pinned ids
@@ -642,7 +648,8 @@ function render(){
   $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg" title="Stories that ran negative for the brand they are about, across all tracked brands">${neg} negative</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>`;
   // Deep-link filter banner (arrived from Trends) with a one-click clear.
   const df=deepFilter(); const dfEl=$('#dfilter');
-  if(df){ dfEl.innerHTML=`<span><span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}</span><button class="dfx" type="button" onclick="clearDeepFilter()">✕ Clear filter</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
+  if(df){ const note=(fIds.length&&fIdsTotal>fIds.length)?` <span class="dfsub">top ${fIds.length} of ${fIdsTotal} by reach</span>`:'';
+    dfEl.innerHTML=`<span><span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}${note}</span><button class="dfx" type="button" onclick="clearDeepFilter()">✕ Clear filter</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
   else { dfEl.classList.remove('on'); dfEl.hidden=true; }
   const list=$('#list');
   if(!shown.length){ list.innerHTML=`<div class="empty">${df?`No cards for this ${esc(df.kind.toLowerCase())} in the current window.<br>Try a wider window, or clear the filter above.`:'Nothing matches this filter.<br>Clear the brand or widen the time window.'}</div>`; return; }

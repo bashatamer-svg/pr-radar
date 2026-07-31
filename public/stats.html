@@ -464,7 +464,11 @@ function narrativeRows(list){
     const seg=(v,c,op)=>v?`<i style="width:${pct(v,max)}%;background:${c}${op?`;opacity:${op}`:''}"></i>`:'';
     const bar=seg(n.negative,NEG)+seg(n.neutral,'var(--neu)','.35')+seg(n.positive,POS);
     const sub=n.headline?`<span class="sub" dir="auto">${esc(n.headline)}</span>`:'';
-    const href=n.ids&&n.ids.length?`/?ids=${n.ids.join(',')}&label=${encodeURIComponent(n.name)}&win=${boardWin()}`:boardLink('brand',n.brand);
+    // &n= is the narrative's TRUE story count. The board compares it with the
+    // ids it received and says so when it can only show a subset — the failure
+    // this replaced was a board that silently listed fewer cards than this row.
+    const nTotal=n.idsTotal||n.total;
+    const href=n.ids&&n.ids.length?`/?ids=${n.ids.join(',')}&label=${encodeURIComponent(n.name)}&n=${nTotal}&win=${boardWin()}`:boardLink('brand',n.brand);
     return `<a class="lrow narr" href="${href}" title="${esc(n.name)} — tap to show these ${n.total} stories on the board">
       <span class="nm" dir="auto">${esc(n.name)}${rise}${sub}</span>
       <span class="spark">${sparkSvg(n.series,72,20)}</span>

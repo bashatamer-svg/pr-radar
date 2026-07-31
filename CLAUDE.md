@@ -168,6 +168,16 @@ gets nothing. All queries live in `lib/db.js`.
 - **Narrative clustering is pinned to real production data**
   (`tests/narr-real.mjs` + fixture). If it fails after a change, the change
   broke clustering — don't "fix" the fixture.
+- **A narrative's `ids` ARE the board view.** Trends counts a cluster's stories,
+  but tapping the row opens the board by fetching exactly those ids — so any cap
+  on the id list silently shows fewer cards than the row promised (a 27-story
+  narrative opened as 20 and dropped its only negative, live-reported
+  2026-07-31). `NARR_IDS_MAX` in `api/stats.js` must stay ≤ the cap inside
+  `itemsByIds()` (`lib/db.js`, currently 100); the list is ordered by importance
+  so a cluster past that cap keeps its biggest stories, and the true count rides
+  along as `&n=` so the board banner reads "top N of M" instead of under-
+  reporting. Pinned by `render-narrative-cluster` + `render-deeplink`.
+  General rule: a cap that changes what the user sees must be visible in the UI.
 - **Cairo days** (`Africa/Cairo`, DST via Intl) for every user-facing window;
   storage is UTC ISO. Board/stats/report windows must reconcile.
 - Vodafone-only action framing: needs-response/wins lanes + those KPIs are

@@ -1,6 +1,8 @@
 // Narrative clustering: generic sector words ("four", "mobile") must NOT make
 // two unrelated stories one narrative — the exact GEM-tickets + AEON-crypto
 // false cluster from production — while genuinely-themed stories still group.
+// Also pins deep-link integrity: a narrative must hand the board an id for
+// EVERY story it counts, so "27 stories" never opens as 20 cards.
 import assert from 'node:assert';
 
 process.env.RADAR_TOKEN = 'tok';
@@ -24,6 +26,16 @@ const items = [
   it(4, 'vodafone_cash', 'Users report Vodafone Cash outage disrupting transfers',
     'Subscribers reported a Vodafone Cash outage that disrupted transfers across the country.', { sentiment: 'negative' }),
 ];
+// A BIG cluster — 27 stories on one theme, the production shape that exposed
+// the deep-link bug: Trends said 27, the board opened 20, and the narrative's
+// single negative (last in the cluster, lowest importance) was one of the 7
+// dropped. ids must now carry the whole cluster.
+for (let i = 0; i < 26; i++) {
+  items.push(it(100 + i, 'campaign', `Al Ahly stadium naming rights go to Vodafone (report ${i})`,
+    'Vodafone Egypt signs the Al Ahly stadium naming rights sponsorship deal.', { sentiment: 'positive' }));
+}
+items.push(it(199, 'campaign', 'Fans criticise the Al Ahly stadium naming rights deal with Vodafone',
+  'Supporters push back on the Al Ahly stadium naming rights sponsorship deal.', { sentiment: 'negative', importance: 1 }));
 
 globalThis.fetch = async (url) => {
   const u = String(url);
@@ -48,4 +60,18 @@ assert.ok(!withIds([1, 2]), `GEM tickets + AEON crypto must NOT be one narrative
 const outage = withIds([3, 4]);
 assert.ok(outage, 'the two Vodafone Cash outage stories DO still cluster');
 assert.ok(!/\b(mobile|four)\b/i.test(outage.name), 'cluster name avoids generic sector words');
-console.log(`NARRATIVE-CLUSTER OK — unrelated "four mobile" pair no longer merges; genuine outage pair clusters as "${outage.name}" (${outage.total} stories)`);
+// Deep-link integrity: whatever a narrative row COUNTS, it must hand the board
+// enough ids to show. A short list means the board silently displays fewer
+// cards than Trends promised — and drops whichever stories fall off the end.
+const ahly = narrs.find((n) => (n.ids || []).includes(199));
+assert.ok(ahly, 'the 27-story campaign cluster exists and contains its negative outlier');
+assert.strictEqual(ahly.total, 27, `cluster totals all 27 stories (got ${ahly.total})`);
+assert.strictEqual(ahly.ids.length, ahly.total, `every counted story is deep-linkable (${ahly.ids.length} ids for ${ahly.total} stories)`);
+assert.strictEqual(ahly.idsTotal, 27, 'idsTotal reports the true count for the board banner');
+assert.strictEqual(ahly.negative, 1, 'the cluster counts its one negative');
+for (const n of narrs) {
+  assert.ok(n.ids.length === Math.min(n.idsTotal, 100), `${n.name}: ids are complete up to the API cap`);
+  assert.strictEqual(new Set(n.ids).size, n.ids.length, `${n.name}: no duplicate ids`);
+}
+
+console.log(`NARRATIVE-CLUSTER OK — unrelated "four mobile" pair no longer merges; genuine outage pair clusters as "${outage.name}" (${outage.total} stories); a 27-story cluster deep-links all 27 ids incl. its negative`);

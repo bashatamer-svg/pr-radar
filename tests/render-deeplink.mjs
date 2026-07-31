@@ -64,6 +64,19 @@ assert.deepStrictEqual(await ids(page), ['item-1', 'item-3'], 'ids=1,3 → items
 assert.ok(/narrative/i.test(await page.$eval('#dfilter', el => el.textContent)) && /cash saga/i.test(await page.$eval('#dfilter', el => el.textContent)), 'banner shows the narrative label');
 await page.close();
 
+// A narrative bigger than the id list it shipped must SAY it is a subset —
+// showing fewer cards than the Trends row promised, with no explanation, is
+// exactly the bug this guards (a 27-story narrative opening as 20 cards).
+page = await openBoard('?ids=1,3&label=' + encodeURIComponent('Big saga') + '&n=27&win=30');
+const subsetTxt = await page.$eval('#dfilter', el => el.textContent.replace(/\s+/g, ' '));
+assert.ok(/top 2 of 27/.test(subsetTxt), `banner declares the subset (got "${subsetTxt}")`);
+await page.close();
+
+// …and when the ids are complete, no subset note appears.
+page = await openBoard('?ids=1,3&label=' + encodeURIComponent('Whole saga') + '&n=2&win=30');
+assert.ok(!/top \d+ of/.test(await page.$eval('#dfilter', el => el.textContent)), 'no subset note when every story was shipped');
+await page.close();
+
 // unknown value → empty with the clear affordance
 page = await openBoard('?outlet=Nobody&win=30');
 assert.strictEqual((await page.$$('.card')).length, 0, 'unknown outlet → no cards');
@@ -93,7 +106,7 @@ await page.close();
   assert.ok(/<a class="lrow" href="\/\?cat=vodafone_cash&win=\d+"/.test(out.cat), 'category row links to /?cat=');
   assert.ok(/<a class="lrow" href="\/\?outlet=Youm7&win=\d+"/.test(out.out), 'outlet row links to /?outlet=');
   assert.ok(/<a class="lrow" href="\/\?author=Sara&win=\d+"/.test(out.auth), 'author row links to /?author=');
-  assert.ok(/<a class="lrow narr" href="\/\?ids=1,3,7&label=Cash%20saga&win=\d+"/.test(out.narr), 'narrative row links to /?ids= its stories');
+  assert.ok(/<a class="lrow narr" href="\/\?ids=1,3,7&label=Cash%20saga&n=3&win=\d+"/.test(out.narr), 'narrative row links to /?ids= its stories and passes the true total as n=');
   assert.ok(/<span class="nm" dir="auto"/.test(out.narr), 'narrative name renders with dir=auto (correct RTL)');
   assert.ok(/<a class="kpi" href="\/\?sent=negative&win=\d+"/.test(out.kpi), 'Needs-response KPI links to /?sent=negative');
   // Vodafone-only count: test data has all-brand negatives=3 but vodafone.negatives=1.
