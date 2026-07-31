@@ -134,11 +134,14 @@ export default async function handler(req, res) {
   }
 
   const categories = [...catAgg.values()].sort((a, b) => b.total - a.total);
-  // Leaderboards are a TOP-N view, not the whole set — a 60-day window carries
-  // ~86 outlets and ~45 bylines, which is a wall, not intelligence. The totals
-  // ride along so the UI can say "top 15 of 45" instead of looking like the
-  // other 30 journalists don't exist (asked about live, 2026-07-31).
-  const LEADERBOARD_MAX = 15;
+  // The FULL leaderboards ship: the Trends page pages through them 15 at a time
+  // in the browser, so flipping costs no request and no re-aggregation (which
+  // would mean redoing the narrative LLM pass just to return 15 other rows).
+  // The cap is only a payload backstop — a 90-day window runs to ~130 outlets,
+  // nowhere near it — and totals.distinct* still carry the true counts, so if
+  // it ever does trip the UI keeps saying "top N of M" instead of quietly
+  // truncating.
+  const LEADERBOARD_MAX = 300;
   const outlets = [...outletAgg.values()]
     .sort((a, b) => b.vodNeg - a.vodNeg || b.negative - a.negative || b.mentions - a.mentions)
     .slice(0, LEADERBOARD_MAX);

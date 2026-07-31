@@ -31,6 +31,7 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |
+| Trends leaderboard paging (all outlets/journalists reachable) | `render-leaderboard-pages` |
 | DB helpers (row-cap warnings) | `db-caps` |
 | Guide page | `render-guide` |
 | Link previews & branding (OG/Twitter tags, favicon, PNG assets) | `render-og` |

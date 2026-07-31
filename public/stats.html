@@ -130,6 +130,13 @@
   .badge.rise{background:#e9f1fb;color:#1c5cab;box-shadow:inset 0 0 0 1px #cfe0f5}
 
   /* table view — the accessible twin of every chart */
+  /* leaderboard pager */
+  .pager{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;padding-top:9px;border-top:1px solid var(--hair-2)}
+  .pager .pg{cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--ink-2);font-family:var(--sans);
+             font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:9px;white-space:nowrap;transition:all .12s}
+  .pager .pg:hover:not(:disabled){border-color:var(--red);color:var(--red)}
+  .pager .pg:disabled{opacity:.35;cursor:default}
+  .pager .pgn{font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:600;min-width:96px;text-align:center}
   .tbl{display:none;margin-top:8px;overflow-x:auto}
   .tbl.on{display:block}
   .cbody.off{display:none}
@@ -199,6 +206,10 @@ const CHART={Vodafone:'#e60000',Orange:'#ff7900',WE:'#7b1fa2','e&':'#00897d',Mar
 const NEG='#e60000', POS='#0f9d58', NEU='#d3dae1';   // sentiment polarity (board's own)
 
 let DATA=null; let fDays=Number(localStorage.getItem('pr_stats_days'))||30;
+// Leaderboard paging, per card. Reset on every load() so a window change can't
+// leave you on page 4 of a list that now has two pages.
+const PAGE_SIZE=15;
+let pageOf={outlet:0,author:0};
 // Click a Trends row → land on the board showing exactly those cards. Board
 // windows are 1/2/7/30 days, so clamp the stats window to the nearest.
 const boardWin=()=>{ const d=fDays||30; return d<=1?1:d<=2?2:d<=7?7:30; };
@@ -492,9 +503,17 @@ function narrativeRows(list){
    negative for whichever brand it covers — a tone signal about the writer, which
    is not the same thing as hostility to us (that is what Vod-neg is for). */
 function leaderboardRows(list,kind){
-  if(!list.length) return {rows:`<div class="empty" style="padding:22px">No ${kind} data in this window.</div>`,table:()=>''};
+  if(!list.length) return {rows:`<div class="empty" style="padding:22px">No ${kind} data in this window.</div>`,table:()=>'',pager:''};
+  // Bar length is volume relative to the busiest row IN THE WHOLE LIST, not the
+  // current page — otherwise page 3's quietest outlet would draw a full-width
+  // bar and read as the busiest in the window.
   const max=Math.max(...list.map(o=>o.mentions));
-  const rows=list.map(o=>{
+  const pages=Math.max(1,Math.ceil(list.length/PAGE_SIZE));
+  const page=Math.min(Math.max(0,pageOf[kind]||0),pages-1);
+  pageOf[kind]=page;
+  const start=page*PAGE_SIZE;
+  const slice=list.slice(start,start+PAGE_SIZE);
+  const rows=slice.map(o=>{
     const name=kind==='outlet'?o.outlet:o.author;
     const negShare=pct(o.negative,o.mentions);
     const critic=kind==='author'&&o.vodNeg>=2;
@@ -513,12 +532,20 @@ function leaderboardRows(list,kind){
       <span class="val" title="${o.mentions} stories · ${negShare}% of their coverage ran negative${o.vodNeg?` · ${o.vodNeg} negative about Vodafone`:''}"><b>${o.mentions}</b> · ${negShare}% negative${o.vodNeg?` · <b class="neg">${o.vodNeg} Vod-neg</b>`:''}</span>
     </a>`;
   }).join('');
+  // The table view shows the SAME page as the list above it — one pager moves
+  // both, so the two channels never disagree about how much is on screen.
   const table=()=>{
-    let h=`<table><thead><tr><th scope="col">${kind==='outlet'?'Outlet':'Author'}</th><th scope="col">Stories</th><th scope="col">Negative</th><th scope="col">Neutral</th><th scope="col">Positive</th><th scope="col">Vod-neg</th></tr></thead><tbody>`;
-    list.forEach(o=>{ h+=`<tr><td>${esc(kind==='outlet'?o.outlet:o.author)}</td><td>${o.mentions}</td><td>${o.negative}</td><td>${o.neutral}</td><td>${o.positive}</td><td>${o.vodNeg}</td></tr>`; });
+    let h=`<table><caption class="axis" style="text-align:left;padding:2px 0 6px;color:var(--faint)">${kind==='outlet'?'Outlets':'Journalists'} ${start+1}–${start+slice.length} of ${list.length}</caption><thead><tr><th scope="col">${kind==='outlet'?'Outlet':'Author'}</th><th scope="col">Stories</th><th scope="col">Negative</th><th scope="col">Neutral</th><th scope="col">Positive</th><th scope="col">Vod-neg</th></tr></thead><tbody>`;
+    slice.forEach(o=>{ h+=`<tr><td>${esc(kind==='outlet'?o.outlet:o.author)}</td><td>${o.mentions}</td><td>${o.negative}</td><td>${o.neutral}</td><td>${o.positive}</td><td>${o.vodNeg}</td></tr>`; });
     return h+'</tbody></table>';
   };
-  return {rows,table};
+  const noun=kind==='outlet'?'outlets':'journalists';
+  const pager=pages<2?'':`<div class="pager">
+    <button class="pg" type="button" data-kind="${kind}" data-to="${page-1}"${page===0?' disabled':''} aria-label="Previous page of ${noun}">‹ Prev</button>
+    <span class="pgn" role="status">${start+1}–${start+slice.length} of ${list.length}</span>
+    <button class="pg" type="button" data-kind="${kind}" data-to="${page+1}"${page>=pages-1?' disabled':''} aria-label="Next page of ${noun}">Next ›</button>
+  </div>`;
+  return {rows,table,pager};
 }
 
 /* ============================================================
@@ -537,14 +564,15 @@ function kpiHtml(){
   </div>`;
 }
 
-/* Leaderboards show a top-N slice. Say so, with the true total — a list that
-   silently stops at 15 reads as "we only found 15 journalists" (asked live).
-   Same rule as the narrative deep link: a cap that changes what the user sees
-   has to be visible in the UI. */
-function topOf(rows,total,noun){
+/* The card subtitle states how many there ARE — the list is paged, so nothing
+   is being withheld. The "top N of M" wording survives only for the case where
+   the API's payload backstop actually clipped the list: a cap that changes what
+   the user sees still has to be visible. */
+function countOf(rows,total,noun){
   const n=(rows||[]).length;
-  if(!total||total<=n) return `all ${n} ${noun}${n===1?'':'s'}`;
-  return `top ${n} of ${total} ${noun}s`;
+  if(total&&total>n) return `top ${n} of ${total} ${noun}s`;
+  const m=total||n;
+  return `${m} ${noun}${m===1?'':'s'}`;
 }
 function cardHtml(id,title,sub){
   return `<section class="cardc" id="${id}">
@@ -572,6 +600,20 @@ function renderCharts(){
   }
 }
 
+/* Repaint a single leaderboard card. Flipping a page must not re-run render():
+   that would rebuild every chart and re-bind their tooltips, and would scroll
+   the reader away from the card they were reading. */
+function paintLeaderboard(kind){
+  const card=$(kind==='outlet'?'#c-out':'#c-auth'); if(!card) return;
+  const built=leaderboardRows(kind==='outlet'?DATA.outlets:DATA.authors,kind);
+  card.querySelector('.cbody').innerHTML=`<div class="rows">${built.rows}</div>${built.pager}`;
+  card.querySelector('.tbl').innerHTML=built.table();
+  card.querySelectorAll('.pager .pg').forEach(b=>b.onclick=()=>{
+    pageOf[b.dataset.kind]=Number(b.dataset.to);
+    paintLeaderboard(b.dataset.kind);
+  });
+}
+
 function render(){
   const c=$('#content');
   if(!DATA||!DATA.totals.items){
@@ -580,20 +622,17 @@ function render(){
   }
   const cats=categoryRows();
   const narr=narrativeRows(DATA.narratives);
-  const outs=leaderboardRows(DATA.outlets,'outlet');
-  const auth=leaderboardRows(DATA.authors,'author');
   c.innerHTML=kpiHtml()
     +CHARTS.map(x=>cardHtml(x.id,x.title,x.sub)).join('')
     +cardHtml('c-narr','Narratives','same-theme stories grouped · rising flagged')
     +cardHtml('c-cat','Categories','volume · trend · negative share')
-    +cardHtml('c-out','Outlet intelligence',topOf(DATA.outlets,DATA.totals.distinctOutlets,'outlet')+' · sentiment split · negative-leaning flagged')
-    +cardHtml('c-auth','Journalist intelligence',topOf(DATA.authors,DATA.totals.distinctAuthors,'journalist')+' · sentiment split · repeat critics flagged')
+    +cardHtml('c-out','Outlet intelligence',countOf(DATA.outlets,DATA.totals.distinctOutlets,'outlet')+' · sentiment split · negative-leaning flagged')
+    +cardHtml('c-auth','Journalist intelligence',countOf(DATA.authors,DATA.totals.distinctAuthors,'journalist')+' · sentiment split · repeat critics flagged')
     +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Narratives group distinct stories that share a theme (same category + overlapping wording); outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. Journalist counts are lower than story counts because much Egyptian wire and desk copy carries no individual byline${DATA.totals.itemsWithByline!=null?` — ${DATA.totals.itemsWithByline} of ${DATA.totals.items} stories in this window are signed`:''}; the rest are shown as newsroom. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
   renderCharts();
   $('#c-narr .cbody').innerHTML=`<div class="rows">${narr.rows}</div>`; $('#c-narr .tbl').innerHTML=narr.table();
   $('#c-cat .cbody').innerHTML=`<div class="rows">${cats.rows}</div>`; $('#c-cat .tbl').innerHTML=cats.table();
-  $('#c-out .cbody').innerHTML=`<div class="rows">${outs.rows}</div>`; $('#c-out .tbl').innerHTML=outs.table();
-  $('#c-auth .cbody').innerHTML=`<div class="rows">${auth.rows}</div>`; $('#c-auth .tbl').innerHTML=auth.table();
+  paintLeaderboard('outlet'); paintLeaderboard('author');
   // table-view toggles (the accessible twin of every chart)
   c.querySelectorAll('.tgl').forEach(b=>b.onclick=()=>{
     const card=$('#'+b.dataset.for); const on=b.getAttribute('aria-pressed')!=='true';
@@ -619,6 +658,7 @@ let loading=false;
 async function load(){
   if(!session && !token){ location.href='/login'; return; }
   if(loading) return; loading=true;
+  pageOf={outlet:0,author:0};   // a new window means new lists — never land on a page that no longer exists
   // refetch keeps the frame: fade the previous render, no skeleton flash
   const prev=$('#content'); if(DATA) prev.style.opacity='.45';
   try{
