@@ -20,6 +20,8 @@ import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
 import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
 import { isGoogleNews } from '../lib/resolve.js';
+import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
+import { XMLParser } from 'fast-xml-parser';
 import { sendWhatsAppUrgent, whatsappStatus } from '../lib/whatsapp.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
@@ -46,6 +48,57 @@ export default async function handler(req, res) {
         return res.status(200).json({ missing, days });
       }
       if (resource === 'whatsapp-status') return res.status(200).json(whatsappStatus());
+      if (resource === 'probe-feeds') {
+        // Verify candidate RSS URLs FROM PRODUCTION (the dev sandbox cannot
+        // reach news hosts). Read-only: fetches each candidate, parses it, and
+        // reports item count + whether it carries bylines. Nothing is stored —
+        // a URL only becomes a live source after a human reads this and adds it
+        // to lib/sources.js.
+        const only = String(req.query.only || '').trim();
+        const list = only ? FEED_CANDIDATES.filter((c) => c.id === only || c.kind === only) : FEED_CANDIDATES;
+        const px = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+        const arrOf = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+        const probe = async (url) => {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          try {
+            const r = await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers: {
+              'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+              accept: 'application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.8',
+            } });
+            if (!r.ok) return { url, ok: false, status: r.status };
+            const xml = px.parse(await r.text());
+            const entries = arrOf(xml?.rss?.channel?.item).concat(arrOf(xml?.feed?.entry));
+            if (!entries.length) return { url, ok: false, status: r.status, note: 'parsed, 0 items' };
+            const withAuthor = entries.filter((e) => e['dc:creator'] || e.author).length;
+            const first = entries[0];
+            const title = String(first?.title?.['#text'] ?? first?.title ?? '').trim().slice(0, 70);
+            return { url, ok: true, status: r.status, items: entries.length, bylines: withAuthor, sample: title };
+          } catch (e) { return { url, ok: false, status: /abort/i.test(e.message) ? 'timeout' : 'error' }; }
+          finally { clearTimeout(t); }
+        };
+        // Bounded concurrency so ~80 fetches fit inside the function timeout.
+        const out = [];
+        const queue = [...list];
+        await Promise.all(Array.from({ length: 10 }, async () => {
+          for (;;) {
+            const c = queue.shift();
+            if (!c) return;
+            const attempts = [];
+            let win = null;
+            for (const u of c.urls) {
+              const r = await probe(u);
+              attempts.push(r);
+              if (r.ok) { win = r; break; }
+            }
+            out.push({ id: c.id, name: c.name, kind: c.kind, working: !!win, ...(win || {}), attempts });
+          }
+        }));
+        out.sort((a, b) => (b.working - a.working) || a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
+        await auditReq(req, who, 'feeds.probe', 'candidates', { probed: out.length, working: out.filter((r) => r.working).length });
+        return res.status(200).json({ probed: out.length, working: out.filter((r) => r.working).length, rows: out });
+      }
+
       if (resource === 'author-inspect') {
         // Evidence view for the authorless backlog: re-probe each card LIVE
         // (same fetch + extraction as the backfill, from production where

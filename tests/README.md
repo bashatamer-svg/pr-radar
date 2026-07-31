@@ -30,6 +30,7 @@ are **skipped**, the unit suite still runs.
 | Trends narratives (clustering incl. real-data regression) | `render-narrative-cluster`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives` |
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
+| Source prefilter + feed-candidate hygiene | `render-prefilter` |
 | DB helpers (row-cap warnings) | `db-caps` |
 | Guide page | `render-guide` |
 | Link previews & branding (OG/Twitter tags, favicon, PNG assets) | `render-og` |

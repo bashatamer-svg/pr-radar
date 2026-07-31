@@ -50,7 +50,7 @@ behaviour gets a regression test in the same commit.
 | Path | What lives here |
 |---|---|
 | `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends + narrative clustering; `report.js` weekly/custom reports + Word export; `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
-| `lib/*.js` | ALL shared logic. `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit), `email.js` (email-client-safe renderer), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js` |
+| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit), `email.js` (email-client-safe renderer), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js` |
 | `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
 | `scripts/` | One-off generators run manually (OG images) |
 | `tests/*.mjs` | The suite. `narr-fixture.mjs` is captured production data, not a test |
@@ -133,6 +133,14 @@ gets nothing. All queries live in `lib/db.js`.
   arbitrary hosts) and has no production secrets. Verify via Supabase/Vercel/
   Resend MCPs, or ship an admin diagnostic (pattern: Tools → "Verify
   verdicts") and let production prove it.
+- **Never add a feed URL unprobed.** A 404 fails silently and the radar looks
+  calm while blind. Candidates live in `lib/feed-candidates.js`; Admin → Tools
+  → "Probe feeds" verifies them FROM PRODUCTION (the sandbox has no egress to
+  news hosts), then a verified URL moves into `DIRECT_FEEDS`.
+- **Direct outlet feeds are prefiltered** (`isWorthClassifying`): a national
+  daily's firehose is mostly football/crime, and every item would otherwise cost
+  a classifier call. Query-scoped Google-News feeds bypass the filter; sector
+  stories naming no brand still pass it.
 - **Author extraction is first-VALID-wins** across all sources (JSON-LD →
   metas → visible bylines) — junk in a high source must never mask a lower
   real byline. Junk classes already filtered: outlet names, UI placeholders,

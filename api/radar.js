@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import crypto from 'node:crypto';
-import { ALL_FEEDS, BRAND_FEEDS } from '../lib/sources.js';
+import { ALL_FEEDS, BRAND_FEEDS, isWorthClassifying } from '../lib/sources.js';
 import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState, itemsByHashes, itemsMissingAuthor } from '../lib/db.js';
 import { fillMissingAuthors, sweepAuthors } from '../lib/author-backfill.js';
 import { classify } from '../lib/classify.js';
@@ -256,6 +256,7 @@ async function fetchFeed(feed) {
         tier: feed.tier,
         brand: feed.brand ?? null,           // brand the feed targets; the classifier can override
         country: feed.country,
+        _direct: !!feed.direct,              // outlet firehose → must pass the relevance prefilter
       };
     });
 
@@ -334,7 +335,15 @@ export default async function handler(req, res) {
 
   // 2. Drop anything older than 48h.
   const cutoff = Date.now() - 2 * 864e5;
-  const fresh = raw.filter((i) => !i.published_at || new Date(i.published_at).getTime() > cutoff);
+  const aged = raw.filter((i) => !i.published_at || new Date(i.published_at).getTime() > cutoff);
+
+  // 2b. Relevance prefilter — DIRECT outlet feeds only (query-scoped Google
+  // News feeds pass untouched). A national daily's firehose is mostly football
+  // and crime; without this every one of those items would cost a classifier
+  // call. See isWorthClassifying() for why it errs generous.
+  const fresh = aged.filter(isWorthClassifying);
+  const prefiltered = aged.length - fresh.length;
+  if (prefiltered) console.log(`prefilter: skipped ${prefiltered} off-topic item(s) from direct outlet feeds`);
 
   // 3. Dedupe: within this run (exact then fuzzy), then against everything ever seen.
   const byHash = new Map();
@@ -916,6 +925,7 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     scanned: raw.length,
+    prefiltered,
     feeds: feedSet.length,
     surges: surgeCount,
     authorsBackfilled,

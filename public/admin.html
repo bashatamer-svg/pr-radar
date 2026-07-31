@@ -386,6 +386,15 @@ function renderTools(){
       <div id="aiRows"></div>
     </div>
     <div class="card">
+      <h2>Probe candidate feeds</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">Check which of the shortlisted outlets actually publish a working RSS feed — run from <b>production</b>, because the dev sandbox can't reach news sites. Read-only: it fetches and parses each candidate, nothing is stored or ingested. Verified URLs then get added to the source list in code.</div>
+      <div class="form">
+        <button class="btn ghost" id="pfBtn" type="button">Probe feeds</button>
+        <div class="formmsg" id="pfMsg"></div>
+      </div>
+      <div id="pfRows"></div>
+    </div>
+    <div class="card">
       <h2>WhatsApp urgent alerts</h2>
       <div class="nm" style="line-height:1.6;margin:0 0 11px">Urgent (importance-5) items are also sent as WhatsApp DMs to each configured recipient (the official API can’t post to a group, so it messages people individually). Configure the number, token, recipients and template in the environment, then send a test to verify delivery.</div>
       <div class="nm" id="waStatus" style="font-weight:700;color:var(--ink-2);margin-bottom:10px">Checking…</div>
@@ -396,6 +405,7 @@ function renderTools(){
     </div>`;
   $('#baBtn').onclick=runBackfill;
   $('#aiBtn').onclick=runAuthorInspect;
+  $('#pfBtn').onclick=runFeedProbe;
   $('#baDays').addEventListener('change',loadAuthorGap);
   loadAuthorGap();
   $('#waTestBtn').onclick=runWhatsappTest;
@@ -454,6 +464,31 @@ async function runAuthorInspect(){
           ${x.candidates&&x.candidates.length?`<div dir="auto" style="font-size:11px;color:var(--faint);margin-top:2px">rejected candidates: ${esc(x.candidates.join(' · '))}</div>`:''}
         </div>`;
       }).join('');
+    }
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
+  btn.disabled=false; btn.textContent=label;
+}
+// Probe the candidate feed list from production and show what actually works.
+async function runFeedProbe(){
+  const btn=$('#pfBtn'), msg=$('#pfMsg'), box=$('#pfRows');
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Probing…'; msg.textContent='Fetching each candidate feed…'; msg.className='formmsg'; box.innerHTML='';
+  try{
+    const r=await api({q:'&view=probe-feeds'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
+    else{
+      msg.className='formmsg ok'; msg.textContent=`${d.working} of ${d.probed} outlets have a working feed.`;
+      const byKind={};
+      (d.rows||[]).forEach(x=>{ (byKind[x.kind]=byKind[x.kind]||[]).push(x); });
+      box.innerHTML=Object.entries(byKind).map(([kind,rows])=>`
+        <div style="margin-top:12px"><div class="nm" style="font-weight:800;text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;color:var(--faint)">${esc(kind)}</div>
+        ${rows.map(x=>`<div style="border-top:1px solid var(--hair);padding:7px 0;font-size:12px">
+          <b style="color:${x.working?'#0c7a43':'#b60009'}">${x.working?'✓ feed':'✗ none'}</b> · <b>${esc(x.name)}</b>
+          ${x.working?`· ${x.items} items${x.bylines?` · <b>${x.bylines} with byline</b>`:' · no bylines'}`:''}
+          ${x.working?`<div class="nm" style="font-size:11px;color:var(--faint);word-break:break-all">${esc(x.url)}</div>
+            <div dir="auto" class="nm" style="font-size:11px;color:var(--muted)">${esc(x.sample||'')}</div>`
+            :`<div class="nm" style="font-size:11px;color:var(--faint)">tried: ${esc((x.attempts||[]).map(a=>`${a.status}`).join(' · '))}</div>`}
+        </div>`).join('')}</div>`).join('');
     }
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
   btn.disabled=false; btn.textContent=label;
