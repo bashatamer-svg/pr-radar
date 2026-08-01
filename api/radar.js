@@ -5,6 +5,7 @@ import { existingHashes, existingSummaryHashes, recentStories, recentItems, inse
 import { fillMissingAuthors, sweepAuthors } from '../lib/author-backfill.js';
 import { classify } from '../lib/classify.js';
 import { semanticDedupe } from '../lib/dedupe-semantic.js';
+import { tokenize, jaccard } from '../lib/dedupe.js';
 import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
 import { sendWhatsAppUrgent } from '../lib/whatsapp.js';
 import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
@@ -94,38 +95,6 @@ function parseNamedRecipients(csv) {
     });
 }
 
-// Second dedupe layer: exact-hash catches "same headline reposted", but
-// different publishers rewrite the same story with different words. Group
-// by significant-token overlap (Jaccard) within the same country so we
-// don't collapse different stories that happen to share vocabulary.
-const STOPWORDS = new Set([
-  'the','a','an','of','in','on','at','to','for','and','or','but','is','are','was','were','be','been',
-  'by','with','from','as','that','this','these','those','says','said','have','has','had','will','can',
-  'may','might','after','before','over','under','into','about','more','than','their','they','them',
-  'new','news','report','reports','update','updates','latest','announces','announced','launches',
-  'launched','opens','opened','plans','plan',
-  // Brand + geo + generic-sector tokens: every story about a brand shares these,
-  // so counting them as similarity gives two unrelated same-brand stories a floor
-  // they didn't earn — how a distinct story or a next-day development gets wrongly
-  // merged and hidden. Excluding them lets only DISTINCTIVE words drive the merge.
-  'vodafone','orange','etisalat','telecom','egypt','egyptian','cash','mobile','money',
-  'فودافون','اورنج','أورنج','اتصالات','المصرية',
-]);
-function tokenize(s) {
-  return new Set(
-    String(s || '')
-      .toLowerCase()
-      .replace(/[^\w\s\u0600-\u06ff]/g, ' ')
-      .split(/\s+/)
-      .filter((t) => t.length >= 4 && !STOPWORDS.has(t))
-  );
-}
-function jaccard(a, b) {
-  if (!a.size || !b.size) return 0;
-  let inter = 0;
-  for (const t of a) if (b.has(t)) inter++;
-  return inter / (a.size + b.size - inter);
-}
 // PR variant: a story runs in many outlets, and coverage spread IS the signal.
 // Keep EVERY cluster member as an "instance" (outlet · author · url · date),
 // de-duped by url, so the board/email can list all the places one story ran

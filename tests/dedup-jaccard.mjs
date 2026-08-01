@@ -1,29 +1,11 @@
-// Task 2 — labeled Jaccard check against the REAL STOPWORDS in api/radar.js.
-// Pulls the STOPWORDS Set straight out of the source (zero drift) and replicates
-// tokenize()/jaccard() verbatim (unchanged by this task).
-import { readFileSync } from 'node:fs';
+// Labeled Jaccard check against the REAL tokeniser and stopword list.
+// These used to be scraped out of api/radar.js source and re-implemented here
+// with a "do not diverge" comment — a hazard that only held while someone
+// remembered. They now live in lib/dedupe.js and are imported, so the test
+// exercises the exact code the pipeline and the admin duplicate-finder share.
 import assert from 'node:assert';
+import { STOPWORDS, tokenize, jaccard } from '../lib/dedupe.js';
 
-const src = readFileSync(new URL('..', import.meta.url).pathname + '/api/radar.js', 'utf8');
-const inner = src.match(/const STOPWORDS = new Set\(\[([\s\S]*?)\]\);/)[1];
-const STOPWORDS = new Set(new Function('return [' + inner + ']')());
-
-// verbatim from api/radar.js (tokenize + jaccard) ─ do not diverge
-function tokenize(s) {
-  return new Set(
-    String(s || '')
-      .toLowerCase()
-      .replace(/[^\w\s؀-ۿ]/g, ' ')
-      .split(/\s+/)
-      .filter((t) => t.length >= 4 && !STOPWORDS.has(t))
-  );
-}
-function jaccard(a, b) {
-  if (!a.size || !b.size) return 0;
-  let inter = 0;
-  for (const t of a) if (b.has(t)) inter++;
-  return inter / (a.size + b.size - inter);
-}
 const J = (x, y) => jaccard(tokenize(x), tokenize(y));
 
 console.log('STOPWORDS size:', STOPWORDS.size, '| includes brand/geo:',
@@ -60,4 +42,9 @@ for (const [a, b, label] of SUM) {
   assert.ok(s >= 0.5, `genuine repost failed to merge at ${s.toFixed(3)}: ${label}`);
 }
 
-console.log('\nDEDUP JACCARD OK — distinct/developing stay separate at 0.55; reworded reposts still merge at 0.5');
+// The pipeline and the admin duplicate-finder must share one notion of "same
+// story" — a second copy of these primitives is how the two would drift apart.
+assert.strictEqual(typeof tokenize, 'function');
+assert.ok(STOPWORDS.size > 30, 'the real stopword list is loaded, not a stub');
+
+console.log('\nDEDUP JACCARD OK — distinct/developing stay separate at 0.55; reworded reposts still merge at 0.5; primitives imported from lib/dedupe.js, not re-implemented');

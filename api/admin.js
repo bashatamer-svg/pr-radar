@@ -14,9 +14,9 @@ import {
   allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber,
   allFeedback, setFeedbackResolved,
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
-  recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor,
-} from '../lib/db.js';
+  recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor, itemsForDupeScan, mergeDuplicateInto } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
+import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
 import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
 import { isGoogleNews } from '../lib/resolve.js';
@@ -48,6 +48,17 @@ export default async function handler(req, res) {
         return res.status(200).json({ missing, days });
       }
       if (resource === 'whatsapp-status') return res.status(200).json(whatsappStatus());
+      if (resource === 'find-dupes') {
+        // Read-only: two cards on the board that are really one story. Ingest
+        // merges what it is SURE about; this surfaces the rest for a human,
+        // because the judgement ("is this a second write-up or a follow-up?")
+        // is the part a threshold cannot make.
+        const days = Math.max(1, Math.min(Number(req.query.days) || 30, 90));
+        const min = Math.max(0.15, Math.min(Number(req.query.min) || 0.3, 0.9));
+        const items = await itemsForDupeScan({ days });
+        const pairs = findDuplicateCandidates(items, { min });
+        return res.status(200).json({ days, min, scanned: items.length, pairs });
+      }
       if (resource === 'probe-feeds') {
         // Verify candidate RSS URLs FROM PRODUCTION (the dev sandbox cannot
         // reach news hosts). Read-only: fetches each candidate, parses it, and
@@ -140,6 +151,17 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
+      if (resource === 'merge-dupe') {
+        // Fold one card into another: the duplicate's outlets become coverage on
+        // the card we keep, then it is hidden everywhere. Audited, because it
+        // changes what the board and the analytics count.
+        const { keep, drop } = req.body || {};
+        let result;
+        try { result = await mergeDuplicateInto(keep, drop); }
+        catch (e) { return res.status(400).json({ error: e.message }); }
+        await auditReq(req, who, 'items.merge_duplicate', 'items', result);
+        return res.status(200).json({ ok: true, ...result });
+      }
       if (resource === 'backfill-authors') {
         // One bounded sweep filling "—" authors on recent board cards. Read-mostly
         // (reads articles, writes bylines); no re-ingest, no emails. Repeat until

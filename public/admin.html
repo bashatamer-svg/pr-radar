@@ -386,6 +386,15 @@ function renderTools(){
       <div id="aiRows"></div>
     </div>
     <div class="card">
+      <h2>Find duplicate cards</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">Two cards that are really one story, sitting on the board separately. Ingest merges what it is <b>sure</b> about; this surfaces the rest — mostly the same event written up by a second outlet hours later, where the wording overlaps too little for the automatic bars. Read-only until you press Merge. <b>Merging</b> keeps the older card, adds the other's outlet and byline to its coverage, and hides the duplicate everywhere (board and Trends).</div>
+      <div class="form">
+        <button class="btn ghost" id="dupBtn" type="button">Find duplicates</button>
+        <div class="formmsg" id="dupMsg"></div>
+      </div>
+      <div id="dupRows"></div>
+    </div>
+    <div class="card">
       <h2>Probe candidate feeds</h2>
       <div class="nm" style="line-height:1.6;margin:0 0 11px">Check which of the shortlisted outlets actually publish a working RSS feed — run from <b>production</b>, because the dev sandbox can't reach news sites. Read-only: it fetches and parses each candidate, nothing is stored or ingested. Verified URLs then get added to the source list in code.</div>
       <div class="form">
@@ -406,6 +415,7 @@ function renderTools(){
   $('#baBtn').onclick=runBackfill;
   $('#aiBtn').onclick=runAuthorInspect;
   $('#pfBtn').onclick=runFeedProbe;
+  $('#dupBtn').onclick=runDupeScan;
   $('#baDays').addEventListener('change',loadAuthorGap);
   loadAuthorGap();
   $('#waTestBtn').onclick=runWhatsappTest;
@@ -467,6 +477,49 @@ async function runAuthorInspect(){
     }
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
   btn.disabled=false; btn.textContent=label;
+}
+// Surface duplicate CARDS (one story, two rows) and let a human merge them.
+async function runDupeScan(){
+  const btn=$('#dupBtn'), msg=$('#dupMsg'), box=$('#dupRows');
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Scanning…';
+  msg.textContent='Comparing every card in the last 30 days…'; msg.className='formmsg'; box.innerHTML='';
+  try{
+    const r=await api({q:'&view=find-dupes&days=30'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
+    else if(!(d.pairs||[]).length){ msg.className='formmsg ok'; msg.textContent=`No duplicate candidates among ${d.scanned} cards.`; }
+    else{
+      msg.className='formmsg ok';
+      msg.textContent=`${d.pairs.length} candidate pair(s) across ${d.scanned} cards — read each before merging.`;
+      box.innerHTML=d.pairs.map((p,n)=>`
+        <div class="dup" id="dup-${n}" style="border-top:1px solid var(--hair);padding:10px 0">
+          <div class="nm" style="font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em">
+            ${p.band==='lexical'?'strong match':'needs judgement'} · headline ${p.headScore} · summary ${p.summScore} · ${esc(p.keep.brand||'')}
+          </div>
+          <div dir="auto" style="font-size:12.5px;margin-top:5px"><b>keep #${p.keep.id}</b> · ${esc(p.keep.source||'')}<br>${esc(p.keep.headline||'')}</div>
+          <div dir="auto" style="font-size:12.5px;margin-top:5px;color:var(--muted)"><b>merge #${p.drop.id}</b> · ${esc(p.drop.source||'')}<br>${esc(p.drop.headline||'')}</div>
+          <div style="margin-top:7px;display:flex;gap:8px;align-items:center">
+            <button class="btn ghost" type="button" data-keep="${p.keep.id}" data-drop="${p.drop.id}" data-n="${n}">Merge into #${p.keep.id}</button>
+            <span class="formmsg" id="dupr-${n}"></span>
+          </div>
+        </div>`).join('');
+      box.querySelectorAll('button[data-keep]').forEach(b=>b.onclick=()=>mergeDupe(b));
+    }
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
+  btn.disabled=false; btn.textContent=label;
+}
+async function mergeDupe(btn){
+  const keep=Number(btn.dataset.keep), drop=Number(btn.dataset.drop);
+  const out=$('#dupr-'+btn.dataset.n);
+  btn.disabled=true; out.textContent='Merging…'; out.className='formmsg';
+  try{
+    const r=await api({method:'POST',q:'&resource=merge-dupe',body:{keep,drop}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ out.textContent=d.error||'Failed.'; out.className='formmsg err'; btn.disabled=false; return; }
+    out.className='formmsg ok';
+    out.textContent=`Merged — ${d.outletsMoved} outlet(s) moved onto #${keep}.`;
+    btn.textContent='Merged';
+  }catch(e){ out.textContent='Network error.'; out.className='formmsg err'; btn.disabled=false; }
 }
 // Probe the candidate feed list from production and show what actually works.
 async function runFeedProbe(){
