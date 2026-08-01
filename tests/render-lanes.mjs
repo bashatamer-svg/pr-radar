@@ -106,6 +106,17 @@ assert.ok(/2 negative/.test(statusTxt), `status counts negative stories plainly 
 // the Vodafone hero is Vodafone-only and unchanged
 assert.ok(/negative/.test(await page.$eval('.hero', e => e.textContent)), 'Vodafone hero still reads "negative"');
 
+// The severity dots are labelled Impact, not Reach. "Reach" read as audience
+// size, but the field weighs how directly a story hits Vodafone as well as how
+// far it travelled — a small outlet landing squarely on us outranks a big one
+// that barely mentions us. The board is where this vocabulary originates and
+// lib/email.js mirrors it, so a rename that survives on only one surface breaks
+// the one-design-system rule (render-email-design pins the email half).
+const dlab = await page.$eval('.dots .dlab', e => e.textContent.trim());
+assert.strictEqual(dlab, 'Impact', `the card's severity dots are labelled Impact (got "${dlab}")`);
+const dtip = await page.$eval('.dots', e => e.getAttribute('title'));
+assert.ok(/matters to us/.test(dtip), `the tooltip says what the score measures (got "${dtip}")`);
+
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 await browser.close(); server.close();
 if (errors.length) { console.error('PAGE ERRORS:\n' + errors.join('\n')); process.exit(1); }

@@ -482,7 +482,7 @@ const sentOf = it => SENT[it.sentiment]?it.sentiment:'neutral';
 // Sentiment reads the same way on every brand: how the story lands for the brand
 // it is ABOUT. A rival's win is Positive (positive for them), a rival's outage
 // Negative — no inversion, no per-brand relabelling. What a competitor story
-// means for US is carried by Reach (severity) and by the lane, not by the pill.
+// means for US is carried by Impact (severity) and by the lane, not by the pill.
 const sentLabel = it => SENT[sentOf(it)].label;
 const SENT_TIP = 'How the story reads for the brand it’s about — the same scale for Vodafone and for rivals.';
 // Section lane (what WE do about it) — distinct from the item's own sentiment.
@@ -636,7 +636,7 @@ function cardHtml(it){
   const pinMark=pinned?`<span class="pinmark pin" title="Pinned for the team">📌 Pinned</span>`:hidden?`<span class="pinmark hide" title="Hidden from the team view">🙈 Hidden</span>`:'';
   return `<article class="card ${sent}${crit?' crit':''}${pinned?' pinned':''}${hidden?' hidden':''}" id="item-${it.id}">
     <div class="c-top"><div class="metas">${brand}${spreadBadge}${cat}${ageEl}${confPip(it)}${pinMark}</div>
-      <div class="dots" title="Reach / impact ${it.importance||1} of 5"><span class="dlab">Reach</span>${dots(it.importance)}</div></div>
+      <div class="dots" title="Impact ${it.importance||1} of 5 — how much this matters to us: how directly it hits Vodafone, and how far it travelled"><span class="dlab">Impact</span>${dots(it.importance)}</div></div>
     <h3 class="headline"><a href="${esc(href)}" target="_blank" rel="noopener">${esc(it.headline)}</a></h3>
     <div class="subrow"><span class="sent ${sent}" title="${SENT_TIP}">${sentLabel(it)}</span>${by}${dueEl}</div>
     ${it.summary?`<p class="summary">${esc(it.summary)}</p>`:''}

@@ -153,6 +153,18 @@ gets nothing. All queries live in `lib/db.js`.
   loop was permanently open and any manual `/api/radar` hit re-mailed every
   subscriber. Pinned by `verify-daily-once`. **A stale marker is not a missed
   send** — check Resend, not `pr_state`.
+- **One score, three names: `severity` (prompt) = `importance` (column) =
+  **Impact** (every surface).** It was labelled "Reach" until 1 Aug, which read
+  as audience size — but the classifier weighs how *directly* a story hits
+  Vodafone as well as how far it travelled, so a small outlet landing squarely
+  on us outranks a big one that barely mentions us. `guide.html` said "more dots
+  = more people likely see it": half the definition, and the wrong half. The
+  guide now spells out both factors, all five rungs and the never-below-3 floor
+  for Vodafone-negatives. Renaming touched the board, both emails and the guide
+  together — `render-lanes` pins the board label + tooltip, `render-email-design`
+  the email half, `render-guide` the explanation. `lib/report.js` prints a bare
+  `N/5` and carries no label. **Only 5 alerts in real time**; a 4 waits for the
+  05:00 brief.
 - **`sendBulletin` with no `to` silently means `RADAR_TO`** — and `RADAR_TO` is
   unset in production, so for every severity-5 story the urgent path threw "no
   recipients", caught it, logged it, and reached nobody. Latent since launch:
@@ -192,7 +204,7 @@ gets nothing. All queries live in `lib/db.js`.
   tokens (`public/index.html` `:root`) and exports them as `THEME` for
   `lib/report.js`, so bulletin + urgent + report + board match. Change a board
   token → update the email constants in the same commit (`render-email-design`
-  reads `:root` and fails otherwise). Card vocabulary is shared too: Reach,
+  reads `:root` and fails otherwise). Card vocabulary is shared too: Impact,
   "What to do with this", and the lane names Needs a response / Wins to
   amplify / Market & noted.
 - **Inline styles sit inside `style="…"`** — never use double quotes within a

@@ -25,9 +25,22 @@ for (const w of [390, 900]) {
   assert.ok(/every Vodafone mention including regulatory/.test(text), 'Vodafone regulatory exception explained');
   // The ingest explainer must state BOTH clocks and the real numbers — this is
   // what a user reads when they ask "why isn't my story on the board yet?".
-  for (const claim of ['Every 15 min', '08:00 Cairo', '30 sources', 'last 48 hours', 'Reach 2']) {
+  for (const claim of ['Every 15 min', '08:00 Cairo', '30 sources', 'last 48 hours', 'Impact 2']) {
     assert.ok(text.includes(claim), `the ingest section states: ${claim}`);
   }
+  // Impact is NOT audience size, however much the old "Reach" label implied it.
+  // The classifier weighs how directly a story hits Vodafone as well as how far
+  // it travelled, so a small outlet landing squarely on us outranks a big one
+  // that barely mentions us. The guide used to say "more dots = more people
+  // likely see it", which is half the definition and the wrong half.
+  assert.ok(/matters to us/.test(text), 'Impact is explained as what it measures, not as audience size');
+  assert.ok(/directly it hits Vodafone/.test(text), 'the directness half of the scale is stated');
+  assert.ok(!/more people likely see it/.test(text), 'the audience-size-only wording is gone');
+  // Each rung is named, so "why is this a 3?" is answerable from the guide.
+  for (const rung of ['live reputational threat', 'real pickup', 'worth the team knowing', 'routine coverage', 'background']) {
+    assert.ok(text.includes(rung), `the scale explains its levels: ${rung}`);
+  }
+  assert.ok(/never below 3/.test(text), 'the Vodafone-negative floor is stated');
   // The 15-minute poll is only PART of the answer — it must name the subset it
   // checks, so nobody reads it as "everything, every quarter hour".
   assert.ok(/10 brand/.test(text), 'the fast poll names the subset it actually checks');

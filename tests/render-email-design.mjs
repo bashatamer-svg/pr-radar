@@ -59,13 +59,13 @@ for (const [name, html] of [['bulletin', bulletin], ['urgent', urgent]]) {
   }
   // 6. App vocabulary, not the old email-only wording.
   assert.ok(!/REPUTATIONAL READ/.test(html), `${name}: card block uses the board's wording`);
-  assert.ok(!/>SEV</.test(html), `${name}: severity label reads "Reach" like the board`);
+  assert.ok(!/>SEV</.test(html), `${name}: severity label reads "Impact" like the board`);
 }
 assert.ok(/What to do with this/i.test(bulletin), 'bulletin card uses the board\'s "What to do with this"');
-assert.ok(/Reach/.test(bulletin), 'bulletin uses the board\'s Reach label');
+assert.ok(/Impact/.test(bulletin), "bulletin uses the board's Impact label");
 // board lane names, verbatim
 for (const lane of ['Needs a response', 'Wins to amplify', 'Market &amp; noted']) {
   assert.ok(bulletin.includes(lane), `bulletin section named like the board lane: ${lane}`);
 }
 
-console.log('EMAIL-DESIGN OK — email theme equals the board tokens, warm palette gone, style attributes well-formed, board vocabulary (Reach / What to do with this / lane names)');
+console.log('EMAIL-DESIGN OK — email theme equals the board tokens, warm palette gone, style attributes well-formed, board vocabulary (Impact / What to do with this / lane names)');
