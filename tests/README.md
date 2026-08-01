@@ -33,6 +33,7 @@ are **skipped**, the unit suite still runs.
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |
 | Trends leaderboard paging (all outlets/journalists reachable) | `render-leaderboard-pages` |
 | DB helpers (row-cap warnings) | `db-caps` |
+| Classifier / de-dupe judgement rules (prompt invariants) | `verify-judgement-rules` |
 | Guide page | `render-guide` |
 | Link previews & branding (OG/Twitter tags, favicon, PNG assets) | `render-og` |
 

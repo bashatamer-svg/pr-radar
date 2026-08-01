@@ -220,6 +220,23 @@ gets nothing. All queries live in `lib/db.js`.
   `pr_items` in the same change. Competitor wins sitting at `neutral`
   (understated, not inverted) were left as-is. Pinned by `render-lanes`,
   `render-lanes-email-report`, `render-trends-wording`.
+- **A controversy the brand is NOT a party to is still negative for it** — a
+  plagiarism row over the music in a Vodafone ad, a scandal about a campaign's
+  celebrity, a contractor's misconduct on its project. "The brand did nothing
+  wrong, so neutral" is the tempting wrong answer, and the classifier gave both
+  answers to the same story 90 minutes apart (live, 2026-07-31). The rule now
+  lives in the sentiment section: subject-of-the-controversy ⇒ negative;
+  not-the-accused softens **severity** (2–3), never the sentiment. Judgement
+  calls like this get written into the prompt and pinned by
+  `verify-judgement-rules`, which asserts on the exported `SYSTEM` string.
+- **Two write-ups of one event must become one card.** That pair also escaped
+  every dedupe layer: the cross-run summary Jaccard was 0.429 against a 0.5 bar,
+  and the semantic backstop (which DID see the pair — 6 shared strong tokens)
+  answered "different events" because the paraphrases transliterated the names
+  differently (Walid/Waleed, Tawlet/Too Late). `SAME_EVENT_SYSTEM` now names
+  disputes as a same-event pattern and tells the model Arabic names have many
+  spellings — while keeping its unsure⇒keep fail-safe, since losing a real story
+  is worse than a duplicate card.
 - WhatsApp preview caches are sticky — test OG changes with a `?v=N` URL.
 
 ## Verifying work
