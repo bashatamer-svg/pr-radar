@@ -38,6 +38,7 @@ const rss = () => `<?xml version="1.0"?><rss><channel><item>
   <pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
 
 let instanceWrites = [];
+let instanceUrl = '';
 let itemInserts = 0;
 
 globalThis.fetch = async (url, opts = {}) => {
@@ -58,6 +59,7 @@ globalThis.fetch = async (url, opts = {}) => {
     return ok(JSON.stringify(b.map((r, i) => ({ ...r, id: 1 + i }))));
   }
   if (u.includes('/rest/v1/pr_instances') && m === 'POST') {
+    instanceUrl = u;
     instanceWrites.push(...JSON.parse(opts.body));
     return ok('');
   }
@@ -103,4 +105,26 @@ assert.ok(/Fatma/.test(String(row.author || '')), `the repost's byline survives 
 //    written as item_id: null (which would fail the FK and lose the batch).
 assert.ok(instanceWrites.every((r) => r.item_id != null), 'no instance row is written without an item id');
 
-console.log(`CROSSRUN-MERGE OK — a repost from a second outlet is folded into card ${STORED.id} as coverage (outlet + url + byline kept), reported as mergedIntoExisting, and never inserted as a duplicate card`);
+// 5. The write must survive re-seeing a repost. A merge re-offers the same
+//    (item_id,url) on every poll, and PostgREST only honours
+//    resolution=ignore-duplicates when on_conflict names the constraint — without
+//    it one already-stored row 409s and takes the WHOLE batch down, losing every
+//    genuinely new outlet in that run. Production did exactly that on every poll.
+assert.ok(/on_conflict=item_id,url/.test(instanceUrl),
+  `the instance write resolves conflicts on (item_id,url) (posted to ${instanceUrl})`);
+
+// …and a duplicate INSIDE one payload conflicts just as hard, so it is collapsed
+// before the request is made.
+{
+  let sent = null;
+  globalThis.fetch = async (url, opts = {}) => {
+    sent = JSON.parse(opts.body);
+    return { ok: true, status: 200, text: async () => '', json: async () => null };
+  };
+  const { insertInstances } = await import(new URL('..', import.meta.url).pathname + '/lib/db.js');
+  const row = { item_id: 7, outlet: 'A', author: null, url: 'https://x/1', published_at: null };
+  await insertInstances([row, { ...row, outlet: 'A again' }, { ...row, url: 'https://x/2' }]);
+  assert.strictEqual(sent.length, 2, `duplicate (item_id,url) collapsed before sending (sent ${JSON.stringify(sent)})`);
+}
+
+console.log(`CROSSRUN-MERGE OK — a repost from a second outlet is folded into card ${STORED.id} as coverage (outlet + url + byline kept), reported as mergedIntoExisting, never inserted as a duplicate card, and written with on_conflict so a re-seen repost cannot 409 the whole batch`);
