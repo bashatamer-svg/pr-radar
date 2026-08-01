@@ -353,7 +353,20 @@ export default async function handler(req, res) {
   }
   const deduped = fuzzyDedupe([...byHash.values()]);
   const seen = await existingHashes(deduped.map((i) => i.hash));
-  const notReposted = deduped.filter((i) => !seen.has(i.hash));
+  // Duplicates are MERGED, not discarded. Every cross-run pass below records
+  // {item, intoId} here instead of dropping the item on the floor: the story
+  // already has a card, and what this second write-up adds is COVERAGE — one
+  // more outlet (and often the only byline) on that card. Dropping it made the
+  // board under-report spread, which is the whole signal (live, 2026-08-01).
+  const mergedAway = [];
+  const notReposted = deduped.filter((i) => {
+    // has() decides "already stored", get() only supplies the merge target —
+    // a row that somehow arrives without an id must still count as seen, or a
+    // repost would be re-ingested as a brand-new card.
+    if (!seen.has(i.hash)) return true;
+    mergedAway.push({ item: i, intoId: seen.get(i.hash) ?? null });
+    return false;
+  });
 
   // Cross-run fuzzy dedup. The hash checks only catch an EXACT repost; a
   // publisher rewording a story we stored earlier (different hash) — or an
@@ -369,16 +382,21 @@ export default async function handler(req, res) {
   for (const r of await recentStories()) {
     const key = r.country || '';
     if (!recentHeadTokensByCountry.has(key)) recentHeadTokensByCountry.set(key, []);
-    recentHeadTokensByCountry.get(key).push(tokenize(r.headline));
-    if (r.summary) { recentSummaryTokens.push(tokenize(r.summary)); recentSummaryTexts.push(r.summary); }
+    recentHeadTokensByCountry.get(key).push({ id: r.id, toks: tokenize(r.headline) });
+    if (r.summary) {
+      recentSummaryTokens.push({ id: r.id, toks: tokenize(r.summary) });
+      recentSummaryTexts.push({ id: r.id, summary: r.summary });
+    }
   }
   const crossRunDroppedHeadlines = [];
   const candidates = notReposted.filter((i) => {
     const toks = tokenize(i.headline);
     const pool = recentHeadTokensByCountry.get(i.country || '') || [];
-    const dup = pool.some((t) => jaccard(t, toks) >= 0.55);
-    if (dup) crossRunDroppedHeadlines.push(i.headline);
-    return !dup;
+    const hit = pool.find((p) => jaccard(p.toks, toks) >= 0.55);
+    if (!hit) return true;
+    crossRunDroppedHeadlines.push(i.headline);
+    mergedAway.push({ item: i, intoId: hit.id ?? null });
+    return false;
   });
   const crossRunHeadlineDropped = notReposted.length - candidates.length;
   if (crossRunDroppedHeadlines.length) {
@@ -444,10 +462,14 @@ export default async function handler(req, res) {
   // summary bar).
   const seenSummaries = await existingSummaryHashes(summaryDeduped.map((i) => i.summary_hash));
   let classified = summaryDeduped.filter((i) => {
-    if (i.summary_hash && seenSummaries.has(i.summary_hash)) return false;
+    if (i.summary_hash && seenSummaries.has(i.summary_hash)) {
+      mergedAway.push({ item: i, intoId: seenSummaries.get(i.summary_hash) ?? null });
+      return false;
+    }
     if (i.summary) {
       const toks = tokenize(i.summary);
-      if (recentSummaryTokens.some((t) => jaccard(t, toks) >= 0.5)) return false;
+      const hit = recentSummaryTokens.find((t) => jaccard(t.toks, toks) >= 0.5);
+      if (hit) { mergedAway.push({ item: i, intoId: hit.id ?? null }); return false; }
     }
     return true;
   });
@@ -462,7 +484,9 @@ export default async function handler(req, res) {
   let semanticDropped = 0;
   try {
     const before = classified.length;
-    classified = await semanticDedupe(classified, recentSummaryTexts);
+    classified = await semanticDedupe(classified, recentSummaryTexts, {
+      onMerge: (item, intoId) => { if (intoId != null) mergedAway.push({ item, intoId }); },
+    });
     semanticDropped = before - classified.length;
   } catch (e) {
     console.error('semantic dedupe skipped', e.message);
@@ -639,6 +663,7 @@ export default async function handler(req, res) {
         uniqueRaw: uniqRaw.size,
         afterFreshness: fresh.length,
         afterWithinRunDedup: deduped.length,
+      mergedIntoExisting: mergedAway.filter((m) => m.intoId != null).length,
         candidates: candidates.length,
         classifiedRelevant: relevant.length,
       },
@@ -674,6 +699,21 @@ export default async function handler(req, res) {
           author: cleanAuthor(inst.author, inst.outlet),
           url: inst.url,
           published_at: inst.published_at,
+        });
+      }
+    }
+    // The whole point of mergedAway: a duplicate is one more OUTLET on a story
+    // we already have, so write it against that card. insertInstances ignores
+    // conflicts on (item_id,url), so re-seeing the same repost is a no-op.
+    for (const { item, intoId } of mergedAway) {
+      if (intoId == null) continue;
+      for (const inst of (item._instances && item._instances.length ? item._instances : [item])) {
+        instanceRows.push({
+          item_id: intoId,
+          outlet: inst.outlet ?? inst.source ?? null,
+          author: cleanAuthor(inst.author, inst.outlet ?? inst.source),
+          url: inst.url || '',
+          published_at: inst.published_at || null,
         });
       }
     }
@@ -932,6 +972,9 @@ export default async function handler(req, res) {
     candidates: candidates.length,
     crossRunHeadlineDropped,
     crossRunSummaryDropped,
+    // Duplicates aren't losses — say how many became extra coverage on a card
+    // that already existed, so "new: 0" doesn't read as "nothing happened".
+    mergedIntoExisting: mergedAway.filter((m) => m.intoId != null).length,
     classified: rawClassified.length,
     unclassified: unclassifiedCount,
     afterSummaryDedup: classified.length,

@@ -236,6 +236,19 @@ gets nothing. All queries live in `lib/db.js`.
   not-the-accused softens **severity** (2–3), never the sentiment. Judgement
   calls like this get written into the prompt and pinned by
   `verify-judgement-rules`, which asserts on the exported `SYSTEM` string.
+- **A duplicate is COVERAGE, not garbage.** Within a run `fuzzyDedupe` always
+  kept every cluster member as a `pr_instances` row; across runs all four passes
+  (hash, headline Jaccard, summary hash/Jaccard, semantic) just filtered the
+  item out, so a story re-published hours later by another outlet lost that
+  outlet AND its byline, and "◱ N outlets" only ever counted one run (fixed
+  2026-08-01). They now record `{item, intoId}` in `mergedAway` and write the
+  outlet against the stored card. `existingHashes`/`existingSummaryHashes`
+  return a **Map** (hash → id) for this — use `.has()` to decide "already
+  stored" and `.get()` only for the merge target, or a row without an id
+  re-ingests as a new card. `recentStories()` selects `id`; `semanticDedupe`
+  takes an `onMerge(item, intoId)` callback. Runs report `mergedIntoExisting`
+  so `new: 0` doesn't read as "nothing happened". Pinned by
+  `verify-crossrun-merge`.
 - **Two write-ups of one event must become one card.** That pair also escaped
   every dedupe layer: the cross-run summary Jaccard was 0.429 against a 0.5 bar,
   and the semantic backstop (which DID see the pair — 6 shared strong tokens)

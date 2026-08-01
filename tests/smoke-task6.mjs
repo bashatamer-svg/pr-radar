@@ -61,13 +61,15 @@ globalThis.fetch = async (url, opts) => {
     return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '[]' }] }) };
   }
   if (u.includes('/rest/v1/pr_feed_health')) return { ok: true, text: async () => (opts && opts.method === 'POST' ? '' : '[]') };
-  if (u.includes('/rest/v1/pr_items') && u.includes('select=hash')) {
+  if (u.includes('/rest/v1/pr_items') && /select=(id,)?hash&hash=in/.test(u)) {
     if (!seenEchoesAll) return { ok: true, text: async () => '[]' };   // nothing seen → candidates flow
     const inList = decodeURIComponent((u.match(/hash=in\.\(([^)]*)\)/) || [])[1] || '');
     const hashes = inList ? inList.split(',') : [];
-    return { ok: true, text: async () => JSON.stringify(hashes.map((h) => ({ hash: h }))) };
+    // Echo an id with each hash, as the real query now does — that id is the
+    // card a repost gets merged INTO.
+    return { ok: true, text: async () => JSON.stringify(hashes.map((h, n) => ({ id: 900 + n, hash: h }))) };
   }
-  if (u.includes('/rest/v1/pr_items') && u.includes('select=headline')) return { ok: true, text: async () => '[]' };
+  if (u.includes('/rest/v1/pr_items') && /select=(id,)?headline/.test(u)) return { ok: true, text: async () => '[]' };
   if (u.includes('api.resend.com')) { sendAttempts++; return { ok: true, json: async () => ({ id: 'x' }) }; }
   if (u.includes('/rest/v1/')) return { ok: true, text: async () => '[]' };
   throw new Error('unexpected fetch ' + u);

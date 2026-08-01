@@ -49,7 +49,7 @@ globalThis.fetch = async (url, opts) => {
 
   if (u.includes('/rest/v1/pr_items')) {
     if (m === 'GET' && u.includes('author=is.null')) { authorlessQueried = true; return ok(JSON.stringify(authorless.filter((i) => !filledIds.has(i.id)))); }
-    if (m === 'GET' && u.includes('select=hash')) return ok('[]');            // existingHashes / recentStories
+    if (m === 'GET' && /select=id(,|%2C)?hash|select=hash/.test(u)) return ok('[]');   // existingHashes / recentStories
     if (m === 'GET') return ok('[]');                                          // recentItems / itemsForStats
     if (m === 'PATCH') {
       const id = Number((u.match(/id=eq\.(\d+)/) || [])[1]);

@@ -47,8 +47,8 @@ globalThis.fetch = async (url, opts) => {
     }
     return ok(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(verdicts) }] }));
   }
-  if (u.includes('/rest/v1/pr_items') && u.includes('select=hash') && u.includes('order=')) return ok('[]'); // recentStories/other
-  if (u.includes('/rest/v1/pr_items') && u.includes('select=hash&hash=in')) return ok('[]'); // existingHashes → nothing seen
+  if (u.includes('/rest/v1/pr_items') && u.includes('order=') && /select=(id,)?(hash|headline)/.test(u)) return ok('[]'); // recentStories/other
+  if (u.includes('/rest/v1/pr_items') && /select=(id,)?hash&hash=in/.test(u)) return ok('[]'); // existingHashes → nothing seen
   if (u.includes('/rest/v1/pr_items') && m === 'POST') { inserts++; const b = JSON.parse(opts.body); lastInsertBody = b; return ok(JSON.stringify(b.map((r, i) => ({ ...r, id: i + 1 })))); }
   if (u.includes('/rest/v1/pr_instances') && m === 'POST') { instanceWrites++; return ok(''); }
   if (u.includes('/rest/v1/pr_feed_health')) return ok(m === 'POST' ? '' : '[]');

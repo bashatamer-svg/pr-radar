@@ -21,6 +21,7 @@ are **skipped**, the unit suite still runs.
 | Area | Tests |
 |---|---|
 | Ingest pipeline (feeds, dedup, classify, dry/urgent runs) | `smoke-task6`, `smoke-task1..3`, `smoke-task8..10`, `dedup-jaccard`, `render-debug` |
+| Cross-run duplicates merged as coverage, not dropped | `verify-crossrun-merge` |
 | Auth / RBAC / audit / password flows | `render-auth` (backend), `render-authui`, `render-adminui` (browser) |
 | Author capture (cascade, AI fallback, ingest-time, backfill, sweep) | `verify-authors`, `verify-ai-author`, `render-poll-author`, `render-author-backfill` |
 | Emails & webhooks (bulletin, urgent, report, no-token links) | `render-notoken`, `render-lanes-email-report`, `smoke-task2`, `render-whatsapp`, `send-guard` |
