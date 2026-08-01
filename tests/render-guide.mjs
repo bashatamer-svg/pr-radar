@@ -23,10 +23,19 @@ for (const w of [390, 900]) {
   assert.ok(/any date range/.test(text) && /Word/.test(text), 'Reports section explained');
   assert.ok(/sector-wide mobile-market news/.test(text), 'market-sector scope explained');
   assert.ok(/every Vodafone mention including regulatory/.test(text), 'Vodafone regulatory exception explained');
+  // The ingest explainer must state BOTH clocks and the real numbers — this is
+  // what a user reads when they ask "why isn't my story on the board yet?".
+  for (const claim of ['Every 30 min', '08:00 Cairo', '30 sources', 'last 48 hours', 'Reach 2']) {
+    assert.ok(text.includes(claim), `the ingest section states: ${claim}`);
+  }
+  // The 30-minute poll is only PART of the answer — it must name the subset it
+  // checks, so nobody reads it as "everything, every half hour".
+  assert.ok(/10 brand/.test(text), 'the fast poll names the subset it actually checks');
+  assert.ok(/Coverage/.test(text) && /thrown away/.test(text), 'duplicates are explained as coverage, not deletion');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 1, `no horizontal overflow at ${w}px (got ${overflow})`);
   assert.strictEqual(errs.length, 0, 'no page errors: ' + errs.join('; '));
   await page.close();
 }
 await browser.close(); server.close();
-console.log('GUIDE OK — all new sections present, renders clean at 390px + 900px, no overflow, no errors');
+console.log('GUIDE OK — all sections present incl. the ingest explainer (both clocks, real source/threshold numbers), renders clean at 390px + 900px, no overflow, no errors');
