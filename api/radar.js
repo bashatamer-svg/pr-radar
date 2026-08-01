@@ -287,7 +287,7 @@ export default async function handler(req, res) {
   }
 
   // 1. Fetch feeds in parallel. A dead feed yields [] and is logged.
-  //    Urgent-only crisis polls (every 15–30 min) hit ONLY the brand-targeted
+  //    Urgent-only crisis polls (every 15 min) hit ONLY the brand-targeted
   //    queries — a tight, fast net over the four operators — so the poll stays
   //    cheap. The daily full run sweeps ALL_FEEDS (brands + market + outlets).
   //    Cross-run hash dedupe (existingHashes below) means a story the poll
@@ -469,7 +469,7 @@ export default async function handler(req, res) {
   // Parallel, fail-soft (a miss leaves author null → "—"). The resolved URL is
   // cached onto the item so the insert below populates resolved_url — making
   // /api/go shares instant from day one — and the card's primary link becomes the
-  // clean publisher URL, not the un-tappable Google wrapper. Runs on the 30-min
+  // clean publisher URL, not the un-tappable Google wrapper. Runs on the 15-min
   // urgent poll TOO: the poll is where most brand stories land first, and skipping
   // it left them author-less until the next 05:00 daily backfill (~up to 17h of
   // "—" on fresh cards). Cost is bounded — a poll usually has 0–3 new relevant
@@ -911,7 +911,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // 5d. Stored-author backfill (daily full run only). The 30-min urgent poll
+  // 5d. Stored-author backfill (daily full run only). The 15-min urgent poll
   // ingests brand stories but SKIPS author extraction for speed, and the daily
   // run then dedups those already-stored items out — so a story first seen by
   // the poll would keep "—" forever (and brand mentions, the ones we most want

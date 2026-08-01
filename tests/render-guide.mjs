@@ -15,7 +15,7 @@ for (const w of [390, 900]) {
   const errs = []; page.on('pageerror', (e) => errs.push(e.message));
   await page.goto('http://localhost:8923/guide', { waitUntil: 'load' });
   const text = await page.evaluate(() => document.body.textContent);
-  assert.ok(/every 30 minutes/.test(text), 'ingest cadence mentioned');
+  assert.ok(/every 15 minutes/.test(text), 'ingest cadence mentioned');
   assert.ok(/newsroom/.test(text), 'desk byline explained');
   assert.ok(/tap to update/.test(text), 'auto-refresh pill explained');
   assert.ok(/Everything is clickable/.test(text), 'clickable Trends explained');
@@ -25,11 +25,11 @@ for (const w of [390, 900]) {
   assert.ok(/every Vodafone mention including regulatory/.test(text), 'Vodafone regulatory exception explained');
   // The ingest explainer must state BOTH clocks and the real numbers — this is
   // what a user reads when they ask "why isn't my story on the board yet?".
-  for (const claim of ['Every 30 min', '08:00 Cairo', '30 sources', 'last 48 hours', 'Reach 2']) {
+  for (const claim of ['Every 15 min', '08:00 Cairo', '30 sources', 'last 48 hours', 'Reach 2']) {
     assert.ok(text.includes(claim), `the ingest section states: ${claim}`);
   }
-  // The 30-minute poll is only PART of the answer — it must name the subset it
-  // checks, so nobody reads it as "everything, every half hour".
+  // The 15-minute poll is only PART of the answer — it must name the subset it
+  // checks, so nobody reads it as "everything, every quarter hour".
   assert.ok(/10 brand/.test(text), 'the fast poll names the subset it actually checks');
   assert.ok(/Coverage/.test(text) && /thrown away/.test(text), 'duplicates are explained as coverage, not deletion');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

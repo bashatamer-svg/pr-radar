@@ -73,6 +73,21 @@ await page.evaluate(() => checkNew());
 await page.waitForTimeout(150);
 assert.ok(await page.$eval('#newPill', el => el.hidden), 'no pill for a new item the active filter would hide');
 
+// The pulse header counts down to the next 15-minute scan. It must show a real
+// mm:ss that MOVES — a frozen or absent timer is worse than none, because it
+// silently implies the pipeline stopped.
+const readScan = () => page.$eval('#nextScan', (e) => e.textContent.trim());
+const t1 = await readScan();
+assert.ok(/^next scan \d{1,2}:\d{2}$/.test(t1), `countdown renders mm:ss (got "${t1}")`);
+const mins1 = Number(t1.match(/(\d{1,2}):/)[1]);
+assert.ok(mins1 <= 14, `never counts past the 15-minute window (got ${mins1}m)`);
+// Drive the clock forward rather than sleeping for real.
+await page.evaluate(() => { const d = Date.now; Date.now = () => d() + 3000; });
+await page.waitForTimeout(1300);
+const t2 = await readScan();
+assert.notStrictEqual(t2, t1, `the countdown ticks (stuck at "${t1}")`);
+assert.ok(await page.$('.pulse .ph .shbtn'), 'the Share button is still there beside it');
+
 await browser.close(); server.close();
 if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }
 console.log('AUTO-REFRESH OK — at top: applies in place; scrolled down: "N new" pill → tap applies; filtered-out new items raise no pill; no page errors');

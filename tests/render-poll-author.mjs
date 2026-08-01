@@ -1,4 +1,4 @@
-// The 30-min urgent poll now captures authors AT INGEST: resolve the Google-News
+// The 15-min urgent poll now captures authors AT INGEST: resolve the Google-News
 // wrapper → fetch the publisher page → extract the byline → insert the row WITH
 // author + resolved_url (previously skipped, leaving fresh cards "—" until the
 // next 05:00 daily backfill). Full handler run, everything mocked.
@@ -52,4 +52,4 @@ const row = insertedRows[0];
 assert.strictEqual(row.author, 'أحمد سامي', `author captured AT INGEST on the urgent poll (got ${JSON.stringify(row.author)})`);
 assert.strictEqual(row.resolved_url, PUB, 'publisher URL resolved + stored at ingest too');
 assert.ok(!('reason' in row), 'insert key set still clean (no reason)');
-console.log('POLL-AUTHOR OK — the 30-min urgent poll resolves the wrapper, extracts the byline (كتب : أحمد سامي) and inserts the row WITH author + resolved_url; no more 17h author gap');
+console.log('POLL-AUTHOR OK — the 15-min urgent poll resolves the wrapper, extracts the byline (كتب : أحمد سامي) and inserts the row WITH author + resolved_url; no more 17h author gap');

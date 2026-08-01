@@ -63,13 +63,13 @@ logic into a function file. New pages get a rewrite in `vercel.json`.
 | Cron (vercel.json) | Schedule (UTC) | Notes |
 |---|---|---|
 | `/api/radar` | daily 05:00 | full run: ingest + daily bulletin (`RADAR_TO` + subscribers) + stored-author backfill |
-| `/api/radar?urgentOnly=1` | every 30 min | ingest + severity-5 instant email/WhatsApp; skips bulletin |
+| `/api/radar?urgentOnly=1` | every 15 min | ingest + severity-5 instant email/WhatsApp; skips bulletin |
 | `/api/report?period=week&send=1` | Mon 06:00 | no-op unless `REPORT_EMAIL_ENABLED=1` |
 | `/api/geo?send=1` | Mon 07:00 | no-op unless `GEO_ENABLED=1` |
 
 Sources (`lib/sources.js`): 10 brand/market Google-News queries (AR+EN) + 7
 site-scoped sweeps covering the team's named outlet list + 13 direct outlet RSS
-feeds (the only ones that carry a byline) = 30 daily. The 30-min urgent poll
+feeds (the only ones that carry a byline) = 30 daily. The 15-min urgent poll
 runs the 10 brand queries only. Direct feeds are probe-verified; 31 unverified
 candidates remain staged in `lib/feed-candidates.js`.
 
@@ -288,6 +288,12 @@ gets nothing. All queries live in `lib/db.js`.
   disputes as a same-event pattern and tells the model Arabic names have many
   spellings — while keeping its unsure⇒keep fail-safe, since losing a real story
   is worse than a duplicate card.
+- **The board's "next scan" countdown is computed, not fetched** — the urgent
+  cron fires on the quarter hour in UTC and Cairo is a whole-hour offset, so the
+  minute hand is the same either way. If the cron in `vercel.json` ever changes
+  cadence, `SCAN_EVERY_MIN` in `public/index.html` must change with it or the
+  timer lies. It also nudges `checkNew()` ~75s after each fire so new stories
+  land without waiting out the 5-minute poll. Pinned by `render-autorefresh`.
 - WhatsApp preview caches are sticky — test OG changes with a `?v=N` URL.
 
 ## Verifying work

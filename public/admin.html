@@ -370,7 +370,7 @@ function renderTools(){
   $('#content').innerHTML=`
     <div class="card">
       <h2>Backfill authors</h2>
-      <div class="nm" style="line-height:1.6;margin:0 0 11px">Fill the “—” author on recent board cards the 30-min poll stored without a byline. Runs the resolve → fetch → author check (with the AI fallback) and writes the byline back. Safe: it only reads the articles and updates authors — no emails, no re-ingest. Run it again until nothing remains.</div>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">Fill the “—” author on recent board cards the 15-min poll stored without a byline. Runs the resolve → fetch → author check (with the AI fallback) and writes the byline back. Safe: it only reads the articles and updates authors — no emails, no re-ingest. Run it again until nothing remains.</div>
       <div class="form">
         <input id="baDays" type="number" min="1" max="30" value="7" title="Look back this many days" aria-label="Days" style="flex:0 0 84px">
         <input id="baLimit" type="number" min="1" max="200" value="40" title="Max items per pass" aria-label="Limit" style="flex:0 0 84px">

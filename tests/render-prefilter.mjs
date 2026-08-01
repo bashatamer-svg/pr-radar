@@ -54,7 +54,7 @@ for (const f of FEEDS) assert.ok(!byId[f.id].direct, `${f.id} is query-scoped, n
 
 // 6b. Site-scoped sweeps are query-scoped like FEEDS — never prefiltered.
 for (const f of SITE_FEEDS) assert.ok(!byId[f.id].direct, `${f.id} is query-scoped, not direct`);
-// ...and they stay OUT of the 30-min urgent poll, which keeps to brand queries.
+// ...and they stay OUT of the 15-min urgent poll, which keeps to brand queries.
 const pollIds = new Set(BRAND_FEEDS.map((f) => f.id));
 for (const f of SITE_FEEDS) assert.ok(!pollIds.has(f.id), `${f.id} must not run on the urgent poll`);
 

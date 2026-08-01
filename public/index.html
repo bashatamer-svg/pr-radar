@@ -276,7 +276,11 @@
   .shbtn{cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--muted);border-radius:9px;
          font-size:12px;font-weight:700;padding:6px 10px;line-height:1;display:inline-flex;align-items:center;gap:5px}
   .shbtn:hover{border-color:var(--faint);color:var(--ink-2)}
-  .pulse .ph .shbtn{margin-left:auto}
+  .pulse .ph .nxt{margin-left:auto;font-family:var(--mono);font-size:10px;font-weight:600;color:var(--faint);
+                  white-space:nowrap;letter-spacing:.02em}
+  .pulse .ph .nxt b{color:var(--ink-2);font-weight:700}
+  .pulse .ph .nxt.due{color:var(--red-deep)}
+  .pulse .ph .shbtn{margin-left:0}
   /* snapshot preview modal */
   .snap{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;padding:20px;
         background:rgba(8,10,13,.72);backdrop-filter:blur(4px)}
@@ -445,6 +449,35 @@ function clock(){
 }
 clock(); setInterval(clock,30000);
 
+// Countdown to the next urgent scan. The cron fires every 15 minutes on the
+// quarter hour in UTC, and Cairo is a whole number of hours offset, so the
+// minute hand is the same either way and the next fire is computable without
+// asking the server. (Line comments deliberately: the cron expression contains
+// the characters that end a block comment.) Purely informational — it says when
+// the pipeline next LOOKS, not when the board repaints; that is checkNew's job.
+const SCAN_EVERY_MIN = 15;
+function msToNextScan(){
+  const d = new Date();
+  const into = (d.getUTCMinutes() % SCAN_EVERY_MIN) * 60000 + d.getUTCSeconds() * 1000 + d.getUTCMilliseconds();
+  return SCAN_EVERY_MIN * 60000 - into;
+}
+let scanArmed = 0;   // guards against re-arming the post-scan check every tick
+function tickScan(){
+  const el = $('#nextScan'); if(!el) return;            // pulse not rendered yet
+  const ms = msToNextScan();
+  const s = Math.max(0, Math.round(ms / 1000));
+  const mm = Math.floor(s / 60), ss = String(s % 60).padStart(2, '0');
+  el.innerHTML = `next scan <b>${mm}:${ss}</b>`;
+  el.classList.toggle('due', s <= 30);
+  // Just after a scan fires, ask the API whether anything new landed instead of
+  // waiting out the 5-minute poll — the run itself takes well under a minute.
+  if (ms > (SCAN_EVERY_MIN - 1) * 60000 && Date.now() - scanArmed > 60000) {
+    scanArmed = Date.now();
+    setTimeout(() => { try { checkNew(); } catch(e){} }, 75000);
+  }
+}
+tickScan(); setInterval(tickScan, 1000);
+
 const sentOf = it => SENT[it.sentiment]?it.sentiment:'neutral';
 // Sentiment reads the same way on every brand: how the story lands for the brand
 // it is ABOUT. A rival's win is Positive (positive for them), a rival's outage
@@ -531,7 +564,7 @@ function buildPulse(){
   }).join('');
 
   $('#pulse').innerHTML=
-    `<div class="ph"><span class="dt"></span>Today’s reputation pulse<button class="shbtn" type="button" onclick="snapshotPulse()" title="Share a branded snapshot">📸 Share</button></div>
+    `<div class="ph"><span class="dt"></span>Today’s reputation pulse<span class="nxt" id="nextScan" title="The urgent scan runs every 15 minutes, on the quarter hour. New stories reach the board a minute or two after it finishes."></span><button class="shbtn" type="button" onclick="snapshotPulse()" title="Share a branded snapshot">📸 Share</button></div>
      <div class="hero ${alert?'alert':''}" role="button" tabindex="0" data-b="${V}" aria-pressed="${fBrand===V}">
        <div class="hlogo">V</div>
        <div class="hbody">
@@ -547,6 +580,7 @@ function buildPulse(){
   $('#pulse').querySelectorAll('.tile').forEach(c=>c.onclick=()=>{ fBrand=(fBrand===c.dataset.b)?'all':c.dataset.b; syncControls(); render(); });
   $('#pulse').hidden=false;
   animateBars($('#pulse'));
+  tickScan();   // fill the countdown NOW; the 1s interval only keeps it moving
 }
 
 function buildSpotlight(){
@@ -756,14 +790,14 @@ async function load(){
 }
 
 /* ── Live auto-refresh ──────────────────────────────────────────────────────
-   The pipeline ingests new stories every ~30 min (the urgent-only cron). Keep
+   The pipeline ingests new stories every ~15 min (the urgent-only cron). Keep
    an OPEN board current without a manual reload — and without yanking the
    reader's place. Every few minutes we quietly re-fetch the current window,
    diff against what's shown, and: if the reader is at the top, refresh in
    place; otherwise surface a dismissible "N new — tap to update" pill. Only
    counts new cards the ACTIVE filter would actually show, so the pill never
    lies. Skipped for a hidden tab, the pinned view, and narrative deep-links. */
-const AUTO_REFRESH_MS = 5 * 60 * 1000;   // poll cadence (news itself lands ~every 30 min)
+const AUTO_REFRESH_MS = 5 * 60 * 1000;   // poll cadence (news itself lands ~every 15 min)
 let STAGED = null;
 function hideNewPill(){ const p=$('#newPill'); if(p) p.hidden=true; }
 function showNewPill(n){ const p=$('#newPill'); if(!p) return; p.textContent=`↻ ${n} new stor${n===1?'y':'ies'} — tap to update`; p.hidden=false; }
