@@ -133,12 +133,26 @@ gets nothing. All queries live in `lib/db.js`.
 | Where | Fact |
 |---|---|
 | `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
-| Vercel env | `RADAR_TO` still unset → the **team/admin** copy of the daily brief never goes out, and `pr_state.daily_bulletin_sent` is therefore never stamped (stuck at 22 Jul — `touchState` is gated on `bulletinSent`). The brief itself IS delivering: the subscriber path is independent of `RADAR_TO` and mailed both `pr_subscribers` rows at 05:01 on 1 Aug (Resend, verified). **A stale marker is not a missed send** — check Resend, not `pr_state`. Setting the var is dashboard-only; nothing in the repo can fix it |
+| Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (both `pr_subscribers` rows mailed 05:01 on 1 Aug — Resend, verified). `pr_state.daily_bulletin_sent` sat at 22 Jul because the marker used to be stamped only on the `RADAR_TO` send; it now stamps on any send (see Gotchas), so it tracks reality again. Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy |
 | Meta | `pr_urgent` WhatsApp template submitted 31 Jul, still *In review*. Until Meta approves it every send returns `#132001`. Language is English, so the `en` default is right — if it ever shows "English (US)", set `WHATSAPP_TEMPLATE_LANG=en_US` |
 | `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
 
 ## Gotchas (each cost real debugging time)
 
+- **The daily brief has TWO independent recipient lists**, and only one of them
+  is in the repo's reach. `RADAR_TO` (Vercel env, CSV of `Name <email>`) gets the
+  team copy — "Hi *Name*," header, `, N negative` subject tail, the ⚠ unclassified
+  footer, `RADAR_BCC`. `pr_subscribers` (Admin → Subscribers) gets the same
+  `renderBulletin` output with a per-subscriber category filter and a
+  `, N needing attention` subject. Same stories, same feed-health footer; the
+  `variant: 'admin'` argument is vestigial — `renderBulletin` doesn't destructure
+  it. Subscribers are the better list: self-serve, filterable, no redeploy.
+  `daily_bulletin_sent` is stamped when the brief reached **anyone** — gating it
+  on the `RADAR_TO` send alone left the marker frozen for ten days while mail
+  went out daily, so the `!dailyAlreadySent` guard in front of the subscriber
+  loop was permanently open and any manual `/api/radar` hit re-mailed every
+  subscriber. Pinned by `verify-daily-once`. **A stale marker is not a missed
+  send** — check Resend, not `pr_state`.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.

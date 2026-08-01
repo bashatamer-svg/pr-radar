@@ -858,13 +858,6 @@ export default async function handler(req, res) {
       }
     }
     bulletinSent = adminCount > 0 && !dry;
-
-    // Mark the daily send done so a second trigger today is a no-op. Only for
-    // a real send that actually went out (not preview / dry, and something was
-    // sent). touchState failing is non-fatal — worst case the backup double-sends.
-    if (!previewTo && !dry && bulletinSent) {
-      await touchState(DAILY_KEY).catch(() => {});
-    }
   }
 
   // 5c. Watchlist emails — per-subscriber filtered digests. A subscriber
@@ -909,6 +902,19 @@ export default async function handler(req, res) {
         console.error('watchlist send failed', sub.email, e.message);
       }
     }
+  }
+
+  // Mark the daily send done so a second trigger today is a no-op. Stamped when
+  // the brief reached ANYONE — the RADAR_TO/team copy or a subscriber — because
+  // both are "today's brief" to whoever received it. It used to be stamped only
+  // on the RADAR_TO send, so with that var unset (as in production since 22 Jul)
+  // the marker never advanced and the guard above was permanently open: the
+  // scheduled 05:00 run was safe only because it is the sole daily trigger, but
+  // any manual /api/radar hit re-mailed every subscriber the same digest.
+  // Never for a preview (?to=) or a dry run. touchState failing is non-fatal —
+  // worst case a second trigger double-sends, which is the old behaviour.
+  if (!urgentOnly && !previewTo && !dry && (bulletinSent || watchlistSent > 0)) {
+    await touchState(DAILY_KEY).catch(() => {});
   }
 
   // 5d. Stored-author backfill (daily full run only). The 15-min urgent poll
