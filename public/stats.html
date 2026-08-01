@@ -69,6 +69,12 @@
   .gate code{background:var(--card);border:1px solid var(--hair);padding:2px 8px;border-radius:6px;color:var(--ink);font-family:var(--mono)}
 
   /* KPI stat tiles */
+  .khead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:2px 2px 9px}
+  .khead .ct{font-size:14px;font-weight:800;letter-spacing:-.01em}
+  .khead .cs{font-size:11px;color:var(--faint);font-weight:500}
+  .khead .xp{cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--muted);
+             font-family:var(--sans);font-size:11px;font-weight:700;padding:5px 8px;border-radius:9px;white-space:nowrap}
+  .khead .xp:hover{border-color:var(--red);color:var(--red)}
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
   @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
   .kpi{background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:12px 13px;animation:rise .5s both}
@@ -558,7 +564,12 @@ function kpiHtml(){
   const t=DATA.totals;
   const sovPct=pct(t.vodafone.mentions,t.items);
   const W=boardWin();
-  return `<div class="kpis">
+  return `<div class="khead" id="c-kpi"><span class="ct">Summary</span><span class="cs">last ${DATA.meta.days} days</span>
+    <span class="cacts">
+      <button class="xp" type="button" data-sec="c-kpi" data-fmt="xls" title="Download these totals as a spreadsheet">⤓ XLS</button>
+      <button class="xp" type="button" data-sec="c-kpi" data-fmt="pdf" title="Open these totals as a print-ready page, then save as PDF">⤓ PDF</button>
+    </span></div>
+  <div class="kpis">
     <a class="kpi" href="/?win=${W}" title="Open all these cards on the board"><div class="kl">Tracked items</div><div class="kv">${t.items}</div><div class="ks">last ${DATA.meta.days}d · board scope</div></a>
     <a class="kpi" href="/?sent=negative&win=${W}" title="Show the Vodafone cards that need a response"><div class="kl">Needs response</div><div class="kv ${t.vodafone.negatives?'neg':''}">${t.vodafone.negatives}</div><div class="ks">Vodafone negative · of ${t.vodafone.mentions} mention${t.vodafone.mentions===1?'':'s'}</div></a>
     <a class="kpi" href="/?brand=Vodafone&win=${W}" title="Show Vodafone cards"><div class="kl">Vodafone share of voice</div><div class="kv">${sovPct}%</div><div class="ks">${t.vodafone.mentions} mentions · ${t.vodafone.negatives} negative</div></a>
@@ -635,7 +646,9 @@ function exportSections(){
   const d=DATA, out=[];
   const active=SERIES.filter(b=>d.sov&&d.sov[b]&&d.sov[b].mentions.some(v=>v>0));
   const n=v=>String(v==null?'':v);
-  out.push({id:null,title:'Summary',headers:['Metric','Value'],rows:[
+  // 'c-kpi' is the KPI row's own id — the tiles are not a .cardc, but they are
+  // a section like any other and export the same way.
+  out.push({id:'c-kpi',title:'Summary',headers:['Metric','Value'],rows:[
     ['Window (days)',n(d.meta&&d.meta.days)],
     ['Generated',(()=>{try{return new Date(d.meta.generatedAt).toLocaleString('en-GB',{timeZone:'Africa/Cairo'});}catch(e){return '';}})()],
     ['Stories',n(d.totals.items)],['Negative',n(d.totals.negatives)],

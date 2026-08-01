@@ -67,6 +67,15 @@ for (const id of cards) {
   assert.ok(await page.$(`#${id} .xp[data-fmt="xls"]`), `${id} has its own Excel button`);
   assert.ok(await page.$(`#${id} .xp[data-fmt="pdf"]`), `${id} has its own PDF button`);
 }
+// The KPI tiles are not a .cardc but they ARE a section — Summary is otherwise
+// unreachable, since it has no chart card of its own.
+assert.ok(await page.$('#c-kpi .xp[data-fmt="xls"]'), 'the KPI row exports its Summary to Excel');
+assert.ok(await page.$('#c-kpi .xp[data-fmt="pdf"]'), 'the KPI row exports its Summary to PDF');
+// Every section the export knows about must be reachable from the page.
+const exportable = await page.evaluate(() => exportSections().map((x) => x.id));
+for (const id of exportable) {
+  assert.ok(await page.$(`#${id} .xp`), `section ${id} has an export control on screen`);
+}
 
 const out = await page.evaluate(() => {
   const secs = exportSections();
@@ -132,6 +141,16 @@ assert.deepStrictEqual(oneNames, ['Journalists'], `a card exports itself alone (
 assert.ok(one.xls.includes('author 38'), 'and still every row of it');
 assert.ok(!one.pdf.includes('<h2>Outlets</h2>'), 'a card export does not drag in its neighbours');
 // A chart card carries its chart; a list card has none to carry.
+// The Summary export carries the totals and nothing else.
+const [dl2] = await Promise.all([
+  page.waitForEvent('download', { timeout: 5000 }),
+  page.click('#c-kpi .xp[data-fmt="xls"]'),
+]);
+assert.ok(/^pr-radar-summary-30d-/.test(dl2.suggestedFilename()), `Summary file named after its section (got ${dl2.suggestedFilename()})`);
+const kpi = await page.evaluate(() => xlsDoc(sectionsFor('c-kpi')));
+assert.deepStrictEqual([...kpi.matchAll(/<x:Name>([^<]+)<\/x:Name>/g)].map((m) => m[1]), ['Summary'], 'one worksheet: Summary');
+assert.ok(kpi.includes('Stories carrying a byline'), 'the totals rows are there');
+
 const sov = await page.evaluate(() => printDoc(sectionsFor('c-sov')));
 assert.ok(/<svg/.test(sov), 'a chart card exports its chart');
 assert.ok(!/<svg/.test(one.pdf), 'a list card exports its table without a stray sparkline');

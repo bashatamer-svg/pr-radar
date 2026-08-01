@@ -201,8 +201,9 @@ gets nothing. All queries live in `lib/db.js`.
 - **Trends exports are PER CARD** (⤓ XLS / ⤓ PDF next to each card's ⊞ Table),
   never a page-wide bar — you export the section you are looking at, and the
   filename is named after it. `sectionsFor(cardId)` maps a card's DOM id to its
-  section; passing no id exports everything, which nothing in the UI currently
-  does. They are built in the BROWSER, from the same `DATA` the screen renders — no endpoint, no second aggregation that could disagree with what you
+  section — including `c-kpi`, the KPI row, which carries the Summary totals and
+  is a section like any other despite not being a `.cardc`. Passing no id
+  exports everything; nothing in the UI does that. They are built in the BROWSER, from the same `DATA` the screen renders — no endpoint, no second aggregation that could disagree with what you
   just looked at, and no new dependency. Excel is an Excel-flavoured HTML
   workbook (`.xls`, one `x:ExcelWorksheet` per section — names ≤31 chars, no
   `[]:*?/\`; each table also carries a title row so a reader that flattens the
