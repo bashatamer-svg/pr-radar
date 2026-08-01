@@ -74,11 +74,17 @@ runs the 10 brand queries only. Direct feeds are probe-verified; 31 unverified
 candidates remain staged in `lib/feed-candidates.js`.
 
 Integrations: Supabase (service-role key, PostgREST), Anthropic (classifier +
-byline fallback), Resend (all email), WhatsApp Cloud API (dormant until
-`WHATSAPP_*` set — official API cannot post to groups, DMs only).
+byline fallback + narrative grouping), Resend (all email), WhatsApp Cloud API
+(`WHATSAPP_*` now SET in Vercel — sends reach Meta but are refused until the
+`pr_urgent` template is approved; the official API cannot post to groups, DMs
+only).
+
+Optional tuning vars (sane defaults, set only to override): `CLASSIFIER_MODEL`,
+`NARRATIVE_MODEL` (falls back to `CLASSIFIER_MODEL`), `NARRATIVE_TIMEOUT_MS`
+(12000 — the ceiling on the Trends LLM pass, since /api/stats is a page load).
 
 Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
-`SURGE_ALERTS_ENABLED`, `SURGE_ROLLING`, `GEO_ENABLED`, `WHATSAPP_*`.
+`SURGE_ALERTS_ENABLED`, `SURGE_ROLLING`, `GEO_ENABLED`.
 
 ## Data model (`pr_*` tables — live-verified)
 
@@ -122,12 +128,13 @@ gets nothing. All queries live in `lib/db.js`.
 - Does NOT ship with a deploy: env vars (Vercel dashboard only), DB schema
   (manual SQL, ask first), OG images (committed PNGs; regenerate by script).
 
-## Drift (repo ↔ live, verified 2026-07-30)
+## Drift (repo ↔ live, verified 2026-08-01)
 
 | Where | Fact |
 |---|---|
 | `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
-| Vercel env | `RADAR_TO` was unset → daily brief + urgent emails silently dead 22–30 Jul. Code now fails loud; the var must still be set in the dashboard |
+| Vercel env | `RADAR_TO` still unset → **the daily brief has not sent since 22 Jul** (`pr_state.daily_bulletin_sent`, checked 1 Aug — 10 days). Code fails loud now, but the var must be set in the dashboard; nothing in the repo can fix it |
+| Meta | `pr_urgent` WhatsApp template submitted 31 Jul, still *In review*. Until Meta approves it every send returns `#132001`. Language is English, so the `en` default is right — if it ever shows "English (US)", set `WHATSAPP_TEMPLATE_LANG=en_US` |
 | `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
 
 ## Gotchas (each cost real debugging time)
