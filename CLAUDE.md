@@ -198,6 +198,18 @@ gets nothing. All queries live in `lib/db.js`.
   along as `&n=` so the board banner reads "top N of M" instead of under-
   reporting. Pinned by `render-narrative-cluster` + `render-deeplink`.
   General rule: a cap that changes what the user sees must be visible in the UI.
+- **Trends exports are built in the BROWSER**, from the same `DATA` the screen
+  renders — no endpoint, no second aggregation that could disagree with what you
+  just looked at, and no new dependency. Excel is an Excel-flavoured HTML
+  workbook (`.xls`, one `x:ExcelWorksheet` per section — names ≤31 chars, no
+  `[]:*?/\`; each table also carries a title row so a reader that flattens the
+  workbook still gets labelled sections). PDF is a print-ready page that embeds
+  each chart's LIVE `<svg>` and calls `window.print()` — the same
+  browser-print route `public/reports.html` uses, so still zero PDF libraries.
+  Chart lookup must be `#id .cbody > svg` (**direct child**): a list card's rows
+  each contain a sparkline, and a descendant match pasted one in as the section
+  chart. Exports carry EVERY leaderboard row, not the visible page. Pinned by
+  `render-trends-export`.
 - **The Trends leaderboards are PAGED, 15 a page** — `/api/stats` ships the full
   outlet + journalist lists (backstop cap 300 each) and `stats.html` slices them
   client-side, so flipping costs no request and never re-runs the narrative LLM

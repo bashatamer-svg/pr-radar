@@ -34,6 +34,7 @@ are **skipped**, the unit suite still runs.
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |
 | Trends leaderboard paging (all outlets/journalists reachable) | `render-leaderboard-pages` |
+| Trends export (Excel workbook, print page with charts) | `render-trends-export` |
 | DB helpers (row-cap warnings) | `db-caps` |
 | Classifier / de-dupe judgement rules (prompt invariants) | `verify-judgement-rules` |
 | Guide page | `render-guide` |

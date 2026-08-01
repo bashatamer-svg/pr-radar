@@ -171,6 +171,11 @@
 
   <div class="bar2">
     <div class="frow" id="winRow"></div>
+    <div class="frow" id="expRow" style="margin-top:8px">
+      <span class="flabel">Export</span>
+      <button class="chip" type="button" id="xlsBtn" title="Every section as a spreadsheet — one worksheet each, all rows (not just the page on screen)">⤓ Excel</button>
+      <button class="chip" type="button" id="pdfBtn" title="Every section as a print-ready page — charts and tables — then save as PDF">⤓ PDF</button>
+    </div>
   </div>
 
   <main class="content" id="content"><div class="empty">Loading trends…</div></main>
@@ -614,6 +619,146 @@ function paintLeaderboard(kind){
   });
 }
 
+/* ── Export ───────────────────────────────────────────────────────────────
+   Excel: an Excel-flavoured HTML workbook, one worksheet per section — the
+     same zero-dependency trick the Reports page uses for Word. Tables only.
+   PDF: a print-ready page carrying each section's CHART as its live SVG plus
+     the same table, handed to the browser's own Save-as-PDF.
+   Both are built in the browser from DATA, so there is no second aggregation
+   that could disagree with the screen — and the leaderboards export EVERY row,
+   not the page you happen to be looking at. */
+function exportSections(){
+  const d=DATA, out=[];
+  const active=SERIES.filter(b=>d.sov&&d.sov[b]&&d.sov[b].mentions.some(v=>v>0));
+  const n=v=>String(v==null?'':v);
+  out.push({id:null,title:'Summary',headers:['Metric','Value'],rows:[
+    ['Window (days)',n(d.meta&&d.meta.days)],
+    ['Generated',(()=>{try{return new Date(d.meta.generatedAt).toLocaleString('en-GB',{timeZone:'Africa/Cairo'});}catch(e){return '';}})()],
+    ['Stories',n(d.totals.items)],['Negative',n(d.totals.negatives)],
+    ['Neutral',n(d.totals.neutrals)],['Positive',n(d.totals.positives)],
+    ['Vodafone mentions',n(d.totals.vodafone&&d.totals.vodafone.mentions)],
+    ['Vodafone negative',n(d.totals.vodafone&&d.totals.vodafone.negatives)],
+    ['Distinct outlets',n(d.totals.distinctOutlets)],
+    ['Distinct journalists',n(d.totals.distinctAuthors)],
+    ['Stories carrying a byline',n(d.totals.itemsWithByline)],
+  ]});
+  if(active.length){
+    out.push({id:'c-sov',title:'Share of voice',headers:['Day',...active,'Total'],
+      rows:d.days.map((day,i)=>[fmtDay(day),...active.map(b=>n(d.sov[b].mentions[i])),n(active.reduce((t,b)=>t+d.sov[b].mentions[i],0))])});
+    out.push({id:'c-neg',title:'Negative coverage',headers:['Day',...active],
+      rows:d.days.map((day,i)=>[fmtDay(day),...active.map(b=>n(d.sov[b].negatives[i]))])});
+  }
+  const sb=SERIES.filter(b=>d.sentimentByBrand&&d.sentimentByBrand[b]&&d.sentimentByBrand[b].total);
+  if(sb.length) out.push({id:'c-sent',title:'Sentiment by brand',headers:['Brand','Negative','Neutral','Positive','Total'],
+    rows:sb.map(b=>{const x=d.sentimentByBrand[b];return [b,n(x.negative),n(x.neutral),n(x.positive),n(x.total)];})});
+  out.push({id:'c-narr',title:'Narratives',headers:['Narrative','Brand','Stories','Negative','Neutral','Positive','Rising'],
+    rows:(d.narratives||[]).map(x=>[x.name,x.brand,n(x.total),n(x.negative),n(x.neutral),n(x.positive),x.rising?'yes':'no'])});
+  out.push({id:'c-cat',title:'Categories',headers:['Category','Stories','Negative','Vodafone-negative'],
+    rows:(d.categories||[]).map(c=>[String(c.category).replace(/_/g,' '),n(c.total),n(c.negative),n(c.vodNeg)])});
+  out.push({id:'c-out',title:'Outlets',headers:['Outlet','Stories','Negative','Neutral','Positive','Vodafone-negative'],
+    rows:(d.outlets||[]).map(o=>[o.outlet,n(o.mentions),n(o.negative),n(o.neutral),n(o.positive),n(o.vodNeg)])});
+  out.push({id:'c-auth',title:'Journalists',headers:['Journalist','Outlets','Stories','Negative','Neutral','Positive','Vodafone-negative'],
+    rows:(d.authors||[]).map(o=>[o.author,(o.outlets||[]).join(' · '),n(o.mentions),n(o.negative),n(o.neutral),n(o.positive),n(o.vodNeg)])});
+  return out.filter(x=>x.rows.length);
+}
+const expName=(ext)=>`pr-radar-trends-${fDays}d-${new Date().toISOString().slice(0,10)}.${ext}`;
+const tableHtml=(s)=>`<table><thead><tr>${s.headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${
+  s.rows.map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+
+// Worksheet names: Excel rejects []:*?/\ and anything over 31 chars.
+const sheetName=(t)=>String(t).replace(/[\[\]:*?\/\\]/g,' ').slice(0,31);
+function xlsDoc(sections){
+  const sheets=sections.map(s=>`<x:ExcelWorksheet><x:Name>${esc(sheetName(s.title))}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>`).join('');
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+<head><meta charset="utf-8">
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>${sheets}</x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<style>td,th{font-family:Calibri,Arial,sans-serif;font-size:11pt;border:1px solid #ccc} th{background:#f1f2f5;font-weight:bold}
+  .t{font-size:13pt;font-weight:bold;border:none}</style>
+</head><body>${sections.map((s)=>
+  // Each table carries its own title row: Excel puts these on separate named
+  // worksheets, but any reader that flattens them into one sheet still gets
+  // labelled, separated sections instead of tables running together.
+  `<table><tr><td class="t" colspan="${s.headers.length}">${esc(s.title)}</td></tr></table>${tableHtml(s)}<br>`
+).join('')}</body></html>`;
+}
+
+// The chart exactly as drawn on screen — it is already an inline SVG, so there
+// is nothing to rasterise and nothing to re-render differently.
+function chartSvg(id){
+  if(!id) return '';
+  // DIRECT child only: a chart card renders its svg straight into .cbody, while
+  // a list card renders rows — each carrying its own little sparkline. A loose
+  // descendant match would paste one row's sparkline in as the section chart.
+  const el=document.querySelector(`#${id} .cbody > svg`);
+  return el?el.outerHTML:'';
+}
+function chartLegend(id){
+  const el=id&&document.querySelector(`#${id} .clegend`);
+  const h=el?el.innerHTML.trim():'';
+  return h?`<div class="legend">${h}</div>`:'';
+}
+function printDoc(sections){
+  const when=(()=>{try{return new Date().toLocaleString('en-GB',{timeZone:'Africa/Cairo'});}catch(e){return '';}})();
+  const body=sections.map(s=>`<section>
+      <h2>${esc(s.title)}</h2>
+      ${chartLegend(s.id)}${chartSvg(s.id)}
+      ${tableHtml(s)}
+    </section>`).join('');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>PR Radar — Trends (last ${fDays} days)</title>
+<style>
+  :root{--ink:#16191f;--ink-2:#3b434e;--muted:#6c7480;--faint:#9aa2ad;--hair:#e7e9ee;--hair-2:#eef0f3;
+        --neg:#e60000;--pos:#0f9d58;--neu:#5b6675;--red:#e60000;
+        --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 30px;font-family:var(--sans);color:var(--ink);background:#fff}
+  h1{font-size:20px;margin:0 0 2px;letter-spacing:-.02em}
+  .sub{font-size:11px;color:var(--muted);margin-bottom:18px}
+  section{margin:0 0 22px;page-break-inside:avoid;break-inside:avoid}
+  h2{font-size:14px;margin:0 0 8px;padding-bottom:5px;border-bottom:2px solid var(--ink)}
+  svg{display:block;width:100%;height:auto;margin:6px 0 10px}
+  svg text{font-family:var(--sans)}
+  .axis{font-size:10px;fill:var(--muted)}
+  .gline{stroke:var(--hair-2);stroke-width:1}
+  .baseline{stroke:var(--hair);stroke-width:1}
+  .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:10.5px;color:var(--ink-2);font-weight:600;margin:2px 0 4px}
+  .legend .li,.legend a{display:inline-flex;align-items:center;gap:5px;text-decoration:none;color:inherit}
+  .legend .sw{width:9px;height:9px;border-radius:2px;flex:none}
+  .legend .sw.line{height:3px;width:13px;border-radius:2px}
+  table{border-collapse:collapse;width:100%;font-size:10.5px}
+  th,td{border:1px solid var(--hair);padding:4px 7px;text-align:left;vertical-align:top}
+  th{background:#f6f7f9;font-weight:700;color:var(--ink-2)}
+  tbody tr:nth-child(even){background:#fafbfc}
+  @page{size:A4;margin:14mm}
+  @media print{body{padding:0}}
+</style></head><body>
+<h1>PR Radar — Trends</h1>
+<div class="sub">Vodafone Egypt · last ${fDays} days · generated ${esc(when)} (Cairo)</div>
+${body}
+<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),250));<\/script>
+</body></html>`;
+}
+
+function saveBlob(name,mime,text){
+  const url=URL.createObjectURL(new Blob([text],{type:mime}));
+  const a=document.createElement('a'); a.href=url; a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+function exportExcel(){
+  if(!DATA||!DATA.totals.items) return;
+  saveBlob(expName('xls'),'application/vnd.ms-excel',xlsDoc(exportSections()));
+}
+function exportPdf(){
+  if(!DATA||!DATA.totals.items) return;
+  const url=URL.createObjectURL(new Blob([printDoc(exportSections())],{type:'text/html'}));
+  // A blocked pop-up would fail silently, so fall back to a download of the
+  // same page rather than leaving the button looking broken.
+  const w=window.open(url,'_blank');
+  if(!w) saveBlob(expName('html'),'text/html',printDoc(exportSections()));
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
 function render(){
   const c=$('#content');
   if(!DATA||!DATA.totals.items){
@@ -647,6 +792,8 @@ function buildFilters(){
   const win=$('#winRow');
   const opts=[['7','Week'],['14','2 weeks'],['30','Month'],['60','2 months'],['90','Quarter']];
   win.innerHTML=`<span class="flabel">Window</span>`+opts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fDays)===v}">${l}</button>`).join('');
+  $('#xlsBtn').onclick=exportExcel;
+  $('#pdfBtn').onclick=exportPdf;
   win.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
     fDays=Number(ch.dataset.v); localStorage.setItem('pr_stats_days',ch.dataset.v);
     win.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===ch.dataset.v)));
