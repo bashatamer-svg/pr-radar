@@ -458,7 +458,29 @@ const SENT_TIP = 'How the story reads for the brand it’s about — the same sc
 // "Market & noted" lane rather than reading as our win or our fire to fight.
 // sentOf() is untouched, so each card keeps its true sentiment badge.
 const laneOf = it => ((it.brand||'')==='Vodafone') ? sentOf(it) : 'neutral';
-const spreadOf = it => Array.isArray(it.instances)?it.instances.filter(x=>x&&(x.outlet||x.url)).length:0;
+// Coverage spread is how many OUTLETS ran the story, not how many rows we hold.
+// One outlet can appear several times — the same article under a Google-News
+// redirect and its resolved link, or two write-ups by the same desk — and
+// counting rows made a card claim "3 outlets" for a single publisher. Collapse
+// by outlet, keeping the row with a real publisher link and a byline.
+function uniqOutlets(insts){
+  const list=Array.isArray(insts)?insts.filter(x=>x&&(x.outlet||x.url)):[];
+  const by=new Map();
+  for(const x of list){
+    const key=String(x.outlet||x.url||'').trim().toLowerCase(); if(!key) continue;
+    const cur=by.get(key);
+    if(!cur){ by.set(key,x); continue; }
+    // Keep the best of BOTH rows: the publisher's own link (not the Google-News
+    // redirect) and, from whichever row has one, the byline — the duplicate is
+    // often the only signed copy, so picking one row wholesale loses it.
+    const gn=u=>/news\.google\.com/.test(String(u||''))?1:0;
+    const primary=gn(cur.url)!==gn(x.url)?(gn(cur.url)<gn(x.url)?cur:x):(cur.url?cur:x);
+    const other=primary===cur?x:cur;
+    by.set(key,{...primary,author:primary.author||other.author||null});
+  }
+  return [...by.values()];
+}
+const spreadOf = it => uniqOutlets(it.instances).length;
 const linkOf = it => it.resolved_url || it.url || (it.id?`/api/go?id=${it.id}`:'#');
 // Critical (red ring / "needs eyes") is a Vodafone-action signal — a competitor's
 // negative story is market intel, not our crisis, so it never trips crit.
@@ -552,7 +574,7 @@ function angleHtml(text){
   return `<div class="angle"><div class="lab">What to do with this</div>${body}</div>`;
 }
 function coverageHtml(insts){
-  const list=Array.isArray(insts)?insts.filter(x=>x&&(x.outlet||x.url)):[]; if(list.length<2) return '';
+  const list=uniqOutlets(insts); if(list.length<2) return '';
   const rows=list.slice(0,16).map(x=>{ const name=esc(x.outlet||'—'); const link=x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${name}</a>`:`<span style="font-weight:600">${name}</span>`; const by=x.author?` <span class="au">· ${esc(x.author)}</span>`:''; return `<div class="row">${link}${by}</div>`; }).join('');
   const more=list.length>16?`<div class="row au">+${list.length-16} more outlets</div>`:'';
   return `<details class="cov"><summary>📰 Coverage · ${list.length} outlets<span class="chev">›</span></summary><div class="rows">${rows}${more}</div></details>`;

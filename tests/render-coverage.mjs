@@ -13,6 +13,10 @@ const items = [{
     { outlet: 'التعمير', author: null, url: 'https://tameer.example/a' },
     { outlet: 'سي نيوز', author: null, url: 'https://cnews.example/b' },
     { outlet: 'جريدة المال', author: null, url: '' },   // no URL → plain text
+    // The SAME outlet again: one article arriving twice, as its Google-News
+    // redirect and its resolved link. Counting rows made a card claim more
+    // outlets than actually ran the story (live 2026-08-01).
+    { outlet: 'سي نيوز', author: 'كاتب', url: 'https://news.google.com/rss/articles/XYZ' },
   ],
 }];
 const server = createServer((req, res) => {
@@ -44,6 +48,19 @@ const plain = await page.$$eval('.cov .row span', (els) => els.map((el) => el.te
 assert.ok(plain.some((t) => /جريدة المال/.test(t)), 'URL-less outlet stays plain text');
 const covShot = await page.$('.cov');
 await covShot.screenshot({ path: new URL('./out/', import.meta.url).pathname + 'coverage-links.png' });
+// Spread counts OUTLETS, not stored rows: 4 instances, 3 distinct outlets.
+const badge = await page.$eval('.spread', (e) => e.textContent.trim()).catch(() => 'MISSING');
+assert.ok(/3 outlets/.test(badge), `the badge counts distinct outlets, not rows (got "${badge}")`);
+const summary = await page.$eval('.cov summary', (e) => e.textContent);
+assert.ok(/3 outlets/.test(summary), `the Coverage header agrees with the badge (got "${summary}")`);
+const listed = await page.$$eval('.cov .rows .row', (els) => els.map((e) => e.textContent.trim()));
+assert.strictEqual(listed.length, 3, `each outlet is listed once (got ${JSON.stringify(listed)})`);
+// …and the row kept for the doubled outlet is the PUBLISHER's link, not the
+// Google-News redirect, with the byline carried across.
+const cnews = await page.$eval('.cov .rows .row a[href*="cnews.example"]', (e) => e.parentElement.textContent.trim());
+assert.ok(/كاتب/.test(cnews), `the surviving row keeps the publisher link and the byline (got "${cnews}")`);
+
+
 await browser.close(); server.close();
 if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }
-console.log('COVERAGE OK — linked outlets render red with ↗, URL-less outlet stays plain; screenshot saved');
+console.log('COVERAGE OK — linked outlets render red with ↗, URL-less outlet stays plain, one row per OUTLET (publisher link + byline preferred over a Google-News redirect); screenshot saved');

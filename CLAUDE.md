@@ -248,7 +248,15 @@ gets nothing. All queries live in `lib/db.js`.
   re-ingests as a new card. `recentStories()` selects `id`; `semanticDedupe`
   takes an `onMerge(item, intoId)` callback. Runs report `mergedIntoExisting`
   so `new: 0` doesn't read as "nothing happened". Pinned by
-  `verify-crossrun-merge`. The residue ingest is NOT sure about is a human
+  `verify-crossrun-merge`. **Coverage counts OUTLETS, not stored rows** — the
+  same article arrives as a Google-News redirect AND its resolved link, so
+  `uniqOutlets()` (board + `lib/email.js`, mirrored) collapses by outlet, keeps
+  the publisher's link and carries the byline across from whichever row has one.
+  `mergeDuplicateInto` uses the duplicate's INSTANCES when it has any, never
+  those plus its own `url` — doing both wrote one article twice and a card read
+  "3 outlets" for a single publisher (live 2026-08-01). Pinned by
+  `render-coverage`.
+  The residue ingest is NOT sure about is a human
   call: **Admin → Tools → "Find duplicates"** (`?view=find-dupes`, read-only)
   lists candidate pairs from production with scores, and `merge-dupe` folds one
   into the other. Merging hides the duplicate with **`is_relevant`, not
