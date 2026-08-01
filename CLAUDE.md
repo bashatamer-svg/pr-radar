@@ -50,7 +50,7 @@ behaviour gets a regression test in the same commit.
 | Path | What lives here |
 |---|---|
 | `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
-| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit), `email.js` (email-client-safe renderer), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js` |
+| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit), `email.js` (email-client-safe renderer), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js` |
 | `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
 | `scripts/` | One-off generators run manually (OG images) |
 | `tests/*.mjs` | The suite. `narr-fixture.mjs` is captured production data, not a test |
@@ -248,7 +248,14 @@ gets nothing. All queries live in `lib/db.js`.
   re-ingests as a new card. `recentStories()` selects `id`; `semanticDedupe`
   takes an `onMerge(item, intoId)` callback. Runs report `mergedIntoExisting`
   so `new: 0` doesn't read as "nothing happened". Pinned by
-  `verify-crossrun-merge`.
+  `verify-crossrun-merge`. The residue ingest is NOT sure about is a human
+  call: **Admin → Tools → "Find duplicates"** (`?view=find-dupes`, read-only)
+  lists candidate pairs from production with scores, and `merge-dupe` folds one
+  into the other. Merging hides the duplicate with **`is_relevant`, not
+  `team_share`** — a `team_share` hide leaves the row counting in Trends, so the
+  story stays double-counted in analytics. `lib/dedupe.js` holds the one
+  tokenize/jaccard the pipeline and the finder share; don't re-implement them
+  (`dedup-jaccard` used to scrape them out of `api/radar.js` source).
 - **Two write-ups of one event must become one card.** That pair also escaped
   every dedupe layer: the cross-run summary Jaccard was 0.429 against a 0.5 bar,
   and the semantic backstop (which DID see the pair — 6 shared strong tokens)
