@@ -404,6 +404,19 @@ function renderTools(){
       <div id="pfRows"></div>
     </div>
     <div class="card">
+      <h2>Instant alerts (email)</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">Anything at <b>Impact 4 or 5</b>, plus <b>any negative Vodafone story</b> at any Impact, is emailed within 15 minutes of landing — Impact 5 as <b>URGENT</b>, the rest as <b>ALERT</b>. Send yourself a sample to check delivery and how it reads. It goes <b>only to you</b>, never to the subscriber list.</div>
+      <div class="form">
+        <select id="atTier" class="btn ghost" style="flex:0 0 auto">
+          <option value="5">Impact 5 · URGENT</option>
+          <option value="4">Impact 4 · ALERT</option>
+          <option value="2">Vodafone negative · ALERT</option>
+        </select>
+        <button class="btn" id="atBtn" type="button">Send test to myself</button>
+        <div class="formmsg" id="atMsg"></div>
+      </div>
+    </div>
+    <div class="card">
       <h2>WhatsApp urgent alerts</h2>
       <div class="nm" style="line-height:1.6;margin:0 0 11px">Urgent (importance-5) items are also sent as WhatsApp DMs to each configured recipient (the official API can’t post to a group, so it messages people individually). Configure the number, token, recipients and template in the environment, then send a test to verify delivery.</div>
       <div class="nm" id="waStatus" style="font-weight:700;color:var(--ink-2);margin-bottom:10px">Checking…</div>
@@ -419,6 +432,7 @@ function renderTools(){
   $('#baDays').addEventListener('change',loadAuthorGap);
   loadAuthorGap();
   $('#waTestBtn').onclick=runWhatsappTest;
+  $('#atBtn').onclick=runAlertTest;
   loadWhatsappStatus();
 }
 async function loadWhatsappStatus(){
@@ -436,6 +450,20 @@ async function loadWhatsappStatus(){
       if(btn) btn.disabled=true;
     }
   }catch(e){ el.textContent=''; }
+}
+// Email delivery test for the instant-alert path. Server-side it always sends
+// to the signed-in admin, so there is no address field here to get wrong.
+async function runAlertTest(){
+  const btn=$('#atBtn'), msg=$('#atMsg');
+  const impact=Number($('#atTier').value)||5;
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Sending…'; msg.textContent=''; msg.className='formmsg';
+  try{
+    const r=await api({method:'POST',q:'&resource=alert-test',body:{impact}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
+    else{ msg.className='formmsg ok'; msg.textContent=`Sent to ${d.to} as ${d.tier} ✓`; }
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
+  btn.disabled=false; btn.textContent=label;
 }
 async function runWhatsappTest(){
   const btn=$('#waTestBtn'), msg=$('#waMsg');

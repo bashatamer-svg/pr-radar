@@ -23,6 +23,7 @@ import { isGoogleNews } from '../lib/resolve.js';
 import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
 import { XMLParser } from 'fast-xml-parser';
 import { sendWhatsAppUrgent, whatsappStatus } from '../lib/whatsapp.js';
+import { renderUrgent, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
 // function room beyond the default; every other admin op returns in well under a second.
@@ -179,6 +180,42 @@ export default async function handler(req, res) {
         const result = await sendWhatsAppUrgent(sample);
         await auditReq(req, who, 'whatsapp.test', who.actor, result);
         return res.status(200).json({ ok: true, ...result });
+      }
+      if (resource === 'alert-test') {
+        // Prove the EMAIL alert path from production — tier wording, recipient
+        // resolution and Resend — using the same renderUrgent + sendBulletin the
+        // live alert uses. whatsapp-test covers the other channel and is blocked
+        // on Meta's template approval, so until now the channel that actually
+        // works could only be checked by unit test. The sandbox can't reach
+        // Resend, so this has to run from production.
+        // ALWAYS to the requesting admin: a delivery test must never page the
+        // subscriber list, and there is no `to` override for the same reason.
+        const to = who.email && EMAIL_RE.test(String(who.email)) ? String(who.email) : null;
+        if (!to) return res.status(400).json({ error: 'sign in as a user to send a test alert — a service token has no address of its own' });
+        const impact = [2, 4, 5].includes(Number(req.body?.impact)) ? Number(req.body.impact) : 5;
+        const sample = {
+          id: null, brand: 'Vodafone', sentiment: 'negative', importance: impact,
+          headline: 'Test alert from PR Radar — please ignore',
+          summary: 'A sample story used to verify instant-alert delivery. No such event occurred.',
+          pr_angle: 'Action · This is an email delivery test',
+          published_at: new Date().toISOString(), url: '',
+        };
+        // The sample must still trip the live rule, or the test proves nothing
+        // about what production would actually send.
+        if (!isInstantAlert(sample)) {
+          return res.status(500).json({ error: 'the sample no longer trips isInstantAlert — the alert rule changed and this test would not reflect it' });
+        }
+        const tier = urgentTier(sample);
+        const subject = `${tier.label} — ${sample.headline}`.slice(0, 140);
+        let result;
+        try {
+          result = await sendBulletin(renderUrgent(sample, process.env.BOARD_URL || ''), subject, to);
+        } catch (e) {
+          await auditReq(req, who, 'alert.test', to, { impact, tier: tier.label, error: e.message });
+          return res.status(502).json({ error: `send failed: ${e.message}` });
+        }
+        await auditReq(req, who, 'alert.test', to, { impact, tier: tier.label });
+        return res.status(200).json({ ok: true, to, impact, tier: tier.label, id: result?.id || null });
       }
       if (resource === 'users') {
         const { email, role, name } = req.body || {};

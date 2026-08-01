@@ -354,6 +354,11 @@ gets nothing. All queries live in `lib/db.js`.
   (per-story funnel trace), `?to=you@x` (real daily send to one address).
 3. Author work: Admin → Tools → "Backfill authors" + "Verify verdicts"
   (live per-card evidence: outcome, page text, per-profile fetch statuses).
-4. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
+4. Alert work: Admin → Tools → "Send test to myself" (`?resource=alert-test`)
+  sends a sample through the real `renderUrgent`/`sendBulletin` at a chosen
+  tier — always to the signed-in admin only, never the subscriber list.
+  "Send test alert" beside it is **WhatsApp-only** and template-blocked, so it
+  proves nothing about email.
+5. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
   Supabase MCP read-only SQL (did rows change). `pr_state.daily_bulletin_sent`
   tells you when the brief last actually went out.
