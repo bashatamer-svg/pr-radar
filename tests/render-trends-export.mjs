@@ -58,9 +58,15 @@ await page.addInitScript(() => {
 await page.goto('http://localhost:8963/stats', { waitUntil: 'networkidle' });
 await page.waitForSelector('.cardc');
 
-// Both affordances exist and are reachable.
-assert.ok(await page.$('#xlsBtn'), 'Excel export button rendered');
-assert.ok(await page.$('#pdfBtn'), 'PDF export button rendered');
+// Export lives on each CARD, not in a page-wide bar — you export the section
+// you are looking at.
+assert.strictEqual(await page.$('#xlsBtn'), null, 'no page-wide Excel button');
+assert.strictEqual(await page.$('#expRow'), null, 'no page-wide export row');
+const cards = await page.$$eval('.cardc', (els) => els.map((e) => e.id));
+for (const id of cards) {
+  assert.ok(await page.$(`#${id} .xp[data-fmt="xls"]`), `${id} has its own Excel button`);
+  assert.ok(await page.$(`#${id} .xp[data-fmt="pdf"]`), `${id} has its own PDF button`);
+}
 
 const out = await page.evaluate(() => {
   const secs = exportSections();
@@ -112,13 +118,23 @@ assert.ok(out.pdf.includes('author 38'), 'the print page also carries every row,
 assert.ok(/@page\{size:A4/.test(out.pdf), 'print page sets a page size');
 assert.ok(/window\.print\(\)/.test(out.pdf), 'the print dialog is triggered on open');
 
-// ── the button actually downloads, with a dated filename ──
+// ── a card's button downloads THAT card only, named after it ──
 const [download] = await Promise.all([
   page.waitForEvent('download', { timeout: 5000 }),
-  page.click('#xlsBtn'),
+  page.click('#c-auth .xp[data-fmt="xls"]'),
 ]);
-assert.ok(/^pr-radar-trends-30d-\d{4}-\d{2}-\d{2}\.xls$/.test(download.suggestedFilename()),
-  `filename names the window and the date (got ${download.suggestedFilename()})`);
+assert.ok(/^pr-radar-journalists-30d-\d{4}-\d{2}-\d{2}\.xls$/.test(download.suggestedFilename()),
+  `the file is named after the section, window and date (got ${download.suggestedFilename()})`);
+// …and it contains only that section — one worksheet, the journalists.
+const one = await page.evaluate(() => ({ xls: xlsDoc(sectionsFor('c-auth')), pdf: printDoc(sectionsFor('c-auth')) }));
+const oneNames = [...one.xls.matchAll(/<x:Name>([^<]+)<\/x:Name>/g)].map((m) => m[1]);
+assert.deepStrictEqual(oneNames, ['Journalists'], `a card exports itself alone (got ${JSON.stringify(oneNames)})`);
+assert.ok(one.xls.includes('author 38'), 'and still every row of it');
+assert.ok(!one.pdf.includes('<h2>Outlets</h2>'), 'a card export does not drag in its neighbours');
+// A chart card carries its chart; a list card has none to carry.
+const sov = await page.evaluate(() => printDoc(sectionsFor('c-sov')));
+assert.ok(/<svg/.test(sov), 'a chart card exports its chart');
+assert.ok(!/<svg/.test(one.pdf), 'a list card exports its table without a stray sparkline');
 
 await browser.close(); server.close();
 if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }

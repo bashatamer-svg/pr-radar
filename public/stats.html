@@ -83,12 +83,14 @@
   .cardc{background:var(--card);border:1px solid var(--hair);border-radius:18px;padding:15px 16px;margin:12px 0;
          box-shadow:0 2px 12px -8px rgba(20,23,28,.18);animation:rise .5s both}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-  .chead{display:flex;align-items:baseline;gap:9px}
+  .chead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .chead .cacts{margin-left:auto;display:flex;gap:6px;flex:none}
   .chead .ct{font-size:14px;font-weight:800;letter-spacing:-.01em}
   .chead .cs{font-size:11px;color:var(--faint);font-weight:500}
-  .chead .tgl{margin-left:auto;cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--muted);
+  .chead .tgl,.chead .xp{cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--muted);
               font-family:var(--sans);font-size:11px;font-weight:700;padding:5px 10px;border-radius:9px;white-space:nowrap}
-  .chead .tgl:hover{border-color:var(--faint)}
+  .chead .xp{padding:5px 8px}
+  .chead .tgl:hover,.chead .xp:hover{border-color:var(--red);color:var(--red)}
   .legend{display:flex;flex-wrap:wrap;gap:5px 14px;margin:10px 0 2px;font-size:11.5px;color:var(--ink-2);font-weight:600}
   .legend .li{display:inline-flex;align-items:center;gap:6px}
   a.li{text-decoration:none;color:inherit;cursor:pointer;border-radius:6px;padding:2px 5px;margin:-2px -1px}
@@ -171,11 +173,6 @@
 
   <div class="bar2">
     <div class="frow" id="winRow"></div>
-    <div class="frow" id="expRow" style="margin-top:8px">
-      <span class="flabel">Export</span>
-      <button class="chip" type="button" id="xlsBtn" title="Every section as a spreadsheet — one worksheet each, all rows (not just the page on screen)">⤓ Excel</button>
-      <button class="chip" type="button" id="pdfBtn" title="Every section as a print-ready page — charts and tables — then save as PDF">⤓ PDF</button>
-    </div>
   </div>
 
   <main class="content" id="content"><div class="empty">Loading trends…</div></main>
@@ -580,9 +577,16 @@ function countOf(rows,total,noun){
   return `${m} ${noun}${m===1?'':'s'}`;
 }
 function cardHtml(id,title,sub){
+  // Export lives on the CARD, not in a page-wide bar: you export the section
+  // you are looking at. The three actions share a wrapper so they wrap together
+  // onto a second line on a phone instead of crushing the title.
   return `<section class="cardc" id="${id}">
     <div class="chead"><span class="ct">${esc(title)}</span><span class="cs">${esc(sub)}</span>
-      <button class="tgl" type="button" data-for="${id}" aria-pressed="false" title="Toggle table view">⊞ Table</button></div>
+      <span class="cacts">
+        <button class="tgl" type="button" data-for="${id}" aria-pressed="false" title="Toggle table view">⊞ Table</button>
+        <button class="xp" type="button" data-sec="${id}" data-fmt="xls" title="Download this section as a spreadsheet">⤓ XLS</button>
+        <button class="xp" type="button" data-sec="${id}" data-fmt="pdf" title="Open this section as a print-ready page, then save as PDF">⤓ PDF</button>
+      </span></div>
     <div class="clegend"></div><div class="cbody"></div><div class="tbl" role="region" aria-label="${esc(title)} — data table"></div>
   </section>`;
 }
@@ -661,7 +665,11 @@ function exportSections(){
     rows:(d.authors||[]).map(o=>[o.author,(o.outlets||[]).join(' · '),n(o.mentions),n(o.negative),n(o.neutral),n(o.positive),n(o.vodNeg)])});
   return out.filter(x=>x.rows.length);
 }
-const expName=(ext)=>`pr-radar-trends-${fDays}d-${new Date().toISOString().slice(0,10)}.${ext}`;
+const slug=(t)=>String(t).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const expName=(ext,title)=>`pr-radar-${title?slug(title):'trends'}-${fDays}d-${new Date().toISOString().slice(0,10)}.${ext}`;
+// One card = one section. `id` is the card's DOM id, which is also what each
+// section carries, so the button never has to know anything else about itself.
+const sectionsFor=(id)=>id?exportSections().filter((x)=>x.id===id):exportSections();
 const tableHtml=(s)=>`<table><thead><tr>${s.headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${
   s.rows.map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 
@@ -745,17 +753,20 @@ function saveBlob(name,mime,text){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),4000);
 }
-function exportExcel(){
+function exportExcel(id){
   if(!DATA||!DATA.totals.items) return;
-  saveBlob(expName('xls'),'application/vnd.ms-excel',xlsDoc(exportSections()));
+  const secs=sectionsFor(id); if(!secs.length) return;
+  saveBlob(expName('xls',id&&secs[0].title),'application/vnd.ms-excel',xlsDoc(secs));
 }
-function exportPdf(){
+function exportPdf(id){
   if(!DATA||!DATA.totals.items) return;
-  const url=URL.createObjectURL(new Blob([printDoc(exportSections())],{type:'text/html'}));
-  // A blocked pop-up would fail silently, so fall back to a download of the
-  // same page rather than leaving the button looking broken.
+  const secs=sectionsFor(id); if(!secs.length) return;
+  const html=printDoc(secs);
+  const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));
+  // A blocked pop-up would fail silently, so fall back to downloading the same
+  // page rather than leaving the button looking broken.
   const w=window.open(url,'_blank');
-  if(!w) saveBlob(expName('html'),'text/html',printDoc(exportSections()));
+  if(!w) saveBlob(expName('html',id&&secs[0].title),'text/html',html);
   setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 
@@ -778,6 +789,9 @@ function render(){
   $('#c-narr .cbody').innerHTML=`<div class="rows">${narr.rows}</div>`; $('#c-narr .tbl').innerHTML=narr.table();
   $('#c-cat .cbody').innerHTML=`<div class="rows">${cats.rows}</div>`; $('#c-cat .tbl').innerHTML=cats.table();
   paintLeaderboard('outlet'); paintLeaderboard('author');
+  c.querySelectorAll('.xp').forEach(b=>b.onclick=()=>{
+    (b.dataset.fmt==='pdf'?exportPdf:exportExcel)(b.dataset.sec);
+  });
   // table-view toggles (the accessible twin of every chart)
   c.querySelectorAll('.tgl').forEach(b=>b.onclick=()=>{
     const card=$('#'+b.dataset.for); const on=b.getAttribute('aria-pressed')!=='true';
@@ -792,8 +806,6 @@ function buildFilters(){
   const win=$('#winRow');
   const opts=[['7','Week'],['14','2 weeks'],['30','Month'],['60','2 months'],['90','Quarter']];
   win.innerHTML=`<span class="flabel">Window</span>`+opts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fDays)===v}">${l}</button>`).join('');
-  $('#xlsBtn').onclick=exportExcel;
-  $('#pdfBtn').onclick=exportPdf;
   win.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
     fDays=Number(ch.dataset.v); localStorage.setItem('pr_stats_days',ch.dataset.v);
     win.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===ch.dataset.v)));
