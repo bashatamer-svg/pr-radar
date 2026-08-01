@@ -133,7 +133,7 @@ gets nothing. All queries live in `lib/db.js`.
 | Where | Fact |
 |---|---|
 | `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
-| Vercel env | `RADAR_TO` still unset → **the daily brief has not sent since 22 Jul** (`pr_state.daily_bulletin_sent`, checked 1 Aug — 10 days). Code fails loud now, but the var must be set in the dashboard; nothing in the repo can fix it |
+| Vercel env | `RADAR_TO` still unset → the **team/admin** copy of the daily brief never goes out, and `pr_state.daily_bulletin_sent` is therefore never stamped (stuck at 22 Jul — `touchState` is gated on `bulletinSent`). The brief itself IS delivering: the subscriber path is independent of `RADAR_TO` and mailed both `pr_subscribers` rows at 05:01 on 1 Aug (Resend, verified). **A stale marker is not a missed send** — check Resend, not `pr_state`. Setting the var is dashboard-only; nothing in the repo can fix it |
 | Meta | `pr_urgent` WhatsApp template submitted 31 Jul, still *In review*. Until Meta approves it every send returns `#132001`. Language is English, so the `en` default is right — if it ever shows "English (US)", set `WHATSAPP_TEMPLATE_LANG=en_US` |
 | `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
 
