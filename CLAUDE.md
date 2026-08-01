@@ -153,6 +153,18 @@ gets nothing. All queries live in `lib/db.js`.
   loop was permanently open and any manual `/api/radar` hit re-mailed every
   subscriber. Pinned by `verify-daily-once`. **A stale marker is not a missed
   send** — check Resend, not `pr_state`.
+- **`sendBulletin` with no `to` silently means `RADAR_TO`** — and `RADAR_TO` is
+  unset in production, so for every severity-5 story the urgent path threw "no
+  recipients", caught it, logged it, and reached nobody. Latent since launch:
+  `pr_items` has never held an importance-5 row, so the first real crisis would
+  have been the first test of a dead channel (WhatsApp is template-blocked and
+  the webhook unconfigured, so it was all three channels). Urgent now falls back
+  to `activeSubscribers()`, **ignoring their category filters** — severity 5 is
+  a live threat to Vodafone Egypt, so a surprise email beats a missed crisis
+  (the digest still filters). `RADAR_TO` still wins when set, leaving room for a
+  curated crisis list. Pinned by `verify-urgent-recipients`. General rule: never
+  let a send default its recipients — pass them, or prove the default is
+  populated.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.

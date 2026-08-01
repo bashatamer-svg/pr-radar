@@ -697,6 +697,24 @@ export default async function handler(req, res) {
   // Cross-run dedupe on hash guarantees we alert once per story.
   const boardUrl = process.env.BOARD_URL || '';
   if (!dry && !previewTo && urgent.length) {
+    // Who hears about a crisis. sendBulletin falls back to RADAR_TO when given
+    // no `to`, and RADAR_TO is unset in production — so this channel silently
+    // threw "no recipients" for every alert. It went unnoticed only because no
+    // story has ever been scored 5. Fall back to the subscriber list so the
+    // channel is never dead; RADAR_TO still wins when it is set, which keeps
+    // the door open for a separate, curated crisis list later.
+    // Category filters are deliberately IGNORED here: severity 5 is "a live
+    // reputational threat to Vodafone Egypt", so the fail-safe direction is one
+    // unexpected email rather than a missed crisis. The digest still filters.
+    let alertTo = process.env.RADAR_TO || '';
+    if (!alertTo.trim()) {
+      const subs = await activeSubscribers().catch((e) => {
+        console.error('urgent: subscriber fetch failed', e.message);
+        return [];
+      });
+      alertTo = subs.map((s) => s.email).filter(Boolean).join(',');
+    }
+    if (!alertTo) console.error('URGENT ALERT NOT SENT — no RADAR_TO and no active subscribers. Nobody is hearing severity-5 stories.');
     await Promise.all(
       urgent.map((item) => {
         const subject = `URGENT — ${item.headline}`.slice(0, 140);
@@ -704,7 +722,7 @@ export default async function handler(req, res) {
         // WhatsApp DMs fire alongside it, each fail-soft internally (no-op unless
         // configured), so a delivery-channel outage never blocks the others.
         return Promise.all([
-          sendBulletin(renderUrgent(item, boardUrl), subject).catch((e) => {
+          sendBulletin(renderUrgent(item, boardUrl), subject, alertTo || undefined).catch((e) => {
             console.error('urgent send failed', item.hash, e.message);
           }),
           postUrgentWebhook(item, boardUrl),
