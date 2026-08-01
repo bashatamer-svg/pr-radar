@@ -73,19 +73,35 @@ await page.evaluate(() => checkNew());
 await page.waitForTimeout(150);
 assert.ok(await page.$eval('#newPill', el => el.hidden), 'no pill for a new item the active filter would hide');
 
-// The pulse header counts down to the next 15-minute scan. It must show a real
-// mm:ss that MOVES — a frozen or absent timer is worse than none, because it
-// silently implies the pipeline stopped.
-const readScan = () => page.$eval('#nextScan', (e) => e.textContent.trim());
-const t1 = await readScan();
-assert.ok(/^next scan \d{1,2}:\d{2}$/.test(t1), `countdown renders mm:ss (got "${t1}")`);
-const mins1 = Number(t1.match(/(\d{1,2}):/)[1]);
-assert.ok(mins1 <= 14, `never counts past the 15-minute window (got ${mins1}m)`);
-// Drive the clock forward rather than sleeping for real.
-await page.evaluate(() => { const d = Date.now; Date.now = () => d() + 3000; });
-await page.waitForTimeout(1300);
-const t2 = await readScan();
-assert.notStrictEqual(t2, t1, `the countdown ticks (stuck at "${t1}")`);
+// The pulse header counts down to the next 15-minute scan. Drive the page's
+// clock rather than sleeping: a real wait depends on setInterval firing on
+// time, and headless Chromium throttles timers in a backgrounded page — which
+// made this flake about 1 run in 20 before it was written this way.
+const atUtcMinute = (min, sec) => page.evaluate(([m, ss]) => {
+  const Real = Date;
+  const base = Real.UTC(2026, 7, 1, 10, m, ss);
+  const Fake = function (...a) { return a.length ? new Real(...a) : new Real(base); };
+  Fake.now = () => base; Fake.UTC = Real.UTC; Fake.parse = Real.parse;
+  globalThis.Date = Fake;
+  try { tickScan(); } finally { globalThis.Date = Real; }
+  const el = document.querySelector('#nextScan');
+  return { text: el.textContent.trim(), due: el.classList.contains('due') };
+}, [min, sec]);
+
+// The cron fires on the quarter hour, so the arithmetic is exact and testable.
+const at3 = await atUtcMinute(3, 0);
+assert.strictEqual(at3.text, 'next scan 12:00', `12 minutes left at :03 (got "${at3.text}")`);
+assert.ok(!at3.due, 'not flagged due with 12 minutes to go');
+const at14 = await atUtcMinute(14, 30);
+assert.strictEqual(at14.text, 'next scan 0:30', `30 seconds left at :14:30 (got "${at14.text}")`);
+assert.ok(at14.due, 'the last 30 seconds are flagged');
+// It moves, and never claims more than the window it counts down.
+assert.notStrictEqual(at14.text, at3.text, 'the countdown actually changes with the clock');
+for (const m of [0, 7, 14]) {
+  const v = await atUtcMinute(m, 0);
+  const mins = Number(v.text.match(/(\d{1,2}):/)[1]);
+  assert.ok(mins <= 15, `never counts past the 15-minute window (got ${v.text} at :${m})`);
+}
 assert.ok(await page.$('.pulse .ph .shbtn'), 'the Share button is still there beside it');
 
 await browser.close(); server.close();
