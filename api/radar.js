@@ -9,7 +9,7 @@ import { tokenize, jaccard } from '../lib/dedupe.js';
 import { postUrgentWebhook, postSurgeWebhook } from '../lib/notify.js';
 import { sendWhatsAppUrgent } from '../lib/whatsapp.js';
 import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
-import { renderBulletin, renderUrgent, sendBulletin } from '../lib/email.js';
+import { renderBulletin, renderUrgent, sendBulletin, isInstantAlert, urgentTier } from '../lib/email.js';
 import { authorFromEntry, fetchAuthor, cleanAuthor, resetAuthorAiBudget } from '../lib/author.js';
 import { resolveUrl, isGoogleNews, isNonArticlePage } from '../lib/resolve.js';
 import { safeEqual } from '../lib/auth.js';
@@ -531,7 +531,13 @@ export default async function handler(req, res) {
   }
 
   const relevant = classified.filter((i) => i.is_relevant && i.importance >= 2);
-  const urgent = relevant.filter((i) => i.importance === 5);
+  // Impact 4-5, or ANY negative Vodafone story whatever its Impact — a negative
+  // story about us is worth knowing inside the quarter hour even when its
+  // pickup is small, and waiting for the 05:00 brief could cost most of a day.
+  // The rule lives in lib/email.js beside the tier it drives, so the trigger and
+  // the wording of the alert can't disagree. On the history to date this fires
+  // about once every five days.
+  const urgent = relevant.filter(isInstantAlert);
 
   // ── Coverage diagnostic: build the funnel trace and return. ────────────────
   // Everything below this block (inserts, alerts, bulletins) is skipped, so a
@@ -717,7 +723,8 @@ export default async function handler(req, res) {
     if (!alertTo) console.error('URGENT ALERT NOT SENT — no RADAR_TO and no active subscribers. Nobody is hearing severity-5 stories.');
     await Promise.all(
       urgent.map((item) => {
-        const subject = `URGENT — ${item.headline}`.slice(0, 140);
+        // Same tier that titles the email body, so the inbox and the header agree.
+        const subject = `${urgentTier(item).label} — ${item.headline}`.slice(0, 140);
         // Email is the primary channel; the optional webhook (Slack/Teams) and
         // WhatsApp DMs fire alongside it, each fail-soft internally (no-op unless
         // configured), so a delivery-channel outage never blocks the others.

@@ -165,6 +165,19 @@ gets nothing. All queries live in `lib/db.js`.
   the email half, `render-guide` the explanation. `lib/report.js` prints a bare
   `N/5` and carries no label. **Only 5 alerts in real time**; a 4 waits for the
   05:00 brief.
+- **Instant alerts fire on `isInstantAlert` (`lib/email.js`), not on Impact 5.**
+  Impact 4-5 **or** any negative *Vodafone* story at any Impact — a bad story
+  about us shouldn't wait out the 05:00 brief because its pickup was small. The
+  brand check is load-bearing: sentiment is the story's own tone for the brand it
+  names, so without it every rival outage would page the team; a rival's negative
+  alerts only if it also scores 4+. `urgentTier()` sits beside the rule and
+  drives the badge, the "why it fired" line **and** the subject in `api/radar.js`
+  — only Impact 5 says URGENT, everything else says ALERT, because labelling all
+  of it URGENT is how an alert channel earns being ignored. Both live in
+  `lib/email.js` so the trigger and the wording cannot drift. ~1 alert / 5 days
+  on the history to 1 Aug. Pinned by `verify-urgent-recipients` (including the
+  must-NOT-fire cases). Changing the rule means changing the guide's two urgent
+  blurbs and the alert footer in the same commit.
 - **`sendBulletin` with no `to` silently means `RADAR_TO`** — and `RADAR_TO` is
   unset in production, so for every severity-5 story the urgent path threw "no
   recipients", caught it, logged it, and reached nobody. Latent since launch:

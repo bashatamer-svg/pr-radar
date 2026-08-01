@@ -102,4 +102,49 @@ const urgentOf = (sent) => sent.filter((m) => /^URGENT —/.test(m.subject || ''
   delete process.env.RADAR_TO;
 }
 
-console.log('URGENT-RECIPIENTS OK — a severity-5 story emails every active subscriber when RADAR_TO is unset (category filters ignored), and RADAR_TO alone when it is set');
+// ── WHICH stories trip the instant alert, and how loudly ──
+// Impact 4-5, or ANY negative Vodafone story whatever its Impact — a bad story
+// about us shouldn't wait for the 05:00 brief just because its pickup is small.
+// A negative story about a RIVAL is their problem: it alerts only if it also
+// scores 4+. Sentiment is the story's own tone for the brand it names, so
+// without the brand check every rival outage would page the team.
+{
+  const { isInstantAlert, urgentTier } = await import(`${new URL('..', import.meta.url).pathname}/lib/email.js`);
+  const cases = [
+    // [item, alerts?, tier label, why]
+    [{ importance: 5, brand: 'Vodafone', sentiment: 'negative' }, true, 'URGENT', 'a crisis'],
+    [{ importance: 5, brand: 'Orange', sentiment: 'neutral' }, true, 'URGENT', 'Impact 5 alone is enough'],
+    [{ importance: 4, brand: 'Orange', sentiment: 'positive' }, true, 'ALERT', 'a major competitor win'],
+    [{ importance: 3, brand: 'Vodafone', sentiment: 'negative' }, true, 'ALERT', 'negative about us, modest pickup'],
+    [{ importance: 2, brand: 'Vodafone', sentiment: 'negative' }, true, 'ALERT', 'negative about us, small pickup'],
+    [{ importance: 3, brand: 'Vodafone', sentiment: 'positive' }, false, null, 'good news waits for the brief'],
+    [{ importance: 3, brand: 'Vodafone', sentiment: 'neutral' }, false, null, 'neutral waits for the brief'],
+    [{ importance: 3, brand: 'Orange', sentiment: 'negative' }, false, null, "a rival's problem is not our alert"],
+    [{ importance: 2, brand: 'e&', sentiment: 'negative' }, false, null, 'nor a small one'],
+  ];
+  for (const [item, want, label, why] of cases) {
+    assert.strictEqual(isInstantAlert(item), want,
+      `${why}: ${JSON.stringify(item)} should ${want ? '' : 'NOT '}alert`);
+    if (want) {
+      assert.strictEqual(urgentTier(item).label, label,
+        `${why}: labelled ${label} (got ${urgentTier(item).label})`);
+    }
+  }
+  // Only a real crisis says URGENT. Labelling every alert URGENT is how the
+  // channel gets ignored, which costs more than the alert saves.
+  assert.strictEqual(urgentTier({ importance: 4 }).label, 'ALERT', 'Impact 4 is not shouted as URGENT');
+  assert.strictEqual(urgentTier({ importance: 5 }).label, 'URGENT', 'Impact 5 is');
+}
+
+// ── the alert body must match its tier, not hardcode "severity-5" ──
+{
+  const { renderUrgent } = await import(`${new URL('..', import.meta.url).pathname}/lib/email.js`);
+  const soft = renderUrgent({ id: 1, importance: 2, brand: 'Vodafone', sentiment: 'negative', headline: 'x', summary: 's' }, '');
+  assert.ok(/● ALERT/.test(soft), 'a low-Impact Vodafone negative is badged ALERT');
+  assert.ok(!/severity-5/.test(soft), 'and is never described as a severity-5 threat');
+  assert.ok(/a negative Vodafone story/.test(soft), 'the body says why it fired');
+  const hard = renderUrgent({ id: 2, importance: 5, brand: 'Vodafone', sentiment: 'negative', headline: 'y', summary: 's' }, '');
+  assert.ok(/● URGENT/.test(hard) && /severity-5 reputational threat/.test(hard), 'a real crisis still reads URGENT');
+}
+
+console.log('URGENT-RECIPIENTS OK — Impact 4-5 and any negative Vodafone story alert instantly (rivals only at 4+), tiered URGENT vs ALERT in both subject and body, to every active subscriber when RADAR_TO is unset (category filters ignored) and to RADAR_TO alone when set');
