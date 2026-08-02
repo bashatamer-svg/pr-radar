@@ -128,7 +128,7 @@ export default async function handler(req, res) {
       state: parked >= 20 ? 'crit' : parked > 0 ? 'warn' : 'ok',
       detail: parked > 0 ? `${parked} story(s) parked unclassified in 48h` : 'every story got a verdict',
       hint: parked > 0
-        ? 'The model returned no verdict for these, so they are hidden from the board and the brief — a burst usually means an API error or a spend cap, not bad stories. They stay in pr_items (category "unclassified") and can be re-run.'
+        ? 'The model returned no verdict for these even after the pipeline re-asked for them individually, so they are hidden from the board and the brief. Check API errors and the spend cap first; a burst that is entirely off-topic wire copy is the model declining to answer for junk, which costs nothing but noise. They stay in pr_items (category "unclassified") and can be re-run.'
         : '',
     });
   }
