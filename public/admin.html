@@ -92,6 +92,37 @@
   .fb .msg{font-size:13.5px;line-height:1.5;color:var(--ink);margin:6px 0 0}
   .fb .meta{font-size:11px;color:var(--muted);margin-top:5px}
   .fb .acts{margin-top:8px}
+
+  /* health — one colour language for the four states, used by the banner,
+     the per-check spine and the pill, so a glance down the page reads. */
+  .hbanner{border-radius:14px;padding:13px 15px;font-size:14px;font-weight:800;margin:12px 0;
+           display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .hbanner .when{margin-left:auto;font-weight:500;font-size:11.5px;color:var(--muted)}
+  .chk{background:var(--card);border:1px solid var(--hair);border-left:4px solid var(--faint);
+       border-radius:12px;padding:11px 14px;margin:9px 0}
+  .chk .ctop{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .chk .cname{font-weight:800;font-size:13.5px}
+  .chk .pill{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+             border-radius:999px;padding:2px 8px;color:#fff}
+  .chk .cdetail{font-size:13px;color:var(--ink);margin-top:5px;line-height:1.5}
+  .chk .chint{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.55}
+  .s-ok{--st:var(--pos);--stbg:var(--pos-bg);--stline:#c3e9d1}
+  .s-warn{--st:var(--amber);--stbg:#fff5e6;--stline:#f5dcb4}
+  .s-crit{--st:var(--red-deep);--stbg:var(--neg-bg);--stline:var(--neg-line)}
+  .s-unknown{--st:var(--muted);--stbg:var(--hair-2);--stline:var(--hair)}
+  .chk.s-ok,.chk.s-warn,.chk.s-crit,.chk.s-unknown{border-left-color:var(--st)}
+  .chk .pill{background:var(--st)}
+  .hbanner.s-ok,.hbanner.s-warn,.hbanner.s-crit,.hbanner.s-unknown{
+       background:var(--stbg);color:var(--st);border:1px solid var(--stline)}
+  .alog{background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:10px 13px;margin:8px 0}
+  .alog .atop{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .alog .akind{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+               background:var(--hair-2);color:var(--ink-2);border-radius:999px;padding:2px 8px}
+  .alog .akind.critical{background:var(--neg-bg);color:var(--red-deep)}
+  .alog .at{font-weight:800;font-size:13px;flex:1;min-width:170px}
+  .alog .awhen{font-size:11px;color:var(--faint);white-space:nowrap}
+  .alog pre{margin:6px 0 0;white-space:pre-wrap;word-break:break-word;
+            font:11.5px/1.5 var(--mono);color:var(--muted)}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -107,6 +138,7 @@
     <button class="tab" type="button" data-tab="requests" aria-pressed="false">Requests <span class="n" id="nReq"></span></button>
     <button class="tab" type="button" data-tab="users" aria-pressed="false">Users <span class="n" id="nUsers"></span></button>
     <button class="tab" type="button" data-tab="audit" aria-pressed="false">Audit <span class="n" id="nAudit"></span></button>
+    <button class="tab" type="button" data-tab="health" aria-pressed="false">Health <span class="n" id="nHealth"></span></button>
     <button class="tab" type="button" data-tab="tools" aria-pressed="false">Tools</button>
   </div>
   <main class="content" id="content"><div class="gate">Loading…</div></main>
@@ -140,7 +172,7 @@ async function afetch(path,opts={},_retried){
   return r;
 }
 
-let TAB='subs', SUBS=[], FB=[], USERS=[], AUDIT=[], REQ=[];
+let TAB='subs', SUBS=[], FB=[], USERS=[], AUDIT=[], REQ=[], HEALTH=null;
 const api=(opts)=>afetch(`/api/admin${opts.q?opts.q.replace(/^&/,'?'):''}`,{method:opts.method||'GET',headers:opts.body?{'Content-Type':'application/json'}:undefined,body:opts.body?JSON.stringify(opts.body):undefined});
 const when=(t)=>{ try{ return new Date(t).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit',timeZone:'Africa/Cairo'}); }catch(e){ return ''; } };
 
@@ -618,6 +650,102 @@ async function runBackfill(){
   btn.disabled=false; btn.textContent=label;
 }
 
+/* ── Health ──
+   "Right now" is computed live on every open — it answers whether the radar is
+   working THIS MINUTE, which is the question no other surface answers: the
+   board looks identical whether the classifier is screening properly or the
+   account has been capped and every story is being parked out of sight.
+   "Recent alerts" is the persisted history, so a problem can be reviewed days
+   later instead of hunted for in an inbox. Nothing here is shown to the team. */
+const HLABEL={ok:'All clear',warn:'Needs a look',crit:'Action needed',unknown:'Partly unknown'};
+const HPILL={ok:'ok',warn:'warn',crit:'critical',unknown:'unknown'};
+const hstate=(s)=>['ok','warn','crit','unknown'].includes(s)?s:'unknown';
+const hwhen=(t)=>{ try{ return new Date(t).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Africa/Cairo'}); }catch(e){ return ''; } };
+
+function renderHealth(){
+  const d=HEALTH;
+  if(!d){
+    $('#content').innerHTML=`<div class="card"><h2>Pipeline health</h2>
+      <div class="empty">Checking every part of the pipeline…</div></div>`;
+    return;
+  }
+  if(d.error){
+    $('#content').innerHTML=`<div class="card"><h2>Pipeline health</h2>
+      <div class="empty">Couldn't run the checks.<br>${esc(d.error)}</div>
+      <div class="form" style="margin-top:10px"><button class="btn ghost" id="hRefresh" type="button">Try again</button></div></div>`;
+    $('#hRefresh').onclick=()=>{ HEALTH=null; renderHealth(); loadHealth(); };
+    return;
+  }
+  const st=hstate(d.status);
+  const checks=(d.checks||[]).map(c=>{
+    const s=hstate(c.state);
+    return `<div class="chk s-${s}">
+      <div class="ctop"><span class="cname">${esc(c.label)}</span><span class="pill">${esc(HPILL[s])}</span></div>
+      <div class="cdetail">${esc(c.detail||'')}</div>
+      ${c.hint?`<div class="chint">${esc(c.hint)}</div>`:''}
+    </div>`;
+  }).join('');
+
+  let logHtml;
+  if(!d.logAvailable){
+    logHtml=`<div class="empty">History isn't switched on yet — apply
+      <b>migrations/2026-08-02-pr-alerts.sql</b> to start keeping it.<br>
+      The live checks above work either way.</div>`;
+  }else if(!(d.log||[]).length){
+    logHtml=`<div class="empty">No alerts in the last 14 days.</div>`;
+  }else{
+    logHtml=(d.log||[]).map(a=>`<div class="alog">
+      <div class="atop">
+        <span class="akind ${esc(a.severity||'')}">${esc(a.kind||'ops')}</span>
+        <span class="at">${esc(a.title||'')}</span>
+        <span class="awhen">${esc(hwhen(a.created_at))}</span>
+      </div>
+      ${a.detail?`<pre>${esc(a.detail)}</pre>`:''}
+    </div>`).join('');
+  }
+
+  $('#content').innerHTML=`
+    <div class="hbanner s-${st}">${esc(HLABEL[st]||'Unknown')}
+      <span class="when">checked ${esc(hwhen(d.generatedAt))} Cairo</span></div>
+    <div class="card">
+      <h2>Right now</h2>
+      <div id="hChecks">${checks||'<div class="empty">No checks returned.</div>'}</div>
+      <div class="form" style="margin-top:12px">
+        <button class="btn ghost" id="hRefresh" type="button">Re-check</button>
+        <div class="formmsg" id="hMsg"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Recent alerts · last 14 days</h2>
+      <div id="hLog">${logHtml}</div>
+    </div>
+    <div class="card">
+      <h2>What this is</h2>
+      <div class="nm" style="line-height:1.65">
+        <b>Right now</b> is computed fresh every time you open this tab — it tells you whether the radar
+        is healthy this minute, not whether it was yesterday. <b>Recent alerts</b> is the history of
+        problems the radar raised, kept so you can look one up later instead of searching your inbox.
+        A daily job emails you only when something is in <b>warn</b> or <b>action needed</b>, and stays
+        quiet otherwise; the same problem won't mail you twice in a day. None of this reaches the team.
+      </div>
+    </div>`;
+  $('#hRefresh').onclick=()=>{ const b=$('#hRefresh'); b.disabled=true; b.textContent='Checking…'; loadHealth(); };
+}
+async function loadHealth(){
+  try{
+    const r=await afetch('/api/alerts');
+    if(!r.ok){
+      const e=await r.json().catch(()=>({}));
+      HEALTH={error:r.status===403?'Admin only.':(e.error||`HTTP ${r.status}`)};
+    }else HEALTH=await r.json();
+  }catch(e){ HEALTH={error:e.message||'Network error.'}; }
+  // The tab badge is the headline: a problem should be visible from any tab,
+  // not only once you have thought to open this one.
+  const bad=(HEALTH&&HEALTH.checks||[]).filter(c=>c.state==='warn'||c.state==='crit').length;
+  $('#nHealth').textContent=HEALTH&&HEALTH.error?'!':(bad||'✓');
+  if(TAB==='health') renderHealth();
+}
+
 /* ── shell ── */
 async function loadSubs(){ const r=await api({q:'&view=subscribers'}); SUBS=await r.json(); if(!Array.isArray(SUBS)) SUBS=[]; $('#nSubs').textContent=SUBS.length; if(TAB==='subs') renderSubs(); }
 async function loadFb(){ const r=await api({q:'&view=feedback'}); FB=await r.json(); if(!Array.isArray(FB)) FB=[]; $('#nFb').textContent=FB.length; if(TAB==='fb') renderFb(); }
@@ -631,6 +759,9 @@ function selectTab(t){
   else if(t==='requests'){ renderReq(); loadReq(); }
   else if(t==='users'){ renderUsers(); if(!USERS.length) loadUsers(); }
   else if(t==='audit'){ renderAudit(); loadAudit(); }
+  // Always re-check on open: a cached verdict from ten minutes ago answers the
+  // wrong question — this tab exists to say what is true right now.
+  else if(t==='health'){ HEALTH=null; renderHealth(); loadHealth(); }
   else if(t==='tools') renderTools();
 }
 
@@ -644,7 +775,10 @@ async function boot(){
     $('#tabs').hidden=false; $('#nSubs').textContent=SUBS.length;
     $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>selectTab(b.dataset.tab));
     renderSubs();
-    loadFb(); loadReq(); loadUsers(); loadAudit();   // warm the other tabs in the background
+    // Warm the other tabs in the background. Health is included so its badge
+    // shows a problem while you are still looking at Subscribers — a health
+    // page you have to remember to open is one you find out about too late.
+    loadFb(); loadReq(); loadUsers(); loadAudit(); loadHealth();
   }catch(e){ $('#content').innerHTML=`<div class="gate">Couldn't load admin.<br>${esc(e.message||e)}</div>`; }
 }
 boot();

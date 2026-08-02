@@ -14,6 +14,7 @@ project refs/IDs, or model identifiers.
 | auth, tokens, roles | Hard rules |
 | the author pipeline, dedup, or classifier prompt | Layout notes + Gotchas |
 | email/report renderers | Gotchas (byte-identical rule) |
+| a health check or one of its thresholds | Gotchas (they are calibrated to live numbers — re-verify, don't guess) |
 | test suite structure or a new test | Commands + `tests/README.md` |
 | branch/deploy workflow | Deploy flow |
 | found repo↔live drift | Drift table |
@@ -49,9 +50,10 @@ behaviour gets a regression test in the same commit.
 
 | Path | What lives here |
 |---|---|
-| `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
-| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit), `email.js` (email-client-safe renderer), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js` |
+| `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `alerts.js` (pipeline health checks + the daily push); `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
+| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit), `email.js` (email-client-safe renderer + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
 | `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
+| `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
 | `scripts/` | One-off generators run manually (OG images) |
 | `tests/*.mjs` | The suite. `narr-fixture.mjs` is captured production data, not a test |
 
@@ -66,6 +68,7 @@ logic into a function file. New pages get a rewrite in `vercel.json`.
 | `/api/radar?urgentOnly=1` | every 15 min | ingest + severity-5 instant email/WhatsApp; skips bulletin |
 | `/api/report?period=week&send=1` | Mon 06:00 | no-op unless `REPORT_EMAIL_ENABLED=1` |
 | `/api/geo?send=1` | Mon 07:00 | no-op unless `GEO_ENABLED=1` |
+| `/api/alerts?notify=1` | daily 05:45 | health push — silent unless a check is warn/crit, and deduped on the subject so a chronic problem mails once, not daily |
 
 Sources (`lib/sources.js`): 10 brand/market Google-News queries (AR+EN) + 7
 site-scoped sweeps covering the team's named outlet list + 13 direct outlet RSS
@@ -98,6 +101,7 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_context` | Admin-editable house knowledge injected into classification |
 | `pr_feed_health` | Per-feed failure streaks (bulletin footer) |
 | `pr_feedback` | In-app feedback form |
+| `pr_alerts` / `pr_usage` | **Optional, NOT applied** — `migrations/2026-08-02-*.sql`. Alert history + per-call token accounting. Without them Admin → Health loses its history and 2 of 12 checks read `unknown`; nothing else changes |
 
 RLS is ON with **no policies**: only the service-role key reads/writes; anon
 gets nothing. All queries live in `lib/db.js`.
@@ -128,12 +132,15 @@ gets nothing. All queries live in `lib/db.js`.
 - Does NOT ship with a deploy: env vars (Vercel dashboard only), DB schema
   (manual SQL, ask first), OG images (committed PNGs; regenerate by script).
 
-## Drift (repo ↔ live, verified 2026-08-01)
+## Drift (repo ↔ live, verified 2026-08-02)
 
 | Where | Fact |
 |---|---|
 | `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
-| Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (both `pr_subscribers` rows mailed 05:01 on 1 Aug — Resend, verified). `pr_state.daily_bulletin_sent` sat at 22 Jul because the marker used to be stamped only on the `RADAR_TO` send; it now stamps on any send (see Gotchas), so it tracks reality again. Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy |
+| Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (5 active subscribers, 2 Aug). Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy. Set **`OPS_ALERT_TO`** too, or the daily health push records its alert and reaches nobody (it falls back to `RADAR_TO`) |
+| `pr_state.daily_bulletin_sent` | Reads **22 Jul** and that is CORRECT, not drift: the marker now stamps on any send, and nothing has cleared the Impact-2 digest bar since — 0 eligible on 1 and 2 Aug (`pr_items`, verified). Admin → Health reads the two together for exactly this reason |
+| `pr_alerts` / `pr_usage` | **Not applied.** `migrations/2026-08-02-*.sql` are written and idempotent but need a human to run them (hard rule: ask before DDL). Until then Health has no history and the spend + cache checks read `unknown` |
+| `pr_items` | 100 stories parked `unclassified` in the 7 days to 2 Aug (bursts of 6-68 on 25, 28, 29, 30 Jul and 1 Aug). Cause unconfirmed — Health's Classification check now surfaces it; if it keeps bursting, look at the classify batch's error path before the prompt |
 | Meta | `pr_urgent` WhatsApp template submitted 31 Jul, still *In review*. Until Meta approves it every send returns `#132001`. Language is English, so the `en` default is right — if it ever shows "English (US)", set `WHATSAPP_TEMPLATE_LANG=en_US` |
 | `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
 
@@ -345,6 +352,36 @@ gets nothing. All queries live in `lib/db.js`.
   cadence, `SCAN_EVERY_MIN` in `public/index.html` must change with it or the
   timer lies. It also nudges `checkNew()` ~75s after each fire so new stories
   land without waiting out the 5-minute poll. Pinned by `render-autorefresh`.
+- **Admin → Health is the only surface that can tell you the pipeline is
+  broken**, and every check on it is calibrated to PR Radar's actual numbers,
+  not the Regulatory Radar's — the shapes are different enough that copying its
+  thresholds would produce a page that cries wolf. Three that matter:
+  **the daily brief legitimately does not send**. `api/radar.js` builds the
+  digest from the last 24h of relevant items at `importance >= 2` and skips both
+  send loops when that set is empty — which happened on 1 and 2 Aug. So the
+  bulletin check reads the marker AND `digestEligibleCount()`: stale marker with
+  nothing waiting is `ok`, stale marker with stories waiting is `crit`. Gating on
+  the marker alone would sit red through every quiet week until nobody read it.
+  **Screening quality is measured over whole weeks**, not 24h-vs-same-weekday
+  (which is what RR does): PR Radar's daily relevance rate swings 0.0%–11.9% on
+  1–15 relevant stories out of 55–175 scanned, so a day-on-day test is noise.
+  7d vs the prior 3 weeks pools ~700 against ~2100 and cancels the weekday
+  effect without modelling it. **Bylines are judged as a SHARE** (warn at 75%),
+  because ~42% of relevant cards have no author and never will — Egyptian wire
+  and desk copy is unsigned, so a raw count is meaningless.
+  Pinned by `verify-health-checks` + `render-health-tab`.
+- **A parked story is invisible everywhere except Admin → Health.** When the
+  classifier returns no verdict, `classify.js` stores the item
+  `category:'unclassified', confidence:0, summary:null, is_relevant:false` —
+  correct (never guess), but it means an API error or a spend cap looks exactly
+  like a quiet news day on the board, in the brief and in the logs. Live: 100
+  parked in the 7 days to 2 Aug, in bursts of 6–68. That is what the spend gauge
+  (`lib/usage.js` → `pr_usage`) exists to catch on the way up rather than after.
+- **`db_size_bytes()` is the other app's function — call it, never define it.**
+  It already exists in the shared project and returns one number for the WHOLE
+  database. PR Radar's storage check calls it read-only. A `create or replace`
+  from this repo would be reaching into shared state, which the hard rules
+  forbid; the number is honest anyway, because the tier ceiling is shared too.
 - WhatsApp preview caches are sticky — test OG changes with a `?v=N` URL.
 
 ## Verifying work
@@ -359,6 +396,17 @@ gets nothing. All queries live in `lib/db.js`.
   tier — always to the signed-in admin only, never the subscriber list.
   "Send test alert" beside it is **WhatsApp-only** and template-blocked, so it
   proves nothing about email.
-5. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
+5. **Admin → Health** — 12 live checks + 14-day alert history, computed on
+  open. Five answer "did it run?" (brief freshness vs stories waiting, ingest
+  volume, parked stories, recipients, dead feeds). Seven answer harder
+  questions: **screening quality** (7d relevance rate vs the prior 3 weeks),
+  **byline backfill** (share, not count), **weekly report** (reads `off`, not
+  broken, while `REPORT_EMAIL_ENABLED` is unset), **API spend** (month-to-date +
+  month-end projection), **deliverability** (the provider's own per-message
+  status — everything else only knows the send was *accepted*), **storage
+  headroom** (shared DB, shared ceiling), **prompt-cache reuse** (broken caching
+  raises the bill with no other symptom). `GET /api/alerts?notify=1` is the push
+  — emails only on warn/crit, deduped on the subject for 22h; fired daily 05:45.
+6. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
   Supabase MCP read-only SQL (did rows change). `pr_state.daily_bulletin_sent`
   tells you when the brief last actually went out.

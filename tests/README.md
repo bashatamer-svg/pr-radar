@@ -41,6 +41,7 @@ are **skipped**, the unit suite still runs.
 | DB helpers (row-cap warnings) | `db-caps` |
 | Classifier / de-dupe judgement rules (prompt invariants) | `verify-judgement-rules` |
 | Guide page | `render-guide` |
+| Pipeline health checks + daily push (`/api/alerts`) | `verify-health-checks` (backend), `render-health-tab` (browser) |
 | Link previews & branding (OG/Twitter tags, favicon, PNG assets) | `render-og` |
 
 `narr-fixture.mjs` is data (real production items, captured 2026-07-27 and
