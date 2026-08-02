@@ -78,8 +78,16 @@ const urgentOf = (sent) => sent.filter((m) => /^URGENT —/.test(m.subject || ''
   assert.strictEqual(body.urgent, 1, `the story was scored 5 and opened the urgent path (body=${JSON.stringify(body)})`);
 
   const alerts = urgentOf(sent);
-  assert.strictEqual(alerts.length, 1, `one urgent alert went out (sent ${JSON.stringify(sent.map((m) => m.subject))})`);
-  const to = [].concat(alerts[0].to || []);
+  // ONE MESSAGE PER RECIPIENT — an alert addressed to the whole list shows each
+  // reader everyone else's address, and lets one bad entry make Resend reject
+  // the batch, silencing a crisis alert for the entire team.
+  assert.strictEqual(alerts.length, SUBSCRIBERS.length,
+    `one alert per subscriber (got ${alerts.length} for ${SUBSCRIBERS.length})`);
+  for (const a of alerts) {
+    assert.strictEqual([].concat(a.to || []).length, 1,
+      `each alert carries exactly one address (got ${JSON.stringify(a.to)})`);
+  }
+  const to = alerts.flatMap((a) => [].concat(a.to || []));
   for (const s of SUBSCRIBERS) {
     assert.ok(to.includes(s.email), `the alert reached ${s.email} (got ${JSON.stringify(to)})`);
   }

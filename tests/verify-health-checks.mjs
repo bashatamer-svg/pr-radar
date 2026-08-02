@@ -298,6 +298,22 @@ const byId = (out, id) => (out.checks || []).find((c) => c.id === id);
   const escalated = (await call({ query: { notify: '1' } })).out;
   assert.strictEqual(escalated.notified.sent, true, 'a new failing check alerts immediately');
   assert.match(sent[0].subject, /Brief recipients/, 'and the subject names it');
+
+  // TWO operators → two messages, not one addressed to both. Nobody should be
+  // shown the rest of the ops list, and one bad address must not swallow the
+  // alert for everyone else — Resend rejects the whole call over one entry.
+  process.env.OPS_ALERT_TO = 'ops@example.com, second.ops@example.com';
+  world = freshWorld(); world.parked = 25; sent = []; recorded = [];
+  const fanned = (await call({ query: { notify: '1' } })).out;
+  assert.strictEqual(fanned.notified.sent, true, 'still sends');
+  assert.strictEqual(sent.length, 2, `one message per operator (got ${sent.length})`);
+  for (const m of sent) {
+    assert.strictEqual(m.to.length, 1, `each carries exactly one address (got ${JSON.stringify(m.to)})`);
+  }
+  assert.deepStrictEqual(sent.flatMap((m) => m.to).sort(), ['ops@example.com', 'second.ops@example.com'],
+    'and between them they cover the ops list');
+  assert.strictEqual(recorded.length, 1, 'the history still records the alert ONCE, not once per recipient');
+  process.env.OPS_ALERT_TO = 'ops@example.com';
 }
 
 console.log('HEALTH-CHECKS OK — 12 admin-only checks; a missing optional table degrades one check, not the page; '

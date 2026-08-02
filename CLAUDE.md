@@ -190,6 +190,18 @@ gets nothing. All queries live in `lib/db.js`.
   on the history to 1 Aug. Pinned by `verify-urgent-recipients` (including the
   must-NOT-fire cases). Changing the rule means changing the guide's two urgent
   blurbs and the alert footer in the same commit.
+- **Every send is ONE MESSAGE PER RECIPIENT** — `sendBulletin` fans out inside
+  itself, so no caller can put a distribution list in a single `To`. It used
+  to POST once with all N addresses, which showed every reader the rest of the
+  list (a disclosure on a corporate list, not a formatting detail) and let one
+  malformed or suppressed address make Resend reject the batch — silencing a
+  crisis alert for the whole team. The urgent path, surge, weekly report and
+  geo all passed a CSV; the daily brief already looped. `sendOpsAlert` fans out
+  the same way but records its history ONCE, not per recipient. Reaching nobody
+  still THROWS (that is the dead-channel signal callers scream on); a partial
+  failure is returned as `{sent, failed}` and logged per address, never thrown.
+  The return spreads the first Resend response so `.id` still works. Pinned by
+  `send-guard` + `verify-urgent-recipients` + `verify-health-checks`.
 - **`sendBulletin` with no `to` silently means `RADAR_TO`** — and `RADAR_TO` is
   unset in production, so for every severity-5 story the urgent path threw "no
   recipients", caught it, logged it, and reached nobody. Latent since launch:
