@@ -197,6 +197,19 @@ gets nothing. All queries live in `lib/db.js`.
   curated crisis list. Pinned by `verify-urgent-recipients`. General rule: never
   let a send default its recipients — pass them, or prove the default is
   populated.
+- **An omission is not a verdict** (`classifyChunk`, `lib/classify.js`). Verdicts
+  map onto the batch by each object's `i`, and a reply that simply leaves items
+  out parses cleanly — so the hard-failure split never fired and every skipped
+  item was stored `category:'unclassified'`, hidden from board and brief. One
+  batch of 25 off-topic Reuters wire stories came back with no verdicts at all
+  (1 Aug) and raised a CRITICAL reading "API error or spend cap" — neither had
+  happened; the model had declined to answer for obvious junk. Now: gaps are
+  re-asked for **just the missing items**, a wholly empty reply is **split**
+  rather than resent identically (a repeat prompt repeats the answer), and
+  `MAX_REASK` (2) bounds it — splitting is NOT bounded by it and terminates at
+  one item. The prompt now demands exactly one object per input. Deliberately
+  never recast an omission as `is_relevant:false`: that silently drops a real
+  story the model merely forgot. Pinned by `verify-classify-gaps`.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.

@@ -22,6 +22,7 @@ are **skipped**, the unit suite still runs.
 |---|---|
 | Ingest pipeline (feeds, dedup, classify, dry/urgent runs) | `smoke-task6`, `smoke-task1..3`, `smoke-task8..10`, `dedup-jaccard`, `render-debug` |
 | Cross-run duplicates merged as coverage, not dropped | `verify-crossrun-merge` |
+| Skipped classifier verdicts re-asked, not parked | `verify-classify-gaps` |
 | One daily brief per day, even with `RADAR_TO` unset | `verify-daily-once` |
 | Severity-5 alerts reach subscribers when `RADAR_TO` is unset | `verify-urgent-recipients` |
 | Admin email alert test reaches only the requesting admin | `verify-alert-test-tool` |
