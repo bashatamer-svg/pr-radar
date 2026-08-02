@@ -436,6 +436,14 @@ function renderTools(){
       <div id="pfRows"></div>
     </div>
     <div class="card">
+      <h2>Parked stories</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">Stories the classifier returned no verdict for are held back from the board and the brief, and show as <b>Classification</b> on the Health tab. Re-screen them here — anything it still won't answer for stays parked rather than being guessed at.</div>
+      <div class="form">
+        <button class="btn ghost" id="rcBtn" type="button">Re-classify parked stories</button>
+        <div class="formmsg" id="rcMsg"></div>
+      </div>
+    </div>
+    <div class="card">
       <h2>Instant alerts (email)</h2>
       <div class="nm" style="line-height:1.6;margin:0 0 11px">Anything at <b>Impact 4 or 5</b>, plus <b>any negative Vodafone story</b> at any Impact, is emailed within 15 minutes of landing — Impact 5 as <b>URGENT</b>, the rest as <b>ALERT</b>. Send yourself a sample to check delivery and how it reads. It goes <b>only to you</b>, never to the subscriber list.</div>
       <div class="form">
@@ -465,6 +473,7 @@ function renderTools(){
   loadAuthorGap();
   $('#waTestBtn').onclick=runWhatsappTest;
   $('#atBtn').onclick=runAlertTest;
+  $('#rcBtn').onclick=runReclassify;
   loadWhatsappStatus();
 }
 async function loadWhatsappStatus(){
@@ -482,6 +491,24 @@ async function loadWhatsappStatus(){
       if(btn) btn.disabled=true;
     }
   }catch(e){ el.textContent=''; }
+}
+// Re-screen the no-verdict rows. Reports what came back relevant, so a run that
+// rescues a real story reads differently from one that just clears wire noise.
+async function runReclassify(){
+  const btn=$('#rcBtn'), msg=$('#rcMsg');
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Re-screening…'; msg.textContent=''; msg.className='formmsg';
+  try{
+    const r=await api({method:'POST',q:'&resource=reclassify-parked',body:{days:2,limit:100}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
+    else if(!d.found){ msg.className='formmsg ok'; msg.textContent='Nothing parked ✓'; }
+    else{
+      msg.className='formmsg '+(d.stillParked?'err':'ok');
+      msg.textContent=`${d.resolved}/${d.found} re-screened · ${d.kept} relevant`
+        +(d.stillParked?` · ${d.stillParked} still unanswered`:' ✓');
+    }
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
+  btn.disabled=false; btn.textContent=label;
 }
 // Email delivery test for the instant-alert path. Server-side it always sends
 // to the signed-in admin, so there is no address field here to get wrong.

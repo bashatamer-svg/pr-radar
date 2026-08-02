@@ -14,10 +14,12 @@ import {
   allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber,
   allFeedback, setFeedbackResolved,
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
-  recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor, itemsForDupeScan, mergeDuplicateInto } from '../lib/db.js';
+  recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor, itemsForDupeScan, mergeDuplicateInto,
+  parkedItems, parkedItemCount, updateItemVerdict } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
+import { classify } from '../lib/classify.js';
 import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
 import { isGoogleNews } from '../lib/resolve.js';
 import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
@@ -180,6 +182,50 @@ export default async function handler(req, res) {
         const result = await sendWhatsAppUrgent(sample);
         await auditReq(req, who, 'whatsapp.test', who.actor, result);
         return res.status(200).json({ ok: true, ...result });
+      }
+      if (resource === 'reclassify-parked') {
+        // Re-screen the rows the model never returned a verdict for. The Health
+        // check's hint has always said these "can be re-run" — until now nothing
+        // could actually do it, so a burst sat at CRITICAL until it aged out of
+        // the 48h window.
+        //
+        // Same predicate as parkedItemCount, so what the check counts is exactly
+        // what this picks up. Verdicts are written onto the EXISTING rows
+        // (hash/url/seen_at untouched), so cards keep their identity and their
+        // coverage instances. Anything the model still won't answer for stays
+        // parked and is reported — never guessed at.
+        const days = Math.max(1, Math.min(Number(req.body?.days) || 2, 7));
+        const limit = Math.max(1, Math.min(Number(req.body?.limit) || 50, 100));
+        const parked = await parkedItems({ days, limit });
+        if (!parked.length) {
+          return res.status(200).json({ ok: true, found: 0, resolved: 0, stillParked: 0, remaining: 0 });
+        }
+        const verdicts = await classify(parked.map((p) => ({
+          hash: p.hash, headline: p.headline, url: p.url, source: p.source,
+          author: p.author ?? null, published_at: p.published_at,
+        })));
+        let resolved = 0, stillParked = 0, kept = 0;
+        for (let i = 0; i < parked.length; i++) {
+          const v = verdicts[i];
+          if (!v || v.category === 'unclassified') { stillParked++; continue; }
+          try {
+            await updateItemVerdict(parked[i].id, {
+              brand: v.brand, sentiment: v.sentiment, country: v.country,
+              category: v.category, summary: v.summary, pr_angle: v.pr_angle,
+              importance: v.importance, confidence: v.confidence,
+              is_relevant: v.is_relevant, deadline: v.deadline ?? null,
+            });
+            resolved++;
+            if (v.is_relevant) kept++;
+          } catch (e) {
+            stillParked++;
+            console.error('reclassify write failed', parked[i].id, e.message);
+          }
+        }
+        let remaining = null;
+        try { remaining = await parkedItemCount({ days }); } catch { remaining = null; }
+        await auditReq(req, who, 'items.reclassify', 'items', { found: parked.length, resolved, kept, stillParked });
+        return res.status(200).json({ ok: true, found: parked.length, resolved, kept, stillParked, remaining });
       }
       if (resource === 'alert-test') {
         // Prove the EMAIL alert path from production — tier wording, recipient

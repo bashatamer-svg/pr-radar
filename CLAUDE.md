@@ -210,6 +210,13 @@ gets nothing. All queries live in `lib/db.js`.
   one item. The prompt now demands exactly one object per input. Deliberately
   never recast an omission as `is_relevant:false`: that silently drops a real
   story the model merely forgot. Pinned by `verify-classify-gaps`.
+  Rows already parked are cleared by **Admin → Tools → "Re-classify parked
+  stories"** (`?resource=reclassify-parked`) — same predicate as
+  `parkedItemCount`, so the Health check and the tool always agree. It PATCHes
+  verdicts onto the existing rows by id (never hash/url/seen_at, so cards keep
+  their identity and coverage) and reports `kept` separately, because a run that
+  rescues a real story must not read like one that swept up wire noise. Pinned by
+  `verify-reclassify-tool`.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
