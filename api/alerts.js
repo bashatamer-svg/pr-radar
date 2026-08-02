@@ -285,14 +285,23 @@ export default async function handler(req, res) {
         : '',
     });
   } else if (!inboxed.total) {
-    add({ id: 'inbox', label: 'Deliverability', state: 'ok', detail: 'nothing sent in the last 26h' });
+    add({
+      id: 'inbox', label: 'Deliverability', state: 'ok',
+      detail: inboxed.scope === 'pr-radar' ? 'no PR Radar sends in the last 26h' : 'nothing sent in the last 26h',
+      hint: inboxed.scope === 'pr-radar'
+        ? 'Counts only mail from RADAR_FROM — the provider account is shared, so the other app\'s sends are excluded. A quiet day with no brief and no alerts legitimately reads zero.'
+        : '',
+    });
   } else {
+    // scope 'pr-radar' = filtered to RADAR_FROM; 'account' = RADAR_FROM unset,
+    // so the account-wide count stands and says so.
+    const who = inboxed.scope === 'pr-radar' ? 'PR Radar send(s)' : 'sent (whole account — set RADAR_FROM to scope this)';
     add({
       id: 'inbox', label: 'Deliverability',
       state: inboxed.bad > 0 ? 'warn' : 'ok',
       detail: inboxed.bad > 0
         ? `${inboxed.bad} of ${inboxed.total} did not reach an inbox`
-        : `${inboxed.total} accepted and delivered (26h)`,
+        : `${inboxed.total} ${who} accepted and delivered (26h)`,
       hint: inboxed.bad > 0
         ? `Statuses: ${Object.entries(inboxed.byStatus).map(([k, v]) => `${k} ${v}`).join(', ')}. A gateway blocking the sending domain shows up here first, and every send would still have looked successful.`
         : '',

@@ -422,7 +422,9 @@ gets nothing. All queries live in `lib/db.js`.
   **byline backfill** (share, not count), **weekly report** (reads `off`, not
   broken, while `REPORT_EMAIL_ENABLED` is unset), **API spend** (month-to-date +
   month-end projection), **deliverability** (the provider's own per-message
-  status — everything else only knows the send was *accepted*), **storage
+  status — everything else only knows the send was *accepted*; scoped to
+  `RADAR_FROM`'s address because the Resend account is shared, so the other
+  app's ~18 daily sends neither pad nor redden this check), **storage
   headroom** (shared DB, shared ceiling), **prompt-cache reuse** (broken caching
   raises the bill with no other symptom). `GET /api/alerts?notify=1` is the push
   — emails only on warn/crit, deduped on the subject for 22h; fired daily 05:45.

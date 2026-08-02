@@ -27,6 +27,7 @@ are **skipped**, the unit suite still runs.
 | One daily brief per day, even with `RADAR_TO` unset | `verify-daily-once` |
 | Severity-5 alerts reach subscribers when `RADAR_TO` is unset | `verify-urgent-recipients` |
 | Admin email alert test reaches only the requesting admin | `verify-alert-test-tool` |
+| Deliverability scoped to PR Radar's sends, not the shared account | `verify-deliverability-scope` |
 | Admin duplicate-finder (scan + merge) | `verify-dupe-tool`, `dedup-jaccard` |
 | Auth / RBAC / audit / password flows | `render-auth` (backend), `render-authui`, `render-adminui` (browser) |
 | Author capture (cascade, AI fallback, ingest-time, backfill, sweep) | `verify-authors`, `verify-ai-author`, `render-poll-author`, `render-author-backfill` |
