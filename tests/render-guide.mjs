@@ -41,6 +41,15 @@ for (const w of [390, 900]) {
     assert.ok(text.includes(rung), `the scale explains its levels: ${rung}`);
   }
   assert.ok(/never below 3/.test(text), 'the Vodafone-negative floor is stated');
+  // The board and the BRIEF have different floors: everything relevant reaches
+  // the board (Impact 1 included — 5 such cards live on 2 Aug), while the daily
+  // brief carries Impact 2 and above. The guide claimed "the board starts at
+  // Impact 2", which sent a reader hunting a filter bug for cards behaving
+  // exactly as designed.
+  assert.ok(!/board starts at/i.test(text), 'the guide no longer claims a board floor that does not exist');
+  assert.ok(!/[Nn]ever reaches the board/.test(text), 'nor that Impact 1 is dropped');
+  assert.ok(/including Impact 1/.test(text), 'it says Impact 1 does reach the board');
+  assert.ok(/Impact 2 and above/.test(text), "and that the daily brief's floor is 2");
   // The 15-minute poll is only PART of the answer — it must name the subset it
   // checks, so nobody reads it as "everything, every quarter hour".
   assert.ok(/10 brand/.test(text), 'the fast poll names the subset it actually checks');

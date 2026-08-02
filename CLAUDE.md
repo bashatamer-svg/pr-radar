@@ -169,7 +169,13 @@ gets nothing. All queries live in `lib/db.js`.
   for Vodafone-negatives. Renaming touched the board, both emails and the guide
   together — `render-lanes` pins the board label + tooltip, `render-email-design`
   the email half, `render-guide` the explanation. `lib/report.js` prints a bare
-  `N/5` and carries no label. **Only 5 alerts in real time**; a 4 waits for the
+  `N/5` and carries no label. **The BOARD and the BRIEF have different floors** —
+  everything `is_relevant` reaches the board, Impact 1 included (5 such cards
+  live 2 Aug); the daily digest filters at `importance >= 2`. The guide claimed
+  "the board starts at Impact 2" and the prompt justified its scoring floor with
+  "so it still reaches the board" — both false, and both sent a reader hunting a
+  filter bug for cards behaving as designed. Pinned by `render-guide`.
+  **Only 5 alerts in real time**; a 4 waits for the
   05:00 brief.
 - **Instant alerts fire on `isInstantAlert` (`lib/email.js`), not on Impact 5.**
   Impact 4-5 **or** any negative *Vodafone* story at any Impact — a bad story
