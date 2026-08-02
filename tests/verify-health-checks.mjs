@@ -40,6 +40,10 @@ let world;
 const freshWorld = () => ({
   bulletinAt: hoursAgo(2),        // brief went out this morning
   digestEligible: 4,              // …and there were stories for it
+  // What the digest WOULD have carried at the last scheduled 05:00Z run.
+  // Defaults to the same number; the false-alarm case below is exactly the
+  // one where these two disagree.
+  digestEligibleAtDue: null,      // null → same as digestEligible
   lastSeen: hoursAgo(1),
   stored24h: 70, relevant24h: 5,
   parked: 0,
@@ -118,7 +122,13 @@ globalThis.fetch = async (url, opts = {}) => {
     if (u.includes('author=is.null')) {
       return countOf(u.includes('seen_at=lt.') ? world.authors[2] : world.authors[1]);
     }
-    if (u.includes('importance=gte.2')) return countOf(world.digestEligible);
+    if (u.includes('importance=gte.2')) {
+      // Two windows are asked for: one ending NOW (no lt), one ending at the
+      // last scheduled run (carries an lt). Only the second can prove a miss.
+      const atDue = u.includes('seen_at=lt.');
+      if (atDue && world.digestEligibleAtDue !== null) return countOf(world.digestEligibleAtDue);
+      return countOf(world.digestEligible);
+    }
     // relevanceBaseline + authorBacklog + ingestSummary share this shape; the
     // baseline windows are the ones carrying BOTH a gte and an lt on seen_at.
     const windowed = u.includes('seen_at=gte.') && u.includes('seen_at=lt.');
@@ -211,6 +221,35 @@ const byId = (out, id) => (out.checks || []).find((c) => c.id === id);
   assert.strictEqual(byId(swallowed, 'bulletin').state, 'crit',
     'stories waiting + no brief in over a day is critical');
   assert.strictEqual(swallowed.status, 'crit', 'and the worst check drives the page badge');
+
+  // …and the case in between, which is the one that actually fired. Stories are
+  // queued NOW, but every one of them landed AFTER the last scheduled run — so
+  // that run had nothing to send and the brief is not late, it is not yet due.
+  // Judged on "stale marker + anything queued" this went CRITICAL at 01:08
+  // Cairo on 3 Aug with 5 queued and 0 that had been available at 05:00Z.
+  world = freshWorld();
+  world.bulletinAt = hoursAgo(11 * 24);
+  world.digestEligible = 5;          // queued right now…
+  world.digestEligibleAtDue = 0;     // …none of them by the last 05:00Z run
+  const notYetDue = (await call()).out;
+  assert.strictEqual(byId(notYetDue, 'bulletin').state, 'ok',
+    'stories that arrived after the scheduled run are not evidence of a missed send');
+  assert.match(byId(notYetDue, 'bulletin').detail, /5 story\(s\) queued for the next brief/,
+    'the queue is still reported, just not as a fault');
+  assert.match(byId(notYetDue, 'bulletin').hint, /goes out at 05:00 UTC/,
+    'and the reader is told when it will go');
+
+  // The mirror image: the run DID have stories and the marker still did not
+  // advance. That is a genuinely swallowed brief, however quiet it is now.
+  world = freshWorld();
+  world.bulletinAt = hoursAgo(11 * 24);
+  world.digestEligible = 0;          // nothing queued at this moment…
+  world.digestEligibleAtDue = 3;     // …but three were waiting when it ran
+  const reallyMissed = (await call()).out;
+  assert.strictEqual(byId(reallyMissed, 'bulletin').state, 'crit',
+    'a run that had stories and did not stamp the marker is still critical');
+  assert.match(byId(reallyMissed, 'bulletin').hint, /had 3 story\(s\) to send/,
+    'and the hint says how many it should have carried');
 }
 
 /* 4 ── the recipient trap: a brief with nowhere to go ───────────────────── */

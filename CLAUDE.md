@@ -396,9 +396,16 @@ gets nothing. All queries live in `lib/db.js`.
   **the daily brief legitimately does not send**. `api/radar.js` builds the
   digest from the last 24h of relevant items at `importance >= 2` and skips both
   send loops when that set is empty — which happened on 1 and 2 Aug. So the
-  bulletin check reads the marker AND `digestEligibleCount()`: stale marker with
-  nothing waiting is `ok`, stale marker with stories waiting is `crit`. Gating on
+  bulletin check reads the marker AND `digestEligibleCount()`. Both halves are
+  measured against the SCHEDULE, not the wall clock: "late" is `marker < the last
+  05:00 UTC run` (`lastBriefDueAt()`, +1h grace so a run in flight is not called
+  late), and the evidence is `digestEligibleCount({until: dueAt})` — what the
+  digest would have carried AT that run. Counting what is queued NOW fired a
+  CRITICAL at 01:08 Cairo on 3 Aug with 5 queued and **0** that had existed at
+  05:00Z: the brief was not late, it was not yet due (live-verified). Gating on
   the marker alone would sit red through every quiet week until nobody read it.
+  `BRIEF_CRON_UTC_HOUR` must track `/api/radar` in `vercel.json` or the check
+  judges against a schedule the app no longer runs.
   **Screening quality is measured over whole weeks**, not 24h-vs-same-weekday
   (which is what RR does): PR Radar's daily relevance rate swings 0.0%–11.9% on
   1–15 relevant stories out of 55–175 scanned, so a day-on-day test is noise.

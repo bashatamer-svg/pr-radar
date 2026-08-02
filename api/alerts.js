@@ -44,6 +44,22 @@ const pct = (r) => `${(r * 100).toFixed(1)}%`;
 const INGEST_WARN_H = 8;
 const INGEST_CRIT_H = 20;
 
+// The daily brief's cron hour (UTC). MUST match `/api/radar` in vercel.json —
+// the brief can only be judged late against the schedule it actually runs on.
+const BRIEF_CRON_UTC_HOUR = 5;
+// A run takes a couple of minutes and cron fires are not to the second, so a
+// check landing right on the hour must not call a brief late while it is still
+// being sent.
+const BRIEF_GRACE_MS = 60 * 60e3;
+
+/** The most recent scheduled brief that has had time to finish, as epoch ms.
+ *  Steps back a day when we are inside the grace window after today's fire. */
+function lastBriefDueAt(now = Date.now()) {
+  const d = new Date(now);
+  const due = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), BRIEF_CRON_UTC_HOUR, 0, 0, 0);
+  return now - due >= BRIEF_GRACE_MS ? due : due - 864e5;
+}
+
 export default async function handler(req, res) {
   const who = await requireRole(req, res, 'admin');
   if (!who) return;   // 401/403 already sent
@@ -55,7 +71,7 @@ export default async function handler(req, res) {
   // Run every probe in parallel; each settles independently so one missing
   // table can't blank the page.
   const [bulletinAt, lastSeen, ingest, parked, broken, log, quality, authors,
-    digestable, subs, usage, inboxed, dbBytes] = await Promise.all([
+    digestable, digestableAtDue, subs, usage, inboxed, dbBytes] = await Promise.all([
       getStateTime('daily_bulletin_sent').catch(() => null),
       lastItemSeenAt().catch(() => undefined),
       ingestSummary({ hours: 24 }).catch(() => null),
@@ -65,6 +81,9 @@ export default async function handler(req, res) {
       relevanceBaseline().catch(() => null),
       authorBacklog().catch(() => null),
       digestEligibleCount({ hours: 24 }).catch(() => null),
+      // What the digest WOULD have carried at the last scheduled run — the only
+      // count that can prove a send was missed.
+      digestEligibleCount({ hours: 24, until: lastBriefDueAt() }).catch(() => null),
       activeSubscribers().catch(() => null),
       monthToDateUsage().catch(() => null),
       recentDeliveryStatus({ hours: 26 }).catch(() => null),
@@ -84,18 +103,26 @@ export default async function handler(req, res) {
     add({ id: 'bulletin', label: 'Daily brief', state: 'unknown', detail: 'could not read the send marker' });
   } else {
     const h = bulletinAt ? hoursSince(new Date(bulletinAt).toISOString()) : null;
-    const waiting = typeof digestable === 'number' ? digestable : null;
-    const late = h == null || h > 26;
-    // Nothing waiting → late is expected, not a fault.
-    const state = !late ? 'ok' : waiting === null ? 'unknown' : waiting > 0 ? 'crit' : 'ok';
+    const queued = typeof digestable === 'number' ? digestable : null;
+    // "Late" is measured against the SCHEDULE, and the evidence is what the
+    // digest would have carried AT that run — not what is queued now. Judging
+    // "stale marker + anything queued" fired a CRITICAL at 01:08 Cairo on 3 Aug
+    // when the 05:00Z run had legitimately had nothing to send and all 5 queued
+    // stories had landed after it (live-verified). The brief was not late; it
+    // was not yet due.
+    const dueAt = lastBriefDueAt();
+    const missed = typeof digestableAtDue === 'number' ? digestableAtDue : null;
+    const late = bulletinAt == null || bulletinAt < dueAt;
+    const state = !late ? 'ok' : missed === null ? 'unknown' : missed > 0 ? 'crit' : 'ok';
     const sent = h == null ? 'no send ever recorded' : `last sent ${fmtAge(h)}`;
+    const nextDue = new Date(dueAt + 864e5).toISOString().slice(11, 16);
     add({
       id: 'bulletin', label: 'Daily brief', state,
-      detail: waiting === null ? sent
-        : `${sent} · ${waiting} story(s) currently clear the Impact-2 bar`,
+      detail: queued === null ? sent
+        : `${sent} · ${queued} story(s) queued for the next brief`,
       hint: state === 'crit'
-        ? 'Stories are waiting and no brief has gone out in over a day. Check the 05:00 UTC cron ran, then that it had recipients — Admin → Subscribers, or RADAR_TO. A stale marker alone is not proof of a missed send: confirm against the email provider before assuming the worst.'
-        : late ? 'Nothing has cleared the Impact-2 bar, so there was no brief to send. This is the pipeline working, not failing.' : '',
+        ? `The ${String(BRIEF_CRON_UTC_HOUR).padStart(2, '0')}:00 UTC run had ${missed} story(s) to send and the marker did not advance. Check the cron ran, then that it had recipients — Admin → Subscribers, or RADAR_TO. A stale marker alone is not proof of a missed send: confirm against the email provider before assuming the worst.`
+        : late ? `Nothing had cleared the Impact-2 bar by the last ${String(BRIEF_CRON_UTC_HOUR).padStart(2, '0')}:00 UTC run, so there was no brief to send — anything queued now goes out at ${nextDue} UTC. This is the pipeline working, not failing.` : '',
     });
   }
 
