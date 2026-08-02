@@ -132,6 +132,19 @@ assert.ok(/Sent to 2 of 2/.test(waMsg), 'whatsapp test result shown: ' + waMsg);
 
 await page.screenshot({ path: new URL('./out/', import.meta.url).pathname + 'admin-users.png', fullPage: true });
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+// PHONE WIDTH. Seven tabs overflowed a 390px viewport and, because the row had
+// no overflow handling of its own, widened the whole DOCUMENT — the page panned
+// sideways and the content cards slid off-screen (live, 2 Aug). The row must
+// scroll within itself; the desktop-width check above can never catch this.
+await page.setViewportSize({ width: 390, height: 844 });
+await page.waitForTimeout(120);
+const phoneOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+assert.ok(phoneOverflow <= 1, `no page-level horizontal overflow at 390px (got ${phoneOverflow}px)`);
+const tabsScroll = await page.$eval('#tabs', (el) => ({ over: el.scrollWidth > el.clientWidth, canScroll: getComputedStyle(el).overflowX }));
+assert.ok(tabsScroll.over, 'the tab row genuinely has more tabs than fit — the guard is exercising the real case');
+assert.strictEqual(tabsScroll.canScroll, 'auto', 'the tab row scrolls within itself instead of widening the page');
+
 await browser.close(); server.close();
 if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }
 if (overflow > 1) { console.error('overflow', overflow); process.exit(1); }
