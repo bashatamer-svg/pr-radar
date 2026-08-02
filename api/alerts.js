@@ -381,13 +381,22 @@ export default async function handler(req, res) {
         : '',
     });
   } else {
+    // A poor ratio only matters while caching is still being REQUESTED. The
+    // window is 24h, so rows from before a change keep the ratio pinned for a
+    // day afterwards — warning all that time about behaviour that has already
+    // stopped is how a check trains its reader to ignore it.
+    const wasteful = cache.ratio < 0.3 && cache.stillCaching;
     add({
       id: 'cache', label: 'Prompt cache',
-      state: cache.ratio < 0.3 ? 'warn' : 'ok',
-      detail: `${(cache.ratio * 100).toFixed(0)}% of cached tokens were reads (${cache.calls} calls)`,
-      hint: cache.ratio < 0.3
+      state: wasteful ? 'warn' : 'ok',
+      detail: cache.ratio < 0.3 && !cache.stillCaching
+        ? `no longer requested — ${cache.calls} earlier call(s) in the 24h window still show 0% reads`
+        : `${(cache.ratio * 100).toFixed(0)}% of cached tokens were reads (${cache.calls} calls)`,
+      hint: wasteful
         ? 'Reuse has collapsed — every call is re-writing the cache. Usually a system block that now varies per call (house knowledge edited mid-run, a timestamp) or runs spaced beyond the cache TTL.'
-        : '',
+        : cache.ratio < 0.3
+          ? 'The most recent call did not touch the cache, so nothing is being wasted now — these are historical rows and they age out of the 24h window on their own.'
+          : '',
     });
   }
 

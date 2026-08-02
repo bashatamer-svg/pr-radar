@@ -105,6 +105,33 @@ const load = async () => (await import(`${new URL('..', import.meta.url).pathnam
   ];
   const eff = cacheEfficiency(warmed);
   assert.ok(eff && eff.ratio > 0.8, `a warmed multi-batch run reads far more than it writes (got ${eff && eff.ratio})`);
+  assert.strictEqual(eff.stillCaching, true, 'and it is still requesting the cache');
+}
+
+// ── a bad ratio must not keep warning after the behaviour has changed ──
+// The window is 24h. Rows written before a fix stay in it for a whole day, so
+// judging on the ratio alone leaves the page amber long after the waste stopped
+// — which is exactly how a check teaches its reader to ignore it.
+{
+  const { cacheEfficiency } = await import(`${new URL('..', import.meta.url).pathname}/lib/usage.js`);
+  const t = (minsAgo) => new Date(Date.now() - minsAgo * 60e3).toISOString();
+  const history = Array.from({ length: 6 }, (_, i) => ({
+    stage: 'classify', created_at: t(300 - i * 10),
+    cache_create_tokens: 5000, cache_read_tokens: 0, input_tokens: 100, output_tokens: 100,
+  }));
+  // Still caching and still 0% → genuinely wasteful.
+  const bad = cacheEfficiency(history);
+  assert.ok(bad.ratio === 0 && bad.stillCaching === true, 'while caching continues, 0% is a live fault');
+
+  // …then the fix lands and later calls stop caching entirely.
+  const after = [...history, ...Array.from({ length: 3 }, (_, i) => ({
+    stage: 'classify', created_at: t(30 - i * 10),
+    cache_create_tokens: 0, cache_read_tokens: 0, input_tokens: 100, output_tokens: 100,
+  }))];
+  const fixed = cacheEfficiency(after);
+  assert.strictEqual(fixed.ratio, 0, 'the historical rows still read 0% — they have not changed');
+  assert.strictEqual(fixed.stillCaching, false,
+    'but the latest call did not touch the cache, so the page can stop calling it a fault');
 }
 
 console.log('PROMPT-CACHE OK — a single-batch run never requests the cache (no premium for a write nothing reads); a multi-batch run warms it on the first call and fans out only after that write lands; an empty run makes no call; and a 0% ratio can only mean a real regression');
