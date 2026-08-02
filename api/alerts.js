@@ -363,7 +363,23 @@ export default async function handler(req, res) {
   //     other symptom on this page or anywhere else.
   const cache = usage ? cacheEfficiency(usage, { hours: 24 }) : null;
   if (!cache) {
-    add({ id: 'cache', label: 'Prompt cache', state: 'unknown', detail: 'not enough cached calls in 24h to judge' });
+    // No cached calls is the NORMAL shape here, not a gap in the data: classify
+    // only requests caching when a run has more than one batch, because a write
+    // that nothing reads back costs more than not caching at all. Say that,
+    // rather than "not enough data" — which reads like something is missing.
+    const classifyCalls = Array.isArray(usage)
+      ? usage.filter((r) => r && r.stage === 'classify' && Date.parse(r.created_at ?? '') > Date.now() - 24 * 36e5).length
+      : 0;
+    add({
+      id: 'cache', label: 'Prompt cache',
+      state: usage ? 'ok' : 'unknown',
+      detail: usage
+        ? `not used — every run was a single batch (${classifyCalls} classify call${classifyCalls === 1 ? '' : 's'} in 24h)`
+        : 'not enough cached calls in 24h to judge',
+      hint: usage
+        ? 'A cache write bills above normal input and only pays back when a later call reads it, and the cache expires in minutes. Single-batch runs are 15+ min apart, so caching is deliberately not requested — it would be a premium paid for nothing. A busy run with several batches caches on the first and reads it on the rest.'
+        : '',
+    });
   } else {
     add({
       id: 'cache', label: 'Prompt cache',

@@ -234,6 +234,18 @@ gets nothing. All queries live in `lib/db.js`.
   their identity and coverage) and reports `kept` separately, because a run that
   rescues a real story must not read like one that swept up wire noise. Pinned by
   `verify-reclassify-tool`.
+- **A prompt cache is only worth ASKING for when a read can follow the write.**
+  The classifier's ~5k-token system block is identical every call, so caching it
+  looks obviously right — but a WRITE bills above normal input and only pays back
+  on a later READ, and the ephemeral cache expires in ~5 minutes. Live 2 Aug,
+  first day `pr_usage` recorded: 26 classify runs, **every one a single batch**,
+  15+ min apart on the urgent poll — 128,364 write tokens, **0** reads. Every
+  call paid the premium and none collected, and Health called it "reuse has
+  collapsed" as though something had broken. `classify()` now asks for the cache
+  ONLY when `chunks.length > 1`, and then awaits the FIRST chunk before fanning
+  out the rest — firing all batches at once races the write and they all miss.
+  Pinned by `verify-prompt-cache`. General rule: a cache that is never read is
+  strictly worse than no cache.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
@@ -451,7 +463,8 @@ gets nothing. All queries live in `lib/db.js`.
   `RADAR_FROM`'s address because the Resend account is shared, so the other
   app's ~18 daily sends neither pad nor redden this check), **storage
   headroom** (shared DB, shared ceiling), **prompt-cache reuse** (broken caching
-  raises the bill with no other symptom). `GET /api/alerts?notify=1` is the push
+  raises the bill with no other symptom; reads `ok — not used` when every run was
+  a single batch, which is the normal shape). `GET /api/alerts?notify=1` is the push
   — emails only on warn/crit, deduped on the subject for 22h; fired daily 05:45.
 6. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
   Supabase MCP read-only SQL (did rows change). `pr_state.daily_bulletin_sent`
