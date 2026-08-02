@@ -101,7 +101,7 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_context` | Admin-editable house knowledge injected into classification |
 | `pr_feed_health` | Per-feed failure streaks (bulletin footer) |
 | `pr_feedback` | In-app feedback form |
-| `pr_alerts` / `pr_usage` | **Optional, NOT applied** — `migrations/2026-08-02-*.sql`. Alert history + per-call token accounting. Without them Admin → Health loses its history and 2 of 12 checks read `unknown`; nothing else changes |
+| `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
 
 RLS is ON with **no policies**: only the service-role key reads/writes; anon
 gets nothing. All queries live in `lib/db.js`.
@@ -139,7 +139,6 @@ gets nothing. All queries live in `lib/db.js`.
 | `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
 | Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (5 active subscribers, 2 Aug). Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy. Set **`OPS_ALERT_TO`** too, or the daily health push records its alert and reaches nobody (it falls back to `RADAR_TO`) |
 | `pr_state.daily_bulletin_sent` | Reads **22 Jul** and that is CORRECT, not drift: the marker now stamps on any send, and nothing has cleared the Impact-2 digest bar since — 0 eligible on 1 and 2 Aug (`pr_items`, verified). Admin → Health reads the two together for exactly this reason |
-| `pr_alerts` / `pr_usage` | **Not applied.** `migrations/2026-08-02-*.sql` are written and idempotent but need a human to run them (hard rule: ask before DDL). Until then Health has no history and the spend + cache checks read `unknown` |
 | `pr_items` | 100 stories parked `unclassified` in the 7 days to 2 Aug (bursts of 6-68 on 25, 28, 29, 30 Jul and 1 Aug). Cause unconfirmed — Health's Classification check now surfaces it; if it keeps bursting, look at the classify batch's error path before the prompt |
 | Meta | `pr_urgent` WhatsApp template submitted 31 Jul, still *In review*. Until Meta approves it every send returns `#132001`. Language is English, so the `en` default is right — if it ever shows "English (US)", set `WHATSAPP_TEMPLATE_LANG=en_US` |
 | `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
