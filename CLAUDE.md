@@ -28,7 +28,7 @@ brief. Everything else relies on the table above.
 
 Daily brand & reputation monitor for **Vodafone Egypt** (vs Orange, WE, e&).
 Scans Egyptian press + Google News RSS, AI-classifies each story (brand, tone,
-reach 1–5, PR angle), serves a live board / trends / date-range reports, and
+Impact 1–5, PR angle), serves a live board / trends / date-range reports, and
 sends email + WhatsApp alerts. Pure ESM Node on Vercel serverless + Supabase
 (PostgREST) + Resend. No framework, no build step. Production:
 `pr-radar.approvalavengers.com` — beta with real users.
@@ -65,7 +65,7 @@ logic into a function file. New pages get a rewrite in `vercel.json`.
 | Cron (vercel.json) | Schedule (UTC) | Notes |
 |---|---|---|
 | `/api/radar` | daily 05:00 | full run: ingest + daily bulletin (`RADAR_TO` + subscribers) + stored-author backfill |
-| `/api/radar?urgentOnly=1` | every 15 min | ingest + severity-5 instant email/WhatsApp; skips bulletin |
+| `/api/radar?urgentOnly=1` | every 15 min | ingest + instant email/WhatsApp for anything `isInstantAlert` (Impact 4-5, or any negative Vodafone story); skips bulletin |
 | `/api/report?period=week&send=1` | Mon 06:00 | no-op unless `REPORT_EMAIL_ENABLED=1` |
 | `/api/geo?send=1` | Mon 07:00 | no-op unless `GEO_ENABLED=1` |
 | `/api/alerts?notify=1` | daily 05:45 | health push — silent unless a check is warn/crit, and deduped on the subject so a chronic problem mails once, not daily |
@@ -126,9 +126,14 @@ gets nothing. All queries live in `lib/db.js`.
 
 ## Deploy flow
 
-- Develop on `prradar/improvements`. **"Merge" = push to BOTH**
-  `claude/pr-radar-improvements-q2yxwr` (preview) **and** `main`
-  (production — auto-deploys via Vercel webhook, ~1–2 min).
+- Develop on `claude/pr-radar-improvements-q2yxwr`. **"Merge" = push that
+  branch (preview) AND `main`** (production — auto-deploys via Vercel webhook,
+  ~1–2 min). A local `prradar/improvements` may linger from an older session;
+  it is not on the remote and nothing deploys from it.
+- **Other sessions push here too** — `claude/pr-radar-health-alerts-8dbe8c`
+  landed Admin → Health on `main` mid-session on 2 Aug. Fetch before pushing and
+  REBASE onto `origin/main` rather than forcing over it, then re-run the suite:
+  the merged tree is what ships, and neither half was tested against the other.
 - Does NOT ship with a deploy: env vars (Vercel dashboard only), DB schema
   (manual SQL, ask first), OG images (committed PNGs; regenerate by script).
 
@@ -138,8 +143,8 @@ gets nothing. All queries live in `lib/db.js`.
 |---|---|
 | `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
 | Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (5 active subscribers, 2 Aug). Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy. Set **`OPS_ALERT_TO`** too, or the daily health push records its alert and reaches nobody (it falls back to `RADAR_TO`) |
-| `pr_state.daily_bulletin_sent` | Reads **22 Jul** and that is CORRECT, not drift: the marker now stamps on any send, and nothing has cleared the Impact-2 digest bar since — 0 eligible on 1 and 2 Aug (`pr_items`, verified). Admin → Health reads the two together for exactly this reason |
-| `pr_items` | 100 stories parked `unclassified` in the 7 days to 2 Aug (bursts of 6-68 on 25, 28, 29, 30 Jul and 1 Aug). Cause unconfirmed — Health's Classification check now surfaces it; if it keeps bursting, look at the classify batch's error path before the prompt |
+| `pr_state.daily_bulletin_sent` | Still **22 Jul** at 2 Aug 22:00 UTC, and still not drift: the marker stamps on any send, and every 05:00Z run since had an empty digest. It should advance on the **3 Aug** run — 5 stories are queued, all of which landed after 2 Aug's run. If it has NOT moved by then, that is a genuine miss; check Resend first (a stale marker is not a missed send) |
+| `pr_items` | **Cause found and fixed 2 Aug** — the bursts (100 parked in the 7 days to 2 Aug) were the classifier omitting items from an otherwise-valid reply, which parsed cleanly and so never retried; see the omission Gotcha. 75 historical rows remain parked in the 7d window and **0 in the last 48h**. Clear the residue with Admin → Tools → "Re-classify parked stories" |
 | Meta | `pr_urgent` WhatsApp template submitted 31 Jul, still *In review*. Until Meta approves it every send returns `#132001`. Language is English, so the `en` default is right — if it ever shows "English (US)", set `WHATSAPP_TEMPLATE_LANG=en_US` |
 | `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
 
@@ -246,6 +251,18 @@ gets nothing. All queries live in `lib/db.js`.
   out the rest — firing all batches at once races the write and they all miss.
   Pinned by `verify-prompt-cache`. General rule: a cache that is never read is
   strictly worse than no cache.
+- **A flex row silently starves its ONE flexible child.** The board header had
+  `.ttl{flex:1}` among `flex:none` siblings, so it absorbed every shortfall —
+  and since `.wrap` caps at 840px the row is over-subscribed at EVERY viewport,
+  not just phones: "PR Radar" rendered `PR Ra…` on desktop and collapsed to a
+  **1px** `P…` on a 390px phone. The document never overflowed, so the existing
+  `scrollWidth > clientWidth` guards saw nothing — the damage was entirely
+  inside the row. Same week, the admin tab row (7 tabs) had the opposite fault:
+  no `overflow-x` of its own, so it widened the whole document and the page
+  panned sideways. Rules: give the row `overflow-x:auto` or give the least
+  important child `display:none`, never let identity text be the flexible one,
+  and test at 390px — `render-header-mobile` asserts nothing renders narrower
+  than its own content. Pinned by `render-header-mobile` + `render-adminui`.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
