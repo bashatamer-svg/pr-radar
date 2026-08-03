@@ -12,6 +12,10 @@ let users = [
 ];
 let audit = [{ id: 1, actor: 'admin@vodafone.com', actor_role: 'admin', action: 'user.add', target: 'viewer@vodafone.com', detail: { role: 'viewer' }, created_at: iso }];
 let requests = [{ id: 5, email: 'newcomer@vodafone.com', created_at: iso }];
+let subs = [
+  { id: 1, email: 'tamer@vodafone.com', name: 'Tamer', categories: null, whatsapp: '201000000001', active: true, created_at: iso },
+  { id: 2, email: 'ops@vodafone.com', name: null, categories: ['network'], whatsapp: null, active: true, created_at: iso },
+];
 let nextId = 6;
 const patched = [];
 
@@ -36,12 +40,16 @@ const server = createServer((req, res) => {
       ] });
       if (view === 'whatsapp-status') return j({ enabled: true, hasToken: true, hasPhoneId: true, recipients: 2, template: 'pr_urgent' });
       if (view === 'feedback') return j([]);
-      return j([]); // subscribers (boot probe)
+      if (view === 'subscribers') return j(subs);
+      return j([]); // boot probe
     }
     if (req.method === 'POST' && resource === 'backfill-authors') { let b = ''; req.on('data', d => b += d); req.on('end', () => j({ ok: true, days: 7, limit: 40, scanned: 3, filled: 2, remaining: 1, unresolved: 1, fetchFailed: 0, noByline: 0, writeFailed: 0, aiEnabled: true })); return; }
     if (req.method === 'POST' && resource === 'whatsapp-test') { let b = ''; req.on('data', d => b += d); req.on('end', () => j({ ok: true, sent: 2, failed: 0, recipients: 2 })); return; }
     if (req.method === 'POST' && resource === 'users') { let b = ''; req.on('data', d => b += d); req.on('end', () => { const row = { id: nextId++, ...JSON.parse(b), active: true, created_at: iso }; users.push(row); audit.unshift({ id: 9, actor: 'admin@vodafone.com', actor_role: 'admin', action: 'user.add', target: row.email, created_at: iso }); j({ ok: true, user: row }); }); return; }
-    if (req.method === 'PATCH') { let b = ''; req.on('data', d => b += d); req.on('end', () => { const body = JSON.parse(b || '{}'); patched.push({ resource, body }); if (resource === 'requests') { requests = requests.filter(x => x.id !== body.id); } nc(); }); return; }
+    if (req.method === 'PATCH') { let b = ''; req.on('data', d => b += d); req.on('end', () => { const body = JSON.parse(b || '{}'); patched.push({ resource, body }); if (resource === 'requests') { requests = requests.filter(x => x.id !== body.id); }
+      const editing = body.name !== undefined || body.categories !== undefined || body.whatsapp !== undefined || body.email !== undefined;
+      if (!resource && editing) { const row = subs.find(x => x.id === body.id); if (row) Object.assign(row, { email: body.email ?? row.email, name: body.name || null, whatsapp: body.whatsapp || null }); return j({ ok: true, subscriber: row }); }
+      nc(); }); return; }
     if (req.method === 'DELETE') { const id = Number(u.searchParams.get('id')); if (resource === 'requests') { requests = requests.filter(x => x.id !== id); } else { users = users.filter(x => x.id !== id); } return nc(); }
   }
   const f = u.pathname === '/admin' ? '/admin.html' : (u.pathname === '/' ? '/index.html' : u.pathname);
@@ -129,6 +137,52 @@ await page.click('#waTestBtn');
 await page.waitForTimeout(250);
 const waMsg = await page.$eval('#waMsg', el => el.textContent);
 assert.ok(/Sent to 2 of 2/.test(waMsg), 'whatsapp test result shown: ' + waMsg);
+
+// ── EDIT an existing subscriber in place ──
+// Before this, changing a name, a category filter or a WhatsApp number meant
+// removing the person and re-adding them — which loses their row and, once the
+// crisis list moved into this table, risks dropping someone from being paged.
+await page.click('.tab[data-tab="subs"]');
+await page.waitForSelector('.row[data-id]', { timeout: 3000 });
+{
+  const firstId = await page.$eval('.row[data-id]', (e) => e.getAttribute('data-id'));
+  await page.click(`.row[data-id="${firstId}"] .x.edit`);
+  await page.waitForSelector('#eEmail', { timeout: 3000 });
+  // The form must arrive PREFILLED — an edit form that starts blank is a
+  // delete-and-retype with extra steps, and silently clears what you skip.
+  const pre = await page.evaluate(() => ({
+    email: document.querySelector('#eEmail').value,
+    wa: document.querySelector('#eWa').value,
+  }));
+  assert.ok(/@/.test(pre.email), `the edit form is prefilled with the current email (got "${pre.email}")`);
+
+  // A too-short number is refused in the browser, before any request.
+  await page.fill('#eWa', '123');
+  await page.click('.row[data-id] .btn.sm');
+  await page.waitForTimeout(120);
+  assert.match(await page.$eval('#eMsg', (e) => e.textContent), /country code/i,
+    'a too-short WhatsApp number is rejected with a reason');
+
+  await page.fill('#eWa', '201234567890');
+  await page.fill('#eName', 'Edited Name');
+  await Promise.all([
+    page.waitForRequest((r) => r.method() === 'PATCH' && /\/api\/admin/.test(r.url()), { timeout: 3000 }),
+    page.click('.row[data-id] .btn.sm'),
+  ]);
+  await page.waitForTimeout(200);
+  assert.strictEqual(await page.$('#eEmail'), null, 'the form closes after a successful save');
+}
+// Cancel must leave the row untouched.
+{
+  const firstId = await page.$eval('.row[data-id]', (e) => e.getAttribute('data-id'));
+  await page.click(`.row[data-id="${firstId}"] .x.edit`);
+  await page.waitForSelector('#eEmail');
+  await page.fill('#eName', 'Should Not Persist');
+  await page.click('.row[data-id] .btn.ghost.sm');
+  await page.waitForTimeout(150);
+  assert.strictEqual(await page.$('#eEmail'), null, 'cancel closes the form');
+  assert.ok(!/Should Not Persist/.test(await page.content()), 'and discards the typing');
+}
 
 await page.screenshot({ path: new URL('./out/', import.meta.url).pathname + 'admin-users.png', fullPage: true });
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

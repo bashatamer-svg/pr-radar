@@ -185,7 +185,27 @@ const maskWa=(n)=>{ const d=String(n||'').replace(/[^\d]/g,''); return d.length<
 const when=(t)=>{ try{ return new Date(t).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit',timeZone:'Africa/Cairo'}); }catch(e){ return ''; } };
 
 /* ── Subscribers ── */
+// Which row is open for editing. Only one at a time: two half-finished forms
+// on screen is how you save the wrong one.
+let EDITING=null;
+function subEditRow(s){
+  const cats=Array.isArray(s.categories)?s.categories.join(', '):'';
+  return `<div class="row" data-id="${s.id}">
+    <div class="who">
+      <div class="form" style="gap:6px">
+        <input id="eEmail" type="email" value="${esc(s.email)}" placeholder="email@vodafone.com" autocomplete="off">
+        <input id="eName" type="text" value="${s.name?esc(s.name):''}" placeholder="Name (optional)" autocomplete="off">
+        <input id="eCats" type="text" value="${esc(cats)}" placeholder="Categories, comma-sep (blank = all)" autocomplete="off">
+        <input id="eWa" type="tel" value="${s.whatsapp?esc(s.whatsapp):''}" placeholder="WhatsApp (blank = not paged)" autocomplete="off">
+        <button class="btn sm" type="button" onclick="saveSub(${s.id})">Save</button>
+        <button class="btn ghost sm" type="button" onclick="cancelEdit()">Cancel</button>
+        <div class="formmsg" id="eMsg"></div>
+      </div>
+    </div>
+  </div>`;
+}
 function subRow(s){
+  if(EDITING===s.id) return subEditRow(s);
   const cats=Array.isArray(s.categories)&&s.categories.length
     ? s.categories.map(c=>`<span class="cat">${esc(c)}</span>`).join('')
     : `<span class="cat all">all categories</span>`;
@@ -196,8 +216,9 @@ function subRow(s){
       <div class="cats">${cats}${s.whatsapp?`<span class="cat wa" title="Also paged on WhatsApp for urgent stories">✆ ${esc(maskWa(s.whatsapp))}</span>`:''}</div>
     </div>
     <div class="acts">
+      <button class="x edit" type="button" title="Edit this subscriber" onclick="editSub(${s.id})">✎</button>
       <button class="toggle" type="button" aria-pressed="${!!s.active}" title="${s.active?'Active — click to pause':'Paused — click to activate'}" onclick="toggleSub(${s.id},this)"></button>
-      <button class="x" type="button" title="Remove subscriber" onclick="removeSub(${s.id})">✕</button>
+      <button class="x del" type="button" title="Remove subscriber" onclick="removeSub(${s.id})">✕</button>
     </div>
   </div>`;
 }
@@ -235,6 +256,28 @@ async function addSub(){
     msg.textContent='Added ✓'; msg.className='formmsg ok';
     await loadSubs();
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; btn.disabled=false; }
+}
+function editSub(id){ EDITING=id; renderSubs(); }
+function cancelEdit(){ EDITING=null; renderSubs(); }
+async function saveSub(id){
+  const msg=$('#eMsg');
+  const body={
+    email:$('#eEmail').value.trim(),
+    name:$('#eName').value.trim(),
+    categories:$('#eCats').value.trim(),
+    // '' is meaningful here: it CLEARS the number. Sending undefined would
+    // leave it untouched, so "I removed their WhatsApp" would silently not.
+    whatsapp:$('#eWa').value.replace(/[^\d]/g,''),
+  };
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)){ msg.textContent='Enter a valid email.'; msg.className='formmsg err'; return; }
+  if(body.whatsapp && body.whatsapp.length<8){ msg.textContent='WhatsApp number needs the country code, digits only.'; msg.className='formmsg err'; return; }
+  msg.textContent='Saving…'; msg.className='formmsg';
+  try{
+    const r=await api({method:'PATCH',body:{id,...body}});
+    if(!r.ok){ const e=await r.json().catch(()=>({})); msg.textContent=e.error||'Failed to save.'; msg.className='formmsg err'; return; }
+    EDITING=null;
+    await loadSubs();
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
 }
 async function toggleSub(id,btn){
   const next=btn.getAttribute('aria-pressed')!=='true';

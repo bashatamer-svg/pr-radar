@@ -105,7 +105,9 @@ await page.waitForTimeout(150);
 assert.strictEqual(subs.find((s) => s.id === 1).active, false, 'toggle off persisted');
 // remove the new subscriber
 const newId = subs.find((s) => s.email === 'new@vodafone.com').id;
-await page.click(`.row[data-id="${newId}"] .x`);
+// Name the button rather than trusting its position — the row gained an Edit
+// icon beside Remove, and an order-dependent selector silently clicked it.
+await page.click(`.row[data-id="${newId}"] .x.del`);
 await page.waitForTimeout(200);
 assert.ok(!subs.find((s) => s.email === 'new@vodafone.com'), 'remove persisted');
 

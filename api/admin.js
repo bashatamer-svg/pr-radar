@@ -15,7 +15,7 @@ import {
   allFeedback, setFeedbackResolved,
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
   recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor, itemsForDupeScan, mergeDuplicateInto,
-  parkedItems, parkedItemCount, updateItemVerdict } from '../lib/db.js';
+  parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
@@ -371,7 +371,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'PATCH') {
-      const { id, active, resolved, role, email, password } = req.body || {};
+      const { id, active, resolved, role, email, password, name, categories, whatsapp } = req.body || {};
       if (id == null) return res.status(400).json({ error: 'id required' });
 
       if (resource === 'requests') {   // approve an access request
@@ -405,6 +405,41 @@ export default async function handler(req, res) {
         return res.status(204).end();
       }
       if (resource === 'feedback') { await setFeedbackResolved(id, resolved); await auditReq(req, who, 'feedback.resolve', id, { resolved: !!resolved }); return res.status(204).end(); }
+
+      // Subscribers: `active` alone is the toggle; anything else is an edit.
+      // Kept apart so the one-click pause stays a 204 and cannot be confused
+      // with a field change that needs validating.
+      const editing = name !== undefined || categories !== undefined || whatsapp !== undefined || email !== undefined;
+      if (editing) {
+        const patch = {};
+        if (email !== undefined) {
+          if (!EMAIL_RE.test(String(email))) return res.status(400).json({ error: 'a valid email is required' });
+          patch.email = email;
+        }
+        if (name !== undefined) patch.name = name;
+        if (categories !== undefined) patch.categories = categories;
+        if (whatsapp !== undefined) {
+          const wa = String(whatsapp || '').replace(/[^\d]/g, '');
+          // '' clears the number; anything present must be dialable, or the
+          // crisis channel silently fails for that person at 3am.
+          if (String(whatsapp || '').trim() && wa.length < 8) {
+            return res.status(400).json({ error: 'WhatsApp number must include the country code, digits only (e.g. 201001234567)' });
+          }
+          patch.whatsapp = wa;
+        }
+        let rows;
+        try {
+          rows = await updateSubscriber(id, patch);
+        } catch (e) {
+          // The unique index on email is the likely failure, and "supabase 409"
+          // tells the admin nothing about what to do.
+          if (/duplicate|unique|409/i.test(e.message)) return res.status(409).json({ error: 'another subscriber already uses that email' });
+          throw e;
+        }
+        await auditReq(req, who, 'subscriber.edit', id, patch);
+        return res.status(200).json({ ok: true, subscriber: Array.isArray(rows) ? rows[0] : rows });
+      }
+
       await setSubscriberActive(id, active);
       await auditReq(req, who, 'subscriber.active', id, { active: !!active });
       return res.status(204).end();
