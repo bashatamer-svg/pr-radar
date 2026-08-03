@@ -65,7 +65,7 @@ const REQUESTED = [
   'almalnews.com', 'alborsaanews.com', 'amwalalghad.com', 'hapijournal.com', 'enterprise.press',
   'dailynewsegypt.com', 'businesstodayegypt.com', 'egypttoday.com', 'youm7.com', 'masrawy.com',
   'almasryalyoum.com', 'elwatannews.com', 'cairo24.com', 'elbalad.news', 'mobtada.com',
-  'dostor.org', 'shorouknews.com', 'gate.ahram.org.eg', 'aitnews.com', 'arabhardware.net',
+  'dostor.org', 'shorouknews.com', 'gate.ahram.org.eg', 'youlyou.com', 'aitnews.com', 'arabhardware.net',
   'telecomreviewafrica.com', 'developingtelecoms.com', 'commsupdate.com', 'adigitalboom.com',
   'zawya.com', 'mubasher.info', 'reuters.com', 'asharqbusiness.com', 'alarabiya.net',
   'cnnbusinessarabic.com', 'arabfinance.com', 'tra.gov.eg', 'mcit.gov.eg', 'egx.com.eg',
