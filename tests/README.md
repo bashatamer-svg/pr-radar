@@ -44,6 +44,7 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |
+| Feed probe — a 200 with no feed says WHY, not just its status | `verify-feed-probe` |
 | Trends leaderboard paging (all outlets/journalists reachable) | `render-leaderboard-pages` |
 | Trends export (Excel workbook, print page with charts) | `render-trends-export` |
 | DB helpers (row-cap warnings) | `db-caps` |

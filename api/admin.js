@@ -191,9 +191,25 @@ export default async function handler(req, res) {
           try {
             if (!r) return { url, ok: false, status: 'timeout' };
             if (!r.ok) return { url, ok: false, status: r.status };
-            const xml = px.parse(await r.text());
+            const body = await r.text();
+            const type = String(r.headers.get('content-type') || '').split(';')[0].trim();
+            let xml = null;
+            try { xml = px.parse(body); } catch { xml = null; }
             const entries = arrOf(xml?.rss?.channel?.item).concat(arrOf(xml?.feed?.entry));
-            if (!entries.length) return { url, ok: false, status: r.status, note: 'parsed, 0 items' };
+            if (!entries.length) {
+              // A 200 with no items is the ONLY informative failure here: the
+              // host answered, so the URL shape is wrong rather than the outlet
+              // being feedless. A bare "tried: 200" sent the last probe's reader
+              // guessing another suffix; name what actually came back instead.
+              const head = body.slice(0, 400).trim().toLowerCase();
+              const roots = xml && typeof xml === 'object' ? Object.keys(xml).filter((k) => k !== '?xml') : [];
+              const note = !body.trim() ? 'empty body'
+                : /^<(!doctype html|html)/.test(head) ? 'HTML page, not a feed'
+                : !xml ? 'not parseable as XML'
+                : (xml.rss || xml.feed) ? 'feed with 0 items'
+                : `XML, root <${roots[0] || '?'}>`;
+              return { url, ok: false, status: r.status, note, type };
+            }
             const withAuthor = entries.filter((e) => e['dc:creator'] || e.author).length;
             const first = entries[0];
             const title = String(first?.title?.['#text'] ?? first?.title ?? '').trim().slice(0, 70);
@@ -225,6 +241,10 @@ export default async function handler(req, res) {
           // the useful part: which ones, where, and do they carry bylines
           feeds: won.map((r) => ({ id: r.id, url: r.url, items: r.items, bylines: r.bylines })),
           failed: out.filter((r) => !r.working).map((r) => r.id),
+          // the ones that ANSWERED but carried no feed — a wrong URL shape, not
+          // a feedless outlet, and so the only group worth another attempt
+          answered: out.filter((r) => !r.working && r.attempts.some((a) => a.note))
+            .map((r) => ({ id: r.id, why: [...new Set(r.attempts.map((a) => a.note).filter(Boolean))].join(' · ') })),
         });
         return res.status(200).json({ probed: out.length, working: out.filter((r) => r.working).length, rows: out });
       }

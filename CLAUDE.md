@@ -71,10 +71,12 @@ logic into a function file. New pages get a rewrite in `vercel.json`.
 | `/api/alerts?notify=1` | daily 05:45 | health push — silent unless a check is warn/crit, and deduped on the subject so a chronic problem mails once, not daily |
 
 Sources (`lib/sources.js`): 10 brand/market Google-News queries (AR+EN) + 7
-site-scoped sweeps covering the team's named outlet list + 13 direct outlet RSS
-feeds (the only ones that carry a byline) = 30 daily. The 15-min urgent poll
-runs the 10 brand queries only. Direct feeds are probe-verified; 31 unverified
-candidates remain staged in `lib/feed-candidates.js`.
+site-scoped sweeps covering the team's named outlet list + 14 direct outlet RSS
+feeds (the only ones that carry a byline) = 31 daily. The 15-min urgent poll
+runs the 10 brand queries only. Direct feeds are probe-verified; 30 unverified
+candidates remain staged in `lib/feed-candidates.js`. The 3 Aug probe promoted
+exactly ONE of 31 (Aitnews, 10/10 bylined) — the staged list is picked over, so
+treat a further sweep of guessed `/rss` and `/feed` suffixes as low-yield.
 
 Integrations: Supabase (service-role key, PostgREST), Anthropic (classifier +
 byline fallback + narrative grouping), Resend (all email), WhatsApp Cloud API
