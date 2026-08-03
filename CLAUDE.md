@@ -219,7 +219,10 @@ gets nothing. All queries live in `lib/db.js`.
   clean send. `whatsappConfigured()` deliberately no longer requires recipients,
   or a list managed entirely in Admin would read "unconfigured". Numbers are
   shown masked (country code + last 4) on the subscriber row and in the check.
-  Pinned by `render-whatsapp`.
+  The WhatsApp message LEADS with the same `urgentTier()` label as the email
+  subject (URGENT / ALERT) — the template's header line is static text and
+  cannot vary per message, so the tier has to live inside `{{1}}`.
+  Pinned by `render-whatsapp` + `render-guide`.
 - **`sendBulletin` with no `to` silently means `RADAR_TO`** — and `RADAR_TO` is
   unset in production, so for every severity-5 story the urgent path threw "no
   recipients", caught it, logged it, and reached nobody. Latent since launch:

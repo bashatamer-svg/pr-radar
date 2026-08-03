@@ -35,6 +35,14 @@ const line = wa.whatsappAlertLine(item);
 const actionLine = wa.whatsappActionLine(item);
 assert.ok(!/[\n\t]/.test(line) && !/[\n\t]/.test(actionLine), 'neither paragraph has newlines/tabs');
 assert.ok(/Vodafone · negative — Vodafone Cash outage spreads nationwide/.test(line), 'brand · sentiment — headline');
+// The tier LEADS, from the same urgentTier() that titles the email — a story
+// must not arrive URGENT in one channel and ALERT in the other. The template's
+// header is static text, so it can only live in the variable.
+assert.ok(/^URGENT · /.test(line), `an Impact-5 story leads with URGENT (got "${line}")`);
+{
+  const soft = wa.whatsappAlertLine({ brand: 'Vodafone', sentiment: 'negative', importance: 2, headline: 'Minor billing gripe' });
+  assert.ok(/^ALERT · /.test(soft), `a low-Impact Vodafone negative leads with ALERT (got "${soft}")`);
+}
 // The action is its OWN paragraph now, not a suffix on the story line — a
 // variable value cannot contain a newline, so two paragraphs need two variables.
 assert.ok(!/Action:/.test(line), 'the story line no longer carries the action');

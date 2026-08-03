@@ -156,6 +156,13 @@ await page.waitForSelector('.row[data-id]', { timeout: 3000 });
   }));
   assert.ok(/@/.test(pre.email), `the edit form is prefilled with the current email (got "${pre.email}")`);
 
+  // The format is the one thing an admin cannot guess — a number entered as
+  // 01012345678 looks right and silently never delivers. Say it on the form.
+  const help = await page.$eval('#content', (e) => e.textContent);
+  assert.ok(/country code/i.test(help), 'the form states that the country code is required');
+  assert.ok(/201012345678/.test(help), 'with a worked Egyptian example');
+  assert.ok(/message the PR Radar number once/i.test(help), 'and the opt-in requirement');
+
   // A too-short number is refused in the browser, before any request.
   await page.fill('#eWa', '123');
   await page.click('.row[data-id] .btn.sm');

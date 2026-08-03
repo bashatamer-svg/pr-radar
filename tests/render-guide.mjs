@@ -41,6 +41,16 @@ for (const w of [390, 900]) {
     assert.ok(text.includes(rung), `the scale explains its levels: ${rung}`);
   }
   assert.ok(/never below 3/.test(text), 'the Vodafone-negative floor is stated');
+  // WhatsApp carries the SAME rule and the SAME tier as the urgent email — one
+  // function decides both, so the guide must not describe them as different
+  // channels with different bars.
+  assert.ok(/WhatsApp/.test(text), 'the WhatsApp channel is described');
+  assert.ok(/WhatsApp message/.test(text), 'and named as a message, not a vague "where configured"');
+  assert.ok(/subscriber row/.test(text), 'the guide says where WhatsApp recipients come from');
+  // The scale used to call Impact 5 "the only level that emails you straight
+  // away" — true when only severity 5 alerted, false since the rule widened to
+  // Impact 4-5 plus any Vodafone negative.
+  assert.ok(!/only level that emails/.test(text), 'the retired "only Impact 5 alerts" claim is gone');
   // The board and the BRIEF have different floors: everything relevant reaches
   // the board (Impact 1 included — 5 such cards live on 2 Aug), while the daily
   // brief carries Impact 2 and above. The guide claimed "the board starts at

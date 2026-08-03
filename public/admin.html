@@ -196,7 +196,7 @@ function subEditRow(s){
         <input id="eEmail" type="email" value="${esc(s.email)}" placeholder="email@vodafone.com" autocomplete="off">
         <input id="eName" type="text" value="${s.name?esc(s.name):''}" placeholder="Name (optional)" autocomplete="off">
         <input id="eCats" type="text" value="${esc(cats)}" placeholder="Categories, comma-sep (blank = all)" autocomplete="off">
-        <input id="eWa" type="tel" value="${s.whatsapp?esc(s.whatsapp):''}" placeholder="WhatsApp (blank = not paged)" autocomplete="off">
+        <input id="eWa" type="tel" value="${s.whatsapp?esc(s.whatsapp):''}" placeholder="WhatsApp — e.g. 201001234567 (blank = not paged)" autocomplete="off">
         <button class="btn sm" type="button" onclick="saveSub(${s.id})">Save</button>
         <button class="btn ghost sm" type="button" onclick="cancelEdit()">Cancel</button>
         <div class="formmsg" id="eMsg"></div>
@@ -227,11 +227,12 @@ function renderSubs(){
   $('#content').innerHTML=`
     <div class="card">
       <h2>Add a subscriber</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 10px">The WhatsApp number is <b>optional</b> — leave it blank and the person just gets the daily brief. Enter it with the <b>country code and no +</b> (Egypt mobile <code>010 1234 5678</code> → <code>201012345678</code>): drop the leading 0 after the country code. Spaces, dashes and a leading + are cleaned up automatically. They must also <b>message the PR Radar number once</b> from their own WhatsApp before they can receive alerts.</div>
       <div class="form">
         <input id="fEmail" type="email" placeholder="email@vodafone.com" autocomplete="off">
         <input id="fName" type="text" placeholder="Name (optional)" autocomplete="off">
         <input id="fCats" type="text" placeholder="Categories, comma-sep (blank = all)" autocomplete="off">
-        <input id="fWa" type="tel" placeholder="WhatsApp (optional, e.g. 201001234567)" autocomplete="off">
+        <input id="fWa" type="tel" placeholder="WhatsApp — country code + number, e.g. 201001234567" autocomplete="off">
         <button class="btn" id="addBtn" type="button">Add</button>
         <div class="formmsg" id="fMsg"></div>
       </div>
@@ -512,7 +513,7 @@ function renderTools(){
     </div>
     <div class="card">
       <h2>WhatsApp urgent alerts</h2>
-      <div class="nm" style="line-height:1.6;margin:0 0 11px">Urgent (importance-5) items are also sent as WhatsApp DMs to each configured recipient (the official API can’t post to a group, so it messages people individually). Configure the number, token, recipients and template in the environment, then send a test to verify delivery.</div>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">The <b>same stories that trigger an instant email</b> — <b>Impact 4 or 5</b>, plus <b>any negative Vodafone story</b> at any Impact — are also sent as WhatsApp DMs, tagged <b>URGENT</b> (Impact 5) or <b>ALERT</b>. The official API can’t post to a group, so it messages people individually. Recipients come from <b>Admin → Subscribers</b> (add a number to a person’s row); <code>WHATSAPP_TO</code> overrides that list when set. The number, token and template stay in the environment.</div>
       <div class="nm" id="waStatus" style="font-weight:700;color:var(--ink-2);margin-bottom:10px">Checking…</div>
       <div class="form">
         <button class="btn" id="waTestBtn" type="button" disabled>Send test alert</button>
