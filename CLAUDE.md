@@ -135,6 +135,14 @@ gets nothing. All queries live in `lib/db.js`.
   landed Admin → Health on `main` mid-session on 2 Aug. Fetch before pushing and
   REBASE onto `origin/main` rather than forcing over it, then re-run the suite:
   the merged tree is what ships, and neither half was tested against the other.
+- **A push to `main` is not proof of a deploy.** The webhook silently missed
+  `9e3fcc7` (3 Aug): `git ls-remote` showed `main` at the new SHA, the BRANCH
+  preview built, and no production build was ever created — so the live site
+  sat on the previous commit and a shipped UI change was simply invisible.
+  Confirm with Vercel MCP `list_deployments`: every commit should appear
+  TWICE, once `target: null` (preview) and once `target: "production"`. One
+  entry alone means it did not ship. Re-trigger with an empty commit pushed to
+  `main` — Vercel needs a new SHA, so re-pushing the same one does nothing.
 - Does NOT ship with a deploy: env vars (Vercel dashboard only), DB schema
   (manual SQL, ask first), OG images (committed PNGs; regenerate by script).
 
