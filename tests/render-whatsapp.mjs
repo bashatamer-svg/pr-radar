@@ -58,7 +58,34 @@ assert.strictEqual(c.body.messaging_product, 'whatsapp', 'messaging_product set'
 assert.strictEqual(c.body.type, 'template', 'sends a template (proactive-safe)');
 assert.strictEqual(c.body.template.name, 'pr_urgent', 'template name from env');
 assert.strictEqual(c.body.template.language.code, 'ar', 'template language from env');
-assert.strictEqual(c.body.template.components[0].parameters[0].text, line, '{{1}} body variable = the alert line');
+const param = c.body.template.components[0].parameters[0];
+assert.strictEqual(param.text, line, 'the body variable carries the alert line');
+// Meta's editor REJECTS positional {{1}}; variables must be NAMED, and a named
+// template must be SENT with parameter_name or the call fails in a way that
+// looks exactly like a missing template (#132001).
+assert.strictEqual(param.parameter_name, 'alert', 'named parameter by default, matching a {{alert}} template');
+
+// An older positional {{1}} template still works — a numeric var name means
+// "send it the old way", so an existing approved template is not orphaned.
+{
+  process.env.WHATSAPP_TEMPLATE_VAR = '1';
+  calls = [];
+  await wa.sendWhatsAppUrgent(item);
+  const p1 = calls[0].body.template.components[0].parameters[0];
+  assert.ok(!('parameter_name' in p1), 'a numeric var name sends the positional form');
+  assert.strictEqual(p1.text, line, 'still carries the alert line');
+  delete process.env.WHATSAPP_TEMPLATE_VAR;
+}
+
+// The name is taken verbatim from the env, so it can match whatever Meta approved.
+{
+  process.env.WHATSAPP_TEMPLATE_VAR = 'alert_line';
+  calls = [];
+  await wa.sendWhatsAppUrgent(item);
+  assert.strictEqual(calls[0].body.template.components[0].parameters[0].parameter_name, 'alert_line',
+    'the variable name comes from WHATSAPP_TEMPLATE_VAR');
+  delete process.env.WHATSAPP_TEMPLATE_VAR;
+}
 assert.deepStrictEqual(wa.whatsappRecipients().sort(), ['201000000001', '201000000002'].sort(), 'digits-only recipients');
 
 // ── API error → fail-soft (counted, never throws) ──
