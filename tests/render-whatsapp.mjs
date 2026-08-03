@@ -112,6 +112,66 @@ r = await wa.sendWhatsAppUrgent(item);
 assert.strictEqual(r.sent, 0, 'API error: none counted as sent');
 assert.strictEqual(r.failed, 2, 'API error: both counted as failed');
 
+// ── recipients come from Admin → Subscribers when WHATSAPP_TO is unset ──
+// The env var needs a Vercel edit AND a redeploy, so in practice the list never
+// changed: on 3 Aug it held ONE number while the daily brief reached five
+// people — the channel added for speed reached the fewest readers.
+{
+  delete process.env.WHATSAPP_TO;
+  const realFetch = globalThis.fetch;
+  let askedForSubs = false;
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes('/rest/v1/pr_subscribers')) {
+      askedForSubs = true;
+      // `active=is.true` and `whatsapp=not.is.null` must both be in the query —
+      // a paused person must not be paged, and a row without a number must not
+      // become an empty recipient.
+      assert.ok(/active=is\.true/.test(u), `only active subscribers are paged (${u})`);
+      assert.ok(/whatsapp=not\.is\.null/.test(u), `rows without a number are excluded (${u})`);
+      return { ok: true, status: 200, text: async () => JSON.stringify([
+        { whatsapp: '201000000003' }, { whatsapp: '+20 100 000 0004' },
+      ]) };
+    }
+    return realFetch(url, opts);
+  };
+  calls = []; apiOk = true;
+  const sub = await wa.sendWhatsAppUrgent(item);
+  assert.ok(askedForSubs, 'with no WHATSAPP_TO it reads the subscriber list');
+  assert.strictEqual(sub.sent, 2, 'both subscribers with a number were messaged');
+  assert.deepStrictEqual(calls.map((c) => c.body.to).sort(), ['201000000003', '201000000004'],
+    'and a pasted "+20 100 …" is normalised to digits');
+
+  // A DB failure must not silence the channel without saying so.
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url).includes('/rest/v1/pr_subscribers')) throw new Error('db down');
+    return realFetch(url, opts);
+  };
+  calls = [];
+  const none = await wa.sendWhatsAppUrgent(item);
+  assert.strictEqual(none.sent, 0, 'nothing is sent when the list cannot be read');
+  assert.strictEqual(none.skipped, 'no recipients', 'and it is reported as skipped, not as a clean send');
+  assert.strictEqual(calls.length, 0, 'no API call is made');
+
+  globalThis.fetch = realFetch;
+  process.env.WHATSAPP_TO = '201000000001, +2010-0000-0002 , bad';
+}
+
+// ── WHATSAPP_TO still overrides, so a curated crisis list stays possible ──
+{
+  let askedForSubs = false;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url).includes('/rest/v1/pr_subscribers')) askedForSubs = true;
+    return realFetch(url, opts);
+  };
+  calls = [];
+  await wa.sendWhatsAppUrgent(item);
+  assert.ok(!askedForSubs, 'the subscriber list is not consulted when WHATSAPP_TO is set');
+  assert.strictEqual(calls.length, 2, 'the env list is used verbatim');
+  globalThis.fetch = realFetch;
+}
+
 // ── status shape for the admin UI ──
 const st = wa.whatsappStatus();
 assert.deepStrictEqual([st.enabled, st.hasToken, st.hasPhoneId, st.recipients, st.template], [true, true, true, 2, 'pr_urgent'], 'status reflects env');

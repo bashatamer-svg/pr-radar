@@ -79,6 +79,7 @@
   .cats{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
   .cat{font-size:10px;font-family:var(--mono);background:var(--hair-2);color:var(--ink-2);padding:2px 7px;border-radius:6px}
   .cat.all{background:var(--pos-bg);color:var(--pos)}
+  .cat.wa{background:#e9f7ef;color:#0c7a43;font-family:var(--sans);font-weight:700}
   .row .acts{flex:none;display:flex;gap:6px;align-items:center}
   .toggle{cursor:pointer;border:1px solid var(--hair);background:var(--card);border-radius:20px;width:42px;height:24px;position:relative;flex:none}
   .toggle::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--faint);transition:all .15s}
@@ -179,6 +180,8 @@ async function afetch(path,opts={},_retried){
 
 let TAB='subs', SUBS=[], FB=[], USERS=[], AUDIT=[], REQ=[], HEALTH=null;
 const api=(opts)=>afetch(`/api/admin${opts.q?opts.q.replace(/^&/,'?'):''}`,{method:opts.method||'GET',headers:opts.body?{'Content-Type':'application/json'}:undefined,body:opts.body?JSON.stringify(opts.body):undefined});
+// Recognisable, not a directory: country code + last four.
+const maskWa=(n)=>{ const d=String(n||'').replace(/[^\d]/g,''); return d.length<=6?d:`${d.slice(0,2)}${'•'.repeat(Math.max(2,d.length-6))}${d.slice(-4)}`; };
 const when=(t)=>{ try{ return new Date(t).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit',timeZone:'Africa/Cairo'}); }catch(e){ return ''; } };
 
 /* ── Subscribers ── */
@@ -190,7 +193,7 @@ function subRow(s){
     <div class="who">
       <div class="em">${esc(s.email)}</div>
       <div class="nm">${s.name?esc(s.name):'—'} · added ${when(s.created_at)}</div>
-      <div class="cats">${cats}</div>
+      <div class="cats">${cats}${s.whatsapp?`<span class="cat wa" title="Also paged on WhatsApp for urgent stories">✆ ${esc(maskWa(s.whatsapp))}</span>`:''}</div>
     </div>
     <div class="acts">
       <button class="toggle" type="button" aria-pressed="${!!s.active}" title="${s.active?'Active — click to pause':'Paused — click to activate'}" onclick="toggleSub(${s.id},this)"></button>
@@ -207,12 +210,13 @@ function renderSubs(){
         <input id="fEmail" type="email" placeholder="email@vodafone.com" autocomplete="off">
         <input id="fName" type="text" placeholder="Name (optional)" autocomplete="off">
         <input id="fCats" type="text" placeholder="Categories, comma-sep (blank = all)" autocomplete="off">
+        <input id="fWa" type="tel" placeholder="WhatsApp (optional, e.g. 201001234567)" autocomplete="off">
         <button class="btn" id="addBtn" type="button">Add</button>
         <div class="formmsg" id="fMsg"></div>
       </div>
     </div>
     <div class="card">
-      <h2>Subscribers · ${active} active / ${SUBS.length} total</h2>
+      <h2>Subscribers · ${active} active / ${SUBS.length} total · ${SUBS.filter(s=>s.active&&s.whatsapp).length} on WhatsApp</h2>
       ${SUBS.length?SUBS.map(subRow).join(''):`<div class="empty">No subscribers yet.<br>Add one above — a subscriber with no categories gets the full daily brief.</div>`}
     </div>`;
   $('#addBtn').onclick=addSub;
@@ -220,11 +224,13 @@ function renderSubs(){
 }
 async function addSub(){
   const email=$('#fEmail').value.trim(), name=$('#fName').value.trim(), categories=$('#fCats').value.trim();
+  const whatsapp=$('#fWa').value.replace(/[^\d]/g,'');
   const msg=$('#fMsg'), btn=$('#addBtn');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent='Enter a valid email.'; msg.className='formmsg err'; return; }
+  if(whatsapp && whatsapp.length<8){ msg.textContent='WhatsApp number looks too short — use country code, digits only.'; msg.className='formmsg err'; return; }
   btn.disabled=true;
   try{
-    const r=await api({method:'POST',body:{email,name,categories}});
+    const r=await api({method:'POST',body:{email,name,categories,whatsapp}});
     if(!r.ok){ const e=await r.json().catch(()=>({})); msg.textContent=e.error||'Failed to add.'; msg.className='formmsg err'; btn.disabled=false; return; }
     msg.textContent='Added ✓'; msg.className='formmsg ok';
     await loadSubs();

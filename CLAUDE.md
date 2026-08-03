@@ -97,11 +97,12 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_instances` | Every outlet that ran the story (coverage spread), FK → items |
 | `pr_users` / `pr_audit` | Sign-in allowlist + roles; audit trail. **Live-only: missing from schema.sql** (see Drift) |
 | `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency) |
-| `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users) |
+| `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users). `whatsapp` NULL (never '') = not paged; `active` gates BOTH channels |
 | `pr_context` | Admin-editable house knowledge injected into classification |
 | `pr_feed_health` | Per-feed failure streaks (bulletin footer) |
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
+| `pr_subscribers.whatsapp` | **Applied 3 Aug** via Supabase MCP with user approval, from `migrations/2026-08-03-pr-subscribers-whatsapp.sql` |
 
 RLS is ON with **no policies**: only the service-role key reads/writes; anon
 gets nothing. All queries live in `lib/db.js`.
@@ -207,6 +208,18 @@ gets nothing. All queries live in `lib/db.js`.
   failure is returned as `{sent, failed}` and logged per address, never thrown.
   The return spreads the first Resend response so `.id` still works. Pinned by
   `send-guard` + `verify-urgent-recipients` + `verify-health-checks`.
+- **The WhatsApp crisis list lives in Admin → Subscribers**, not in an env var.
+  `WHATSAPP_TO` needed a Vercel edit AND a redeploy, so in practice it never
+  changed: on 3 Aug it held ONE number while the daily brief reached five people
+  — the channel added for speed reached the fewest readers, and no screen said
+  so. `resolveWhatsappRecipients()` reads `whatsappSubscribers()` (active AND
+  `whatsapp not null`), with `WHATSAPP_TO` still winning when set so a curated
+  crisis list stays possible. Credentials present but nobody to send to now
+  SCREAMS and returns `skipped:'no recipients'` — it used to look identical to a
+  clean send. `whatsappConfigured()` deliberately no longer requires recipients,
+  or a list managed entirely in Admin would read "unconfigured". Numbers are
+  shown masked (country code + last 4) on the subscriber row and in the check.
+  Pinned by `render-whatsapp`.
 - **`sendBulletin` with no `to` silently means `RADAR_TO`** — and `RADAR_TO` is
   unset in production, so for every severity-5 story the urgent path threw "no
   recipients", caught it, logged it, and reached nobody. Latent since launch:

@@ -355,12 +355,17 @@ export default async function handler(req, res) {
         await auditReq(req, who, 'user.add', String(email).toLowerCase(), { role: role === 'admin' ? 'admin' : 'viewer' });
         return res.status(200).json({ ok: true, user });
       }
-      const { email, name, categories } = req.body || {};
+      const { email, name, categories, whatsapp } = req.body || {};
       if (!email || !EMAIL_RE.test(String(email))) return res.status(400).json({ error: 'a valid email is required' });
+      // Reject a too-short number rather than storing something that will never
+      // deliver: a silent non-delivery on the crisis channel is the failure this
+      // whole area exists to prevent.
+      const wa = String(whatsapp || '').replace(/[^\d]/g, '');
+      if (whatsapp && wa.length < 8) return res.status(400).json({ error: 'WhatsApp number must include the country code, digits only (e.g. 201001234567)' });
       const cats = Array.isArray(categories)
         ? categories.map((c) => String(c).trim()).filter(Boolean)
         : (typeof categories === 'string' ? categories.split(',').map((c) => c.trim()).filter(Boolean) : []);
-      const rows = await addSubscriber({ email, name, categories: cats });
+      const rows = await addSubscriber({ email, name, categories: cats, whatsapp: wa });
       await auditReq(req, who, 'subscriber.add', String(email).toLowerCase(), null);
       return res.status(200).json({ ok: true, subscriber: Array.isArray(rows) ? rows[0] : rows });
     }
