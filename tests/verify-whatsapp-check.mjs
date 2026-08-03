@@ -53,6 +53,7 @@ const check = async () => {
   TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
   const d = await check();
   assert.match(d.verdict, /^ready/, `an approved match reads ready (got "${d.verdict}")`);
+  assert.strictEqual(d.state, 'ready', 'and is flagged ready for the UI to colour green');
   assert.strictEqual(d.waba.id, 'WABA_NEW', 'and names the account it checked');
   assert.strictEqual(d.phone.display_phone_number, '+20 10 0000 0000', 'the sender number is reported back');
   // The whole point of the diagnostic is to be pasteable — it must not leak.
@@ -64,16 +65,25 @@ const check = async () => {
 {
   TEMPLATES = [{ name: 'pr_urgent', language: 'en_US', status: 'APPROVED', category: 'UTILITY' }];
   const d = await check();
-  assert.ok(!/^ready/.test(d.verdict), 'a language mismatch is not "ready"');
+  assert.strictEqual(d.state, 'error', 'a language mismatch IS something to fix');
   assert.match(d.verdict, /en_US \(APPROVED\)/, 'it names the language that DOES exist');
   assert.match(d.verdict, /WHATSAPP_TEMPLATE_LANG/, 'and the env var that fixes it');
 }
 
-// ── still in review ──
+// ── still in review, in the RIGHT language ──
+// The live case on 3 Aug. The account, the name and the language were all
+// already correct and the only thing missing was Meta's approval — but the
+// verdict lumped this in with a language mismatch and told the admin to change
+// WHATSAPP_TEMPLATE_LANG, sending them after a config problem that did not
+// exist. "Not ready yet" and "you have something to fix" are different states.
 {
   TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'PENDING', category: 'UTILITY' }];
   const d = await check();
-  assert.match(d.verdict, /PENDING/, 'an unapproved template is reported as such, not as missing');
+  assert.strictEqual(d.state, 'waiting', 'a pending review is its own state, not an error');
+  assert.match(d.verdict, /PENDING/, 'the status is named');
+  assert.match(d.verdict, /Nothing to fix/i, 'and the reader is told there is nothing to configure');
+  assert.ok(!/Set WHATSAPP_TEMPLATE_LANG/.test(d.verdict),
+    'it must NOT suggest changing the language when the language already matches');
 }
 
 // ── the number points at an account that has no such template ──

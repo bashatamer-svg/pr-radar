@@ -102,21 +102,37 @@ export default async function handler(req, res) {
           templatesError = 'could not work out which WhatsApp Business Account this number belongs to — set WHATSAPP_WABA_ID to check templates';
         }
         // 4. does what we send actually exist there, in that language?
+        // `state` separates "you have something to fix" from "Meta has not
+        // finished reviewing yet". Collapsing the two told the admin to change
+        // WHATSAPP_TEMPLATE_LANG when the language already matched and the only
+        // thing missing was approval — sending them after a config problem that
+        // did not exist.
         const byName = (templates || []).filter((t) => t.name === cfg.template);
-        const exact = byName.find((t) => t.language === lang && t.status === 'APPROVED') || null;
-        let verdict;
-        if (!templates) verdict = 'could not read the template list';
-        else if (exact) verdict = `ready — "${cfg.template}" is APPROVED in "${lang}" on this account`;
-        else if (!byName.length) verdict = `no template named "${cfg.template}" on this account. Templates do not transfer between accounts — create it here, or point WHATSAPP_PHONE_ID at the account that has it.`;
-        else {
+        const sameLang = byName.filter((t) => t.language === lang);
+        const exact = sameLang.find((t) => t.status === 'APPROVED') || null;
+        let verdict, state;
+        if (!templates) {
+          verdict = 'could not read the template list'; state = 'error';
+        } else if (exact) {
+          verdict = `ready — "${cfg.template}" is APPROVED in "${lang}" on this account`; state = 'ready';
+        } else if (!byName.length) {
+          verdict = `no template named "${cfg.template}" on this account. Templates do not transfer between accounts — create it here, or point WHATSAPP_PHONE_ID at the account that has it.`;
+          state = 'error';
+        } else if (sameLang.length) {
+          // Right name, right language, just not approved. Nothing to configure.
+          const st = [...new Set(sameLang.map((t) => t.status))].join(', ');
+          verdict = `waiting on Meta — "${cfg.template}" is on this account in "${lang}" and is ${st}. Nothing to fix: the language and account are already correct. Sends fail until Meta marks it APPROVED, usually within a few hours.`;
+          state = 'waiting';
+        } else {
           const opts = byName.map((t) => `${t.language} (${t.status})`).join(', ');
-          verdict = `"${cfg.template}" exists here but not as APPROVED/"${lang}". Available: ${opts}. Set WHATSAPP_TEMPLATE_LANG to the matching code.`;
+          verdict = `"${cfg.template}" is on this account but not in "${lang}". Available: ${opts}. Set WHATSAPP_TEMPLATE_LANG to the matching code.`;
+          state = 'error';
         }
         return res.status(200).json({
           config: { ...cfg, lang, graphVersion: ver },
           phone: phoneRes.ok ? phoneRes.body : { error: phoneRes.error, code: phoneRes.code },
           waba: wabaId ? { id: wabaId, source: wabaSource } : null,
-          templates, templatesError, verdict,
+          templates, templatesError, verdict, state,
         });
       }
       if (resource === 'find-dupes') {

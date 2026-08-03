@@ -541,8 +541,10 @@ async function runWhatsappCheck(){
     const r=await api({q:'&view=whatsapp-check'});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; btn.disabled=false; btn.textContent=label; return; }
-    const ready=/^ready/.test(d.verdict||'');
-    msg.className='formmsg '+(ready?'ok':'err'); msg.textContent=d.verdict||'';
+    // 'waiting' is Meta's review queue, not a fault — colouring it red sent the
+    // reader after a config problem that did not exist.
+    msg.className='formmsg '+(d.state==='ready'?'ok':d.state==='waiting'?'':'err');
+    msg.textContent=d.verdict||'';
     const rows=[];
     if(d.phone&&!d.phone.error){
       rows.push(`<div class="row"><div class="who"><div class="em">${esc(d.phone.display_phone_number||d.phone.id)}</div>
