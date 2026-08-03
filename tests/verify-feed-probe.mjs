@@ -98,6 +98,40 @@ const first = (id) => FEED_CANDIDATES.find((c) => c.id === id).urls[0];
   assert.strictEqual(d.rows[0].attempts[0].note, 'empty body', 'an empty response says so');
 }
 
+// ── autodiscovery: when the page IS HTML, follow the feed it declares ──
+// The point of the whole exercise. A site that publishes a feed says so in its
+// head, and reading that tag is how every feed reader finds one — whereas this
+// file's history is 28 candidates disproven by guessing suffixes at pages that
+// were declaring the answer the entire time.
+{
+  const page = `<html><head>
+    <link rel="stylesheet" href="/a.css">
+    <link rel="alternate" type="application/rss+xml" title="Youlyou" href="/feeds/news.xml">
+  </head><body>news</body></html>`;
+  BODIES = {
+    [first('youlyou')]: { body: page, type: 'text/html' },
+    'https://www.youlyou.com/feeds/news.xml': { body: FEED, type: 'application/rss+xml' },
+  };
+  const d = await probe('youlyou');
+  const row = d.rows[0];
+  assert.strictEqual(row.working, true, 'a declared feed is found even though no staged URL worked');
+  assert.strictEqual(row.url, 'https://www.youlyou.com/feeds/news.xml',
+    'the RELATIVE href is resolved against the page it was declared on');
+  assert.strictEqual(row.items, 1, 'and the discovered feed is really parsed');
+  const won = row.attempts.find((a) => a.ok);
+  assert.strictEqual(won.viaDiscovery, true, 'the win is marked as discovered, not as a lucky guess');
+  // A stylesheet link is also <link rel=…>; only feed types may be followed.
+  assert.ok(!row.attempts.some((a) => a.url.endsWith('.css')), 'non-feed <link> tags are ignored');
+}
+
+// ── a page that declares nothing stays a plain failure ──
+{
+  BODIES = { [first('youlyou')]: { body: '<html><head></head><body>news</body></html>', type: 'text/html' } };
+  const d = await probe('youlyou');
+  assert.strictEqual(d.rows[0].working, false, 'no declaration, no feed');
+  assert.ok(!d.rows[0].attempts.some((a) => a.viaDiscovery), 'and nothing extra was fetched');
+}
+
 // ── a 404 carries NO note: there is nothing to diagnose ──
 // The note is the signal that a URL is worth another attempt; attaching one to
 // a dead host would drown the six that matter in the twenty-four that don't.
@@ -109,4 +143,4 @@ const first = (id) => FEED_CANDIDATES.find((c) => c.id === id).urls[0];
   assert.strictEqual(a.note, undefined, 'and carries no note');
 }
 
-console.log('FEED-PROBE OK — a working feed reports items + bylines + a sample; a 200 with no feed names WHY (HTML page / XML root / empty feed / empty body) instead of reading like a dead host, and a 404 stays noteless');
+console.log('FEED-PROBE OK — a working feed reports items + bylines + a sample; a 200 with no feed names WHY (HTML page / XML root / empty feed / empty body) instead of reading like a dead host; an HTML page is re-read for the feed it DECLARES and that feed followed (relative hrefs resolved, non-feed <link> tags ignored); and a 404 stays noteless');

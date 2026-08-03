@@ -720,10 +720,10 @@ async function runFeedProbe(){
         <div style="margin-top:12px"><div class="nm" style="font-weight:800;text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;color:var(--faint)">${esc(kind)}</div>
         ${rows.map(x=>`<div style="border-top:1px solid var(--hair);padding:7px 0;font-size:12px">
           <b style="color:${x.working?'#0c7a43':'#b60009'}">${x.working?'✓ feed':'✗ none'}</b> · <b>${esc(x.name)}</b>
-          ${x.working?`· ${x.items} items${x.bylines?` · <b>${x.bylines} with byline</b>`:' · no bylines'}`:''}
+          ${x.working?`· ${x.items} items${x.bylines?` · <b>${x.bylines} with byline</b>`:' · no bylines'}${(x.attempts||[]).some(a=>a.ok&&a.viaDiscovery)?' · <b>the page declared it</b>':''}`:''}
           ${x.working?`<div class="nm" style="font-size:11px;color:var(--faint);word-break:break-all">${esc(x.url)}</div>
             <div dir="auto" class="nm" style="font-size:11px;color:var(--muted)">${esc(x.sample||'')}</div>`
-            :`<div class="nm" style="font-size:11px;color:var(--faint)">tried: ${esc((x.attempts||[]).map(a=>a.note?`${a.status} — ${a.note}`:`${a.status}`).join(' · '))}</div>`}
+            :`<div class="nm" style="font-size:11px;color:var(--faint)">tried: ${esc((x.attempts||[]).map(a=>`${a.viaDiscovery?'↳ ':''}${a.status}${a.note?` — ${a.note}`:''}`).join(' · '))}</div>`}
         </div>`).join('')}</div>`).join('');
     }
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }

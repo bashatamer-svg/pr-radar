@@ -183,6 +183,24 @@ export default async function handler(req, res) {
             } });
           } finally { clearTimeout(t); }
         };
+        // Feed AUTODISCOVERY. A site that publishes a feed almost always
+        // declares it in the page head:
+        //   <link rel="alternate" type="application/rss+xml" href="…">
+        // That is the mechanism every feed reader uses, and asking the page
+        // beats guessing suffixes at it — guessing is what left 28 candidates
+        // disproven and the list empty. So whenever a candidate URL turns out
+        // to be an HTML page, read what that page says its feed is.
+        const discoverFeeds = (html, base) => {
+          const out = [];
+          for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
+            if (!/rel\s*=\s*["']?[^"'>]*\balternate\b/i.test(tag)) continue;
+            if (!/type\s*=\s*["']?application\/(rss|atom)\+xml/i.test(tag)) continue;
+            const href = tag.match(/href\s*=\s*["']([^"']+)["']/i);
+            if (!href) continue;
+            try { out.push(new URL(href[1], base).href); } catch { /* skip a malformed href */ }
+          }
+          return [...new Set(out)].slice(0, 3);   // bounded: a page can declare many
+        };
         const probe = async (url) => {
           let r = null;
           try { r = await fetchAs(url, UAS[0], 5000); } catch { r = null; }
@@ -208,7 +226,8 @@ export default async function handler(req, res) {
                 : !xml ? 'not parseable as XML'
                 : (xml.rss || xml.feed) ? 'feed with 0 items'
                 : `XML, root <${roots[0] || '?'}>`;
-              return { url, ok: false, status: r.status, note, type };
+              const discovered = note === 'HTML page, not a feed' ? discoverFeeds(body, url) : [];
+              return { url, ok: false, status: r.status, note, type, ...(discovered.length ? { discovered } : {}) };
             }
             const withAuthor = entries.filter((e) => e['dc:creator'] || e.author).length;
             const first = entries[0];
@@ -229,6 +248,19 @@ export default async function handler(req, res) {
               const r = await probe(u);
               attempts.push(r);
               if (r.ok) { win = r; break; }
+            }
+            // Nothing staged worked, but a page may have TOLD us where its feed
+            // is. Follow that before giving up — it is the difference between
+            // "this outlet has no feed" and "we guessed the wrong path".
+            if (!win) {
+              const declared = [...new Set(attempts.flatMap((a) => a.discovered || []))]
+                .filter((u) => !c.urls.includes(u));
+              for (const u of declared) {
+                const r = await probe(u);
+                r.viaDiscovery = true;
+                attempts.push(r);
+                if (r.ok) { win = r; break; }
+              }
             }
             out.push({ id: c.id, name: c.name, kind: c.kind, working: !!win, ...(win || {}), attempts });
           }
