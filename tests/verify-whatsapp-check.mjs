@@ -1,0 +1,105 @@
+// Admin → Tools → "Check account & template".
+//
+// WhatsApp error #132001 says "template does not exist in that language" for
+// THREE different mistakes, and cannot tell them apart:
+//   * the template is not approved yet
+//   * the language code differs (en vs en_US)
+//   * WHATSAPP_PHONE_ID belongs to a DIFFERENT WhatsApp Business Account from
+//     the one the template lives on — templates do not transfer between
+//     accounts, which is exactly what happens when a second WABA is created
+// The sandbox has no route to graph.facebook.com, so the only way to tell is to
+// ask Meta from production. This pins each verdict, and that the token is never
+// echoed back to the browser.
+import assert from 'node:assert';
+
+process.env.CRON_SECRET = 'admin';
+process.env.SUPABASE_URL = 'https://fake.supabase.co';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'k';
+process.env.WHATSAPP_ENABLED = '1';
+process.env.WHATSAPP_TOKEN = 'super-secret-token';
+process.env.WHATSAPP_PHONE_ID = '111222333';
+process.env.WHATSAPP_TO = '201000000000,201111111111';
+
+const PHONE = { id: '111222333', display_phone_number: '+20 10 0000 0000', verified_name: 'PR Radar', quality_rating: 'GREEN' };
+let TEMPLATES = [];
+let resolveWaba = true;
+
+globalThis.fetch = async (url, opts = {}) => {
+  const u = String(url);
+  const ok = (b) => ({ ok: true, status: 200, json: async () => b, text: async () => JSON.stringify(b) });
+  if (u.includes('/rest/v1/')) return ok([]);
+  if (!u.includes('graph.facebook.com')) throw new Error('unexpected fetch ' + u);
+  // The token must travel in the header, never in the query string.
+  assert.ok((opts.headers?.Authorization || '').includes(process.env.WHATSAPP_TOKEN), 'graph call is authorised');
+  assert.ok(!u.includes(process.env.WHATSAPP_TOKEN), 'the token is never put in the URL');
+  if (u.includes('whatsapp_business_account')) {
+    return resolveWaba ? ok({ id: PHONE.id, whatsapp_business_account: { id: 'WABA_NEW', name: 'PR Radar' } })
+      : { ok: false, status: 400, json: async () => ({ error: { message: 'nonexisting field', code: 100 } }), text: async () => '' };
+  }
+  if (u.includes('/message_templates')) return ok({ data: TEMPLATES });
+  return ok(PHONE);
+};
+
+const { default: handler } = await import(new URL('..', import.meta.url).pathname + '/api/admin.js');
+const check = async () => {
+  let out;
+  const res = { status: () => res, json: (b) => { out = b; return res; }, setHeader() {}, end() {} };
+  await handler({ method: 'GET', query: { view: 'whatsapp-check' }, headers: { authorization: 'Bearer admin' } }, res);
+  return out;
+};
+
+// ── the template is there and approved in the language we send ──
+{
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
+  const d = await check();
+  assert.match(d.verdict, /^ready/, `an approved match reads ready (got "${d.verdict}")`);
+  assert.strictEqual(d.waba.id, 'WABA_NEW', 'and names the account it checked');
+  assert.strictEqual(d.phone.display_phone_number, '+20 10 0000 0000', 'the sender number is reported back');
+  // The whole point of the diagnostic is to be pasteable — it must not leak.
+  assert.ok(!JSON.stringify(d).includes(process.env.WHATSAPP_TOKEN), 'the token is never returned to the browser');
+}
+
+// ── approved, but under English (US) while we send "en" ──
+// The single most likely cause once a template finally clears review.
+{
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en_US', status: 'APPROVED', category: 'UTILITY' }];
+  const d = await check();
+  assert.ok(!/^ready/.test(d.verdict), 'a language mismatch is not "ready"');
+  assert.match(d.verdict, /en_US \(APPROVED\)/, 'it names the language that DOES exist');
+  assert.match(d.verdict, /WHATSAPP_TEMPLATE_LANG/, 'and the env var that fixes it');
+}
+
+// ── still in review ──
+{
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'PENDING', category: 'UTILITY' }];
+  const d = await check();
+  assert.match(d.verdict, /PENDING/, 'an unapproved template is reported as such, not as missing');
+}
+
+// ── the number points at an account that has no such template ──
+// This is the new-WABA case: templates do not move with you.
+{
+  TEMPLATES = [{ name: 'something_else', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
+  const d = await check();
+  assert.match(d.verdict, /no template named "pr_urgent"/, 'a wrong-account phone id is named as such');
+  assert.match(d.verdict, /do not transfer/, 'and explains why creating a new account loses them');
+}
+
+// ── the account cannot be resolved from the phone number ──
+{
+  resolveWaba = false;
+  const d = await check();
+  assert.strictEqual(d.waba, null, 'no account is invented when it cannot be resolved');
+  assert.match(d.templatesError, /WHATSAPP_WABA_ID/, 'and the escape hatch is named');
+  resolveWaba = true;
+}
+
+// ── nothing configured at all ──
+{
+  delete process.env.WHATSAPP_PHONE_ID;
+  const d = await check();
+  assert.match(d.error, /WHATSAPP_TOKEN and WHATSAPP_PHONE_ID/, 'missing config is reported plainly, not as a Meta error');
+  process.env.WHATSAPP_PHONE_ID = '111222333';
+}
+
+console.log('WHATSAPP-CHECK OK — the diagnostic separates the three causes of #132001 (not approved / wrong language / template lives on another account), names the fix for each, resolves the account from the phone number with WHATSAPP_WABA_ID as a fallback, and never returns the token');

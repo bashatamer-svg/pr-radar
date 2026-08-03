@@ -51,6 +51,74 @@ export default async function handler(req, res) {
         return res.status(200).json({ missing, days });
       }
       if (resource === 'whatsapp-status') return res.status(200).json(whatsappStatus());
+      if (resource === 'whatsapp-check') {
+        // Read-only: ask Meta what the configured credentials actually point at.
+        // #132001 ("template does not exist in that language") is produced by
+        // THREE different mistakes and the error cannot tell them apart:
+        //   * the template is not approved yet
+        //   * the language code differs (en vs en_US)
+        //   * WHATSAPP_PHONE_ID belongs to a DIFFERENT WhatsApp Business
+        //     Account from the one the template lives on — templates do not
+        //     transfer between accounts
+        // The sandbox has no route to graph.facebook.com, so this runs in prod.
+        // The token is never echoed back.
+        const token = process.env.WHATSAPP_TOKEN;
+        const phoneId = process.env.WHATSAPP_PHONE_ID;
+        const ver = process.env.WHATSAPP_GRAPH_VERSION || 'v21.0';
+        const cfg = whatsappStatus();
+        const lang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
+        if (!token || !phoneId) {
+          return res.status(200).json({ config: { ...cfg, lang }, error: 'WHATSAPP_TOKEN and WHATSAPP_PHONE_ID must both be set in the environment' });
+        }
+        const g = async (path) => {
+          try {
+            const r = await fetch(`https://graph.facebook.com/${ver}/${path}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const body = await r.json().catch(() => ({}));
+            return r.ok ? { ok: true, body } : { ok: false, error: body?.error?.message || `HTTP ${r.status}`, code: body?.error?.code };
+          } catch (e) { return { ok: false, error: e.message }; }
+        };
+        // 1. the sender number — proves the token works and the id is real
+        const phoneRes = await g(`${encodeURIComponent(phoneId)}?fields=id,display_phone_number,verified_name,quality_rating`);
+        // 2. which account owns it. Not every Graph version exposes this field
+        //    from the phone node, so WHATSAPP_WABA_ID can supply it instead.
+        let wabaId = process.env.WHATSAPP_WABA_ID || null;
+        let wabaSource = wabaId ? 'WHATSAPP_WABA_ID' : null;
+        if (!wabaId) {
+          const owner = await g(`${encodeURIComponent(phoneId)}?fields=whatsapp_business_account{id,name}`);
+          if (owner.ok && owner.body?.whatsapp_business_account?.id) {
+            wabaId = owner.body.whatsapp_business_account.id;
+            wabaSource = 'resolved from the phone number';
+          }
+        }
+        // 3. the templates that account actually has
+        let templates = null, templatesError = null;
+        if (wabaId) {
+          const t = await g(`${encodeURIComponent(wabaId)}/message_templates?fields=name,status,language,category&limit=100`);
+          if (t.ok) templates = (t.body?.data || []).map((x) => ({ name: x.name, language: x.language, status: x.status, category: x.category }));
+          else templatesError = t.error;
+        } else {
+          templatesError = 'could not work out which WhatsApp Business Account this number belongs to — set WHATSAPP_WABA_ID to check templates';
+        }
+        // 4. does what we send actually exist there, in that language?
+        const byName = (templates || []).filter((t) => t.name === cfg.template);
+        const exact = byName.find((t) => t.language === lang && t.status === 'APPROVED') || null;
+        let verdict;
+        if (!templates) verdict = 'could not read the template list';
+        else if (exact) verdict = `ready — "${cfg.template}" is APPROVED in "${lang}" on this account`;
+        else if (!byName.length) verdict = `no template named "${cfg.template}" on this account. Templates do not transfer between accounts — create it here, or point WHATSAPP_PHONE_ID at the account that has it.`;
+        else {
+          const opts = byName.map((t) => `${t.language} (${t.status})`).join(', ');
+          verdict = `"${cfg.template}" exists here but not as APPROVED/"${lang}". Available: ${opts}. Set WHATSAPP_TEMPLATE_LANG to the matching code.`;
+        }
+        return res.status(200).json({
+          config: { ...cfg, lang, graphVersion: ver },
+          phone: phoneRes.ok ? phoneRes.body : { error: phoneRes.error, code: phoneRes.code },
+          waba: wabaId ? { id: wabaId, source: wabaSource } : null,
+          templates, templatesError, verdict,
+        });
+      }
       if (resource === 'find-dupes') {
         // Read-only: two cards on the board that are really one story. Ingest
         // merges what it is SURE about; this surfaces the rest for a human,

@@ -467,8 +467,10 @@ function renderTools(){
       <div class="nm" id="waStatus" style="font-weight:700;color:var(--ink-2);margin-bottom:10px">Checking…</div>
       <div class="form">
         <button class="btn" id="waTestBtn" type="button" disabled>Send test alert</button>
+        <button class="btn ghost" id="waChkBtn" type="button">Check account &amp; template</button>
         <div class="formmsg" id="waMsg"></div>
       </div>
+      <div id="waRows"></div>
     </div>`;
   $('#baBtn').onclick=runBackfill;
   $('#aiBtn').onclick=runAuthorInspect;
@@ -479,6 +481,7 @@ function renderTools(){
   $('#waTestBtn').onclick=runWhatsappTest;
   $('#atBtn').onclick=runAlertTest;
   $('#rcBtn').onclick=runReclassify;
+  $('#waChkBtn').onclick=runWhatsappCheck;
   loadWhatsappStatus();
 }
 async function loadWhatsappStatus(){
@@ -526,6 +529,36 @@ async function runAlertTest(){
     const d=await r.json().catch(()=>({}));
     if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
     else{ msg.className='formmsg ok'; msg.textContent=`Sent to ${d.to} as ${d.tier} ✓`; }
+  }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
+  btn.disabled=false; btn.textContent=label;
+}
+// Ask Meta what the configured credentials actually point at. #132001 has three
+// possible causes and the error can't tell them apart — this can.
+async function runWhatsappCheck(){
+  const btn=$('#waChkBtn'), msg=$('#waMsg'), box=$('#waRows');
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Checking…'; msg.textContent=''; msg.className='formmsg'; box.innerHTML='';
+  try{
+    const r=await api({q:'&view=whatsapp-check'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; btn.disabled=false; btn.textContent=label; return; }
+    const ready=/^ready/.test(d.verdict||'');
+    msg.className='formmsg '+(ready?'ok':'err'); msg.textContent=d.verdict||'';
+    const rows=[];
+    if(d.phone&&!d.phone.error){
+      rows.push(`<div class="row"><div class="who"><div class="em">${esc(d.phone.display_phone_number||d.phone.id)}</div>
+        <div class="nm">${esc(d.phone.verified_name||'—')} · quality ${esc(d.phone.quality_rating||'—')} · phone id ${esc(d.phone.id||'')}</div></div></div>`);
+    } else if(d.phone&&d.phone.error){
+      rows.push(`<div class="row"><div class="who"><div class="em">Sender number unreadable</div><div class="nm">${esc(d.phone.error)}</div></div></div>`);
+    }
+    if(d.waba) rows.push(`<div class="row"><div class="who"><div class="em">Account ${esc(d.waba.id)}</div><div class="nm">${esc(d.waba.source)}</div></div></div>`);
+    for(const t of (d.templates||[])){
+      const ok=t.status==='APPROVED';
+      rows.push(`<div class="row"><div class="who"><div class="em">${esc(t.name)}</div>
+        <div class="nm">${esc(t.language)} · ${esc(t.category||'')}</div></div>
+        <div class="acts"><span class="kind ${ok?'':'bug'}">${esc(t.status)}</span></div></div>`);
+    }
+    if(d.templatesError) rows.push(`<div class="row"><div class="who"><div class="nm">${esc(d.templatesError)}</div></div></div>`);
+    box.innerHTML=rows.join('')||'<div class="empty">No templates on this account yet.</div>';
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
   btn.disabled=false; btn.textContent=label;
 }
