@@ -155,9 +155,7 @@ const $=(s,r=document)=>r.querySelector(s);
 const esc=(s)=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 
 const params=new URLSearchParams(location.search);
-const token='';   // ?t= retired (Task 18) — sign-in session only
 let session=(()=>{ try{ return JSON.parse(localStorage.getItem('pr_session')||'null'); }catch(e){ return null; } })();
-$('#backLink').href=session?'/':(token?`/?t=${encodeURIComponent(token)}`:'/');
 
 let _cfg=null;
 async function authConfig(){ if(_cfg) return _cfg; try{ _cfg=await (await fetch('/api/auth?view=config')).json(); }catch(e){ _cfg={}; } return _cfg; }
@@ -169,11 +167,10 @@ async function refreshSession(){
     session={access_token:d.access_token,refresh_token:d.refresh_token||session.refresh_token}; try{ localStorage.setItem('pr_session',JSON.stringify(session)); }catch(e){} return true;
   }catch(e){ return false; }
 }
-function authURL(path){ if(session) return path; return token?`${path}${path.includes('?')?'&':'?'}t=${encodeURIComponent(token)}`:path; }
 async function afetch(path,opts={},_retried){
   const o={...opts,headers:{...(opts.headers||{})}};
   if(session) o.headers.Authorization=`Bearer ${session.access_token}`;
-  const r=await fetch(authURL(path),o);
+  const r=await fetch(path,o);
   if(r.status===401 && session && !_retried && await refreshSession()) return afetch(path,opts,true);
   return r;
 }
@@ -892,7 +889,7 @@ function selectTab(t){
 }
 
 async function boot(){
-  if(!session && !token){ location.href='/login'; return; }
+  if(!session){ location.href='/login'; return; }
   try{
     const probe=await api({q:'&view=subscribers'});
     if(probe.status===401){ location.href='/login'; return; }

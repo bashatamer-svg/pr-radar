@@ -116,7 +116,11 @@ gets nothing. All queries live in `lib/db.js`.
   `playwright-core` is dev-only). Solve without adding libraries.
 - **Tokens in the Authorization header ONLY** — never `?t=` (deliberately
   purged; don't reintroduce). `RADAR_TOKEN`=viewer, `CRON_SECRET`=admin,
-  humans = Supabase JWT.
+  humans = Supabase JWT. The server has enforced this since Task 18, but four
+  pages kept a client-side `authURL()` appending `?t=` alongside a `const
+  token=''` that made every branch dead — removed 3 Aug. `render-notoken` now
+  reads every `public/*.html` and fails on `authURL(`, `const token =`, or a
+  `?t=${…}` construction, so the shape cannot return.
 - **Fail-soft I/O, never silent on the critical path** — try/catch every
   fetch/DB call, but misconfiguration must scream (`bulletinSkipped`,
   `sendBulletin` throws on empty recipients).

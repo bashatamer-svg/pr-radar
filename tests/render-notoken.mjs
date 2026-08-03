@@ -61,4 +61,25 @@ noToken(bodies[1], 'postSurgeWebhook body');
 assert.ok(bodies[0].includes('pr-radar.example.com'), 'urgent webhook still carries the board link');
 assert.ok(bodies[0].includes('#item-42'), 'urgent webhook still deep-links the item');
 
-console.log('NO-TOKEN OK — bulletin/urgent/surge/report emails + both webhooks carry the board link with NO ?t= token; deep-link anchors (#item / /api/go) preserved');
+
+// 7. The STATIC PAGES must not rebuild the retired ?t= path either.
+//
+// The server has accepted the Authorization header only since Task 18
+// (lib/auth.js `principal`), but four pages kept an `authURL()` that appended
+// `?t=<token>` whenever there was no session, plus a `const token=''` that made
+// every one of its branches permanently dead. Harmless while the constant was
+// empty — and exactly the shape that puts a credential into a URL (and so into
+// server logs, browser history and Referer) the moment anyone assigns to it.
+// Deleted 3 Aug; pinned here so it cannot come back a third time.
+import { readFileSync, readdirSync } from 'node:fs';
+
+const PUB = new URL('../public/', import.meta.url).pathname;
+for (const f of readdirSync(PUB).filter((n) => n.endsWith('.html'))) {
+  const src = readFileSync(PUB + f, 'utf8');
+  assert.ok(!/authURL\s*\(/.test(src), `${f}: authURL() is gone — fetch takes the path directly`);
+  // The construction, not the two characters: `?t=` / `&t=` built into a URL.
+  assert.ok(!/[?&]t=\$\{/.test(src), `${f}: builds a ?t= query-string token`);
+  assert.ok(!/\bconst token\s*=/.test(src), `${f}: the dead legacy-token constant is gone`);
+}
+
+console.log('NO-TOKEN OK — bulletin/urgent/surge/report emails + both webhooks carry the board link with NO ?t= token; deep-link anchors (#item / /api/go) preserved; and no page under public/ rebuilds the retired ?t= path');

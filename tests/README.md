@@ -35,6 +35,7 @@ are **skipped**, the unit suite still runs.
 | Auth / RBAC / audit / password flows | `render-auth` (backend), `render-authui`, `render-adminui` (browser) |
 | Author capture (cascade, AI fallback, ingest-time, backfill, sweep) | `verify-authors`, `verify-ai-author`, `render-poll-author`, `render-author-backfill` |
 | Emails & webhooks (bulletin, urgent, report, no-token links) | `render-notoken`, `render-lanes-email-report`, `smoke-task2`, `render-whatsapp`, `send-guard` |
+| No `?t=` token in any URL — emails, webhooks **and** every static page | `render-notoken` |
 | Custom date-range reports (exec summary, appendix, Word/PDF export) | `smoke-report-range` (backend), `render-reports-page` (browser) |
 | Surge detection (calendar + rolling windows) | `smoke-task7`, `render-surge-rolling` |
 | Board header fits a phone without crushing the wordmark | `render-header-mobile` |
