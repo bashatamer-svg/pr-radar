@@ -68,36 +68,38 @@ const right = await page.evaluate(() => {
 });
 assert.ok(right <= 390, `the header's last control fits inside the viewport (right edge ${Math.round(right)}px)`);
 
-// The wordmark is dropped, not truncated — and the PR mark still carries the
-// brand, so the header is never anonymous.
-const ttlShown = await page.$eval('.ttl', (e) => e.getBoundingClientRect().width > 0);
-assert.ok(!ttlShown, 'the wordmark is hidden outright on a phone rather than ellipsised to "P…"');
-assert.ok(await page.$eval('.mark .glyph', (e) => e.textContent.trim() === 'PR'), 'the PR mark still identifies the app');
+// The wordmark and its attribution are both READABLE on a phone — that is the
+// point of splitting the header into two rows. A single row could not hold
+// them alongside two labelled links and the account cluster.
+assert.strictEqual(await page.$eval('.ttl .h1', (e) => e.textContent.trim()), 'PR Radar', 'the product name is shown in full');
+const sub = await page.$eval('.ttl .sub', (e) => e.textContent.replace(/\s+/g, ' ').trim());
+assert.strictEqual(sub, 'by Regulatory Affairs', `the attribution is shown (got "${sub}")`);
+assert.ok(await page.$eval('.ttl .sub', (e) => e.getBoundingClientRect().width > 0), 'and is actually visible, not display:none');
 
-// Both pills degrade together: icon shown, label hidden, on BOTH.
-for (const id of ['trendsLink', 'reportsLink']) {
-  assert.ok(await page.$eval(`#${id} .tic`, (e) => e.getBoundingClientRect().width > 0), `${id} keeps its icon`);
-  assert.ok(await page.$eval(`#${id} .tlabel`, (e) => e.getBoundingClientRect().width === 0), `${id} drops its label on a phone`);
-  // Icon-only still has to be nameable for assistive tech and hover.
-  assert.ok(await page.$eval(`#${id}`, (e) => (e.getAttribute('aria-label') || '').length > 0), `${id} is labelled for screen readers when icon-only`);
+// Both section links say what they ARE. Icon-only pills were indistinguishable
+// at a glance and read as broken buttons when only one had a label.
+for (const [id, label] of [['trendsLink', 'Trends'], ['reportsLink', 'Reports']]) {
+  const el = await page.$eval(`#${id}`, (e) => ({ text: e.textContent.replace(/\s+/g, ' ').trim(), w: e.getBoundingClientRect().width }));
+  assert.ok(el.text.includes(label), `${id} shows its name on a phone (got "${el.text}")`);
+  assert.ok(el.w > 60, `${id} is a real labelled pill, not an icon square (${Math.round(el.w)}px)`);
 }
-const [tw, rw] = await Promise.all([
-  page.$eval('#trendsLink', (e) => Math.round(e.getBoundingClientRect().width)),
-  page.$eval('#reportsLink', (e) => Math.round(e.getBoundingClientRect().width)),
-]);
-assert.strictEqual(tw, rw, `the two pills are the same width, so neither reads as a broken button (${tw} vs ${rw})`);
+// The nav is its own row, below the identity row — not competing with it.
+const rows = await page.$$eval('.top .trow', (els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+assert.strictEqual(rows.length, 2, 'the header is two rows');
+assert.ok(rows[1] > rows[0], 'nav sits below identity');
 
 await page.screenshot({ path: new URL('./out/', import.meta.url).pathname + 'board-header-390.png' });
 
-// ── desktop keeps the full header ──
+// ── desktop keeps everything, plus the clock ──
 await page.setViewportSize({ width: 1100, height: 900 });
 await page.waitForTimeout(120);
-assert.ok(await page.$eval('.ttl .h1', (e) => e.getBoundingClientRect().width > 40), 'the wordmark is back at desktop width');
-assert.ok(await page.$eval('.ttl .h1', (e) => e.scrollWidth <= Math.ceil(e.getBoundingClientRect().width) + 1), 'and is not truncated there');
+assert.ok(await page.$eval('.ttl .h1', (e) => e.scrollWidth <= Math.ceil(e.getBoundingClientRect().width) + 1), 'the wordmark is not truncated at desktop width');
+assert.ok(await page.$eval('.ttl .sub', (e) => e.scrollWidth <= Math.ceil(e.getBoundingClientRect().width) + 1), 'nor is the attribution');
 for (const id of ['trendsLink', 'reportsLink']) {
   assert.ok(await page.$eval(`#${id} .tlabel`, (e) => e.getBoundingClientRect().width > 0), `${id} shows its label at desktop width`);
 }
+assert.ok(await page.$eval('.clock', (e) => e.getBoundingClientRect().width > 0), 'the clock returns on desktop');
 
 await browser.close(); server.close();
 if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }
-console.log('HEADER-MOBILE OK — at 390px nothing in the header is crushed below its content width, the wordmark is dropped outright rather than ellipsised to "P…", both pills go icon-only together (equal width, aria-labelled), and desktop still shows the wordmark and both labels');
+console.log('HEADER-MOBILE OK — two rows: at 390px "PR Radar" and "by Regulatory Affairs" are both readable, Trends and Reports are labelled pills, nothing is crushed below its content width, and desktop adds the clock');

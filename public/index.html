@@ -31,7 +31,7 @@
     --topbg:rgba(255,255,255,.82); --barbg:rgba(241,242,245,.9); --markbg:var(--ink); --skel:#e7e9ee; --skel-hi:#f3f5f7;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    --mh:56px;
+    --mh:92px;   /* two header rows: identity + nav */
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -41,8 +41,15 @@
   :focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:8px}
 
   /* ── header ── */
-  .top{position:sticky;top:0;z-index:40;height:var(--mh);display:flex;align-items:center;gap:11px;padding:0 16px;
+  /* TWO ROWS: identity above, navigation below. One row could not hold the
+     wordmark, the attribution, two LABELLED section links and the account
+     cluster — .wrap caps at 840px, so the row was over-subscribed at every
+     viewport and something always got crushed. Splitting them means nothing
+     competes, and the labels can say what they are instead of being bare icons. */
+  .top{position:sticky;top:0;z-index:40;height:var(--mh);display:flex;flex-direction:column;justify-content:center;
        background:var(--topbg);backdrop-filter:blur(16px);border-bottom:1px solid var(--hair)}
+  .trow{display:flex;align-items:center;gap:11px;padding:0 16px;height:46px}
+  .trow.nav{gap:8px;border-top:1px solid var(--hair-2)}
   .mark{position:relative;flex:none;width:34px;height:34px;border-radius:11px;background:var(--markbg);overflow:hidden;
         display:grid;place-items:center}
   .mark .sweep{position:absolute;inset:-40%;background:conic-gradient(from 0deg,transparent 300deg,rgba(230,0,0,.7) 358deg,#fff 360deg);
@@ -55,18 +62,17 @@
      viewport, so "PR Radar" rendered as "PR Ra…" on desktop and collapsed to a
      1px "P…" on a phone. Slack and shortfall now land on .account instead,
      whose email is already an ellipsised, expendable string. */
-  .ttl{flex:none;min-width:0;overflow:hidden}
-  .ttl .h1{font-size:16px;font-weight:800;letter-spacing:-.02em;line-height:1;white-space:nowrap}
-  /* The tagline never once fitted this row (175px of text, ~57px of space) — it
-     only ever rendered as "Brand & R…". It still appears in the page <title>,
-     the OG card, the guide footer and the share image. */
-  .ttl .sub{display:none}
+  .ttl{flex:none;min-width:0}
+  .ttl .h1{font-size:16px;font-weight:800;letter-spacing:-.02em;line-height:1.05;white-space:nowrap}
+  .ttl .sub{font-size:10.5px;line-height:1.2;margin-top:2px;color:var(--faint);font-weight:500;white-space:nowrap}
+  .ttl .sub b{color:var(--ink-2);font-weight:700}
   .trends{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;color:var(--red);
           text-decoration:none;background:#fff;border:1.5px solid var(--red);border-radius:9px;padding:7px 12px;white-space:nowrap;
           box-shadow:0 1px 6px -2px var(--red-glow)}
   .trends:hover{background:var(--red);color:#fff}
   .trends .tic{font-size:12px;line-height:1}
-  .clock{flex:none;text-align:right;background:var(--raise);border:1px solid var(--hair);border-radius:9px;padding:5px 9px}
+  .trends .tlabel{white-space:nowrap}
+  .clock{flex:none;margin-left:auto;text-align:right;background:var(--raise);border:1px solid var(--hair);border-radius:9px;padding:5px 9px}
   .clock .t{font-family:var(--mono);font-size:12px;font-weight:700;line-height:1.1}
   .clock .d{font-family:var(--mono);font-size:8px;color:var(--faint);letter-spacing:.08em}
   /* Takes the slack AND the shortfall: flex:1 pushes the cluster right, and
@@ -87,10 +93,10 @@
        stays hostage to how wide the account cluster happens to be (it grows with
        role and email). Both pills go icon-only TOGETHER: Trends keeping its
        label while Reports had lost its own read as a broken button. */
-    .ttl{display:none}
-    #trendsLink .tlabel,#reportsLink .tlabel{display:none}
-    .top .clock{display:none}             /* declutter the header row on phones */
-    .top{gap:8px;padding:0 12px}
+    /* The nav row has room for both labels at 390px; only the clock goes, and
+       the account cluster sheds its email and password link as before. */
+    .top .clock{display:none}
+    .trow{padding:0 12px;gap:9px}
   }
   /* Viewers are read-only — hide the write controls (pins/hide/votes) entirely. */
   body[data-role="viewer"] .fb.pin, body[data-role="viewer"] .fb.hide,
@@ -328,12 +334,16 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="mark" aria-hidden="true"><span class="sweep"></span><span class="glyph">PR</span></div>
-    <div class="ttl"><div class="h1">PR Radar</div><div class="sub">Brand &amp; Reputation · Vodafone Egypt</div></div>
-    <a class="trends" id="trendsLink" href="/stats" aria-label="Trends" title="Trends — charts: share of voice &amp; sentiment over time"><span class="tic">📈</span><span class="tlabel"> Trends</span></a>
-    <a class="trends" id="reportsLink" href="/reports" aria-label="Reports" title="Reports — pick any date range, export as PDF or Word"><span class="tic">📄</span><span class="tlabel"> Reports</span></a>
-    <div class="account" id="account"></div>
-    <div class="clock"><div class="t" id="clockTime">—</div><div class="d" id="clockDate">—</div></div>
+    <div class="trow">
+      <div class="mark" aria-hidden="true"><span class="sweep"></span><span class="glyph">PR</span></div>
+      <div class="ttl"><div class="h1">PR Radar</div><div class="sub">by <b>Regulatory Affairs</b></div></div>
+      <div class="account" id="account"></div>
+    </div>
+    <nav class="trow nav" aria-label="Sections">
+      <a class="trends" id="trendsLink" href="/stats" title="Trends — charts: share of voice &amp; sentiment over time"><span class="tic">📈</span><span class="tlabel">Trends</span></a>
+      <a class="trends" id="reportsLink" href="/reports" title="Reports — pick any date range, export as PDF or Word"><span class="tic">📄</span><span class="tlabel">Reports</span></a>
+      <div class="clock"><div class="t" id="clockTime">—</div><div class="d" id="clockDate">—</div></div>
+    </nav>
   </header>
 
   <button class="newpill" id="newPill" type="button" hidden></button>
