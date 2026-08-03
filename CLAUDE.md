@@ -78,9 +78,9 @@ candidates remain staged in `lib/feed-candidates.js`.
 
 Integrations: Supabase (service-role key, PostgREST), Anthropic (classifier +
 byline fallback + narrative grouping), Resend (all email), WhatsApp Cloud API
-(`WHATSAPP_*` now SET in Vercel — sends reach Meta but are refused until the
-`pr_urgent` template is approved; the official API cannot post to groups, DMs
-only).
+(`WHATSAPP_*` SET in Vercel against the new **PR Radar** WABA — sends reach Meta
+but are refused while `pr_urgent` is PENDING review; the official API cannot post
+to groups, DMs only. Recipients = `pr_subscribers.whatsapp` ∪ `WHATSAPP_TO`).
 
 Optional tuning vars (sane defaults, set only to override): `CLASSIFIER_MODEL`,
 `NARRATIVE_MODEL` (falls back to `CLASSIFIER_MODEL`), `NARRATIVE_TIMEOUT_MS`
@@ -212,9 +212,12 @@ gets nothing. All queries live in `lib/db.js`.
   `WHATSAPP_TO` needed a Vercel edit AND a redeploy, so in practice it never
   changed: on 3 Aug it held ONE number while the daily brief reached five people
   — the channel added for speed reached the fewest readers, and no screen said
-  so. `resolveWhatsappRecipients()` reads `whatsappSubscribers()` (active AND
-  `whatsapp not null`), with `WHATSAPP_TO` still winning when set so a curated
-  crisis list stays possible. Credentials present but nobody to send to now
+  so. `resolveWhatsappRecipients()` returns the UNION of `whatsappSubscribers()`
+  (active AND `whatsapp not null`) and `WHATSAPP_TO`, deduped — a number in both
+  is messaged once. It briefly had the env var OVERRIDE the list, which silently
+  ignored four numbers typed into Admin while the panel still read "1 recipient":
+  you could add four people and page none of them. Both are real recipients, so
+  both are used. Credentials present but nobody to send to now
   SCREAMS and returns `skipped:'no recipients'` — it used to look identical to a
   clean send. `whatsappConfigured()` deliberately no longer requires recipients,
   or a list managed entirely in Admin would read "unconfigured". Numbers are

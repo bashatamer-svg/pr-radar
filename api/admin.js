@@ -15,7 +15,7 @@ import {
   allFeedback, setFeedbackResolved,
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
   recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor, itemsForDupeScan, mergeDuplicateInto,
-  parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber } from '../lib/db.js';
+  parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber, whatsappSubscribers } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
@@ -24,7 +24,7 @@ import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
 import { isGoogleNews } from '../lib/resolve.js';
 import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
 import { XMLParser } from 'fast-xml-parser';
-import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipientsMasked } from '../lib/whatsapp.js';
+import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipients } from '../lib/whatsapp.js';
 import { renderUrgent, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
@@ -101,6 +101,14 @@ export default async function handler(req, res) {
         } else {
           templatesError = 'could not work out which WhatsApp Business Account this number belongs to — set WHATSAPP_WABA_ID to check templates';
         }
+        // 3b. WHO gets paged. BOTH lists, deduped — showing where each number
+        // comes from, because "why isn't the person I just added on here?" is
+        // the question this panel exists to answer.
+        const envList = whatsappRecipients();
+        const subList = await whatsappSubscribers().catch(() => []);
+        const all = [...new Set([...envList, ...subList])];
+        const mask = (ns) => ns.map((n) => (n.length <= 6 ? n : `${n.slice(0, 2)}${'•'.repeat(Math.max(2, n.length - 6))}${n.slice(-4)}`));
+
         // 4. does what we send actually exist there, in that language?
         // `state` separates "you have something to fix" from "Meta has not
         // finished reviewing yet". Collapsing the two told the admin to change
@@ -129,7 +137,11 @@ export default async function handler(req, res) {
           state = 'error';
         }
         return res.status(200).json({
-          config: { ...cfg, lang, graphVersion: ver, recipients: whatsappRecipientsMasked() },
+          config: {
+            ...cfg, lang, graphVersion: ver,
+            recipients: mask(all),
+            fromSubscribers: subList.length, fromEnv: envList.length,
+          },
           phone: phoneRes.ok ? phoneRes.body : { error: phoneRes.error, code: phoneRes.code },
           waba: wabaId ? { id: wabaId, source: wabaSource } : null,
           templates, templatesError, verdict, state,

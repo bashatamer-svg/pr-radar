@@ -606,8 +606,12 @@ async function runWhatsappCheck(){
     // WHO gets paged. The count alone says it is configured, not that it is the
     // right people — and this is the list that gets woken at 3am.
     const rcp=(d.config&&d.config.recipients)||[];
-    rows.push(`<div class="row"><div class="who"><div class="em">${rcp.length?rcp.map(esc).join(', '):'no recipients'}</div>
-      <div class="nm">${rcp.length?'will be messaged on an urgent story · WHATSAPP_TO':'set WHATSAPP_TO or nobody is paged'}</div></div></div>`);
+    const fs=(d.config&&d.config.fromSubscribers)||0, fe=(d.config&&d.config.fromEnv)||0;
+    const where=[fs?`${fs} from Admin → Subscribers`:'',fe?`${fe} from WHATSAPP_TO`:''].filter(Boolean).join(' · ');
+    rows.push(`<div class="row"><div class="who"><div class="em" style="white-space:normal">${rcp.length?rcp.map(esc).join(', '):'no recipients'}</div>
+      <div class="nm">${rcp.length
+        ? `${rcp.length} will be messaged on an urgent story · ${esc(where)}${fs&&fe?' (duplicates messaged once)':''}`
+        : 'add a WhatsApp number to a subscriber, or nobody is paged'}</div></div></div>`);
     for(const t of (d.templates||[])){
       const ok=t.status==='APPROVED';
       rows.push(`<div class="row"><div class="who"><div class="em">${esc(t.name)}</div>

@@ -22,11 +22,13 @@ process.env.WHATSAPP_TO = '201000000000,201111111111';
 
 const PHONE = { id: '111222333', display_phone_number: '+20 10 0000 0000', verified_name: 'PR Radar', quality_rating: 'GREEN' };
 let TEMPLATES = [];
+let SUBS = [];
 let resolveWaba = true;
 
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url);
   const ok = (b) => ({ ok: true, status: 200, json: async () => b, text: async () => JSON.stringify(b) });
+  if (u.includes('/rest/v1/pr_subscribers')) return { ok: true, status: 200, text: async () => JSON.stringify(SUBS) };
   if (u.includes('/rest/v1/')) return ok([]);
   if (!u.includes('graph.facebook.com')) throw new Error('unexpected fetch ' + u);
   // The token must travel in the header, never in the query string.
@@ -109,6 +111,25 @@ const check = async () => {
   assert.strictEqual(d.waba, null, 'no account is invented when it cannot be resolved');
   assert.match(d.templatesError, /WHATSAPP_WABA_ID/, 'and the escape hatch is named');
   resolveWaba = true;
+}
+
+// ── BOTH lists are used, deduped ──
+// WHATSAPP_TO used to OVERRIDE the subscriber list, so four numbers typed into
+// Admin were silently ignored while the panel still read "1 recipient" — you
+// could add four people and page none of them.
+{
+  SUBS = [{ whatsapp: '201000000005' }, { whatsapp: '201000000006' }, { whatsapp: '201000000000' }];
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
+  const d = await check();
+  assert.strictEqual(d.config.fromEnv, 2, 'the env numbers are counted');
+  assert.strictEqual(d.config.fromSubscribers, 3, 'and the subscriber numbers are counted');
+  // 2 env + 3 subs, but 201000000000 appears in both — messaged once, not twice.
+  assert.strictEqual(d.config.recipients.length, 4,
+    `the union is deduped (got ${JSON.stringify(d.config.recipients)})`);
+  for (const tail of ['0000', '1111', '0005', '0006']) {
+    assert.ok(d.config.recipients.some((r) => r.endsWith(tail)), `${tail} is in the list`);
+  }
+  SUBS = [];
 }
 
 // ── nothing configured at all ──

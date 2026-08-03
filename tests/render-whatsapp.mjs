@@ -165,18 +165,28 @@ assert.strictEqual(r.failed, 2, 'API error: both counted as failed');
   process.env.WHATSAPP_TO = '201000000001, +2010-0000-0002 , bad';
 }
 
-// ── WHATSAPP_TO still overrides, so a curated crisis list stays possible ──
+// ── BOTH lists are messaged, deduped ──
+// WHATSAPP_TO used to OVERRIDE the subscriber list: numbers typed into Admin
+// were silently ignored while the panel still read "1 recipient", so you could
+// add four people and page none of them.
 {
-  let askedForSubs = false;
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts = {}) => {
-    if (String(url).includes('/rest/v1/pr_subscribers')) askedForSubs = true;
+    if (String(url).includes('/rest/v1/pr_subscribers')) {
+      return { ok: true, status: 200, text: async () => JSON.stringify([
+        { whatsapp: '201000000009' },
+        { whatsapp: '201000000001' },   // ALSO in WHATSAPP_TO — must not double-send
+      ]) };
+    }
     return realFetch(url, opts);
   };
-  calls = [];
-  await wa.sendWhatsAppUrgent(item);
-  assert.ok(!askedForSubs, 'the subscriber list is not consulted when WHATSAPP_TO is set');
-  assert.strictEqual(calls.length, 2, 'the env list is used verbatim');
+  calls = []; apiOk = true;
+  const both = await wa.sendWhatsAppUrgent(item);
+  const to = calls.map((c) => c.body.to).sort();
+  assert.deepStrictEqual(to, ['201000000001', '201000000002', '201000000009'],
+    `env and subscriber numbers are combined (got ${JSON.stringify(to)})`);
+  assert.strictEqual(both.sent, 3, 'three distinct people messaged');
+  assert.strictEqual(new Set(to).size, to.length, 'a number in both lists is messaged once, not twice');
   globalThis.fetch = realFetch;
 }
 
