@@ -58,6 +58,13 @@ const check = async () => {
   assert.strictEqual(d.phone.display_phone_number, '+20 10 0000 0000', 'the sender number is reported back');
   // The whole point of the diagnostic is to be pasteable — it must not leak.
   assert.ok(!JSON.stringify(d).includes(process.env.WHATSAPP_TOKEN), 'the token is never returned to the browser');
+  // WHO gets paged, recognisable but not a directory of full mobile numbers:
+  // the count answers "configured", not "the right people".
+  assert.deepStrictEqual(d.config.recipients, ['20••••••0000', '20••••••1111'],
+    `recipients are listed masked (got ${JSON.stringify(d.config.recipients)})`);
+  for (const full of ['201000000000', '201111111111']) {
+    assert.ok(!JSON.stringify(d).includes(full), `the full number ${full} is not exposed`);
+  }
 }
 
 // ── approved, but under English (US) while we send "en" ──

@@ -24,7 +24,7 @@ import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
 import { isGoogleNews } from '../lib/resolve.js';
 import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
 import { XMLParser } from 'fast-xml-parser';
-import { sendWhatsAppUrgent, whatsappStatus } from '../lib/whatsapp.js';
+import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipientsMasked } from '../lib/whatsapp.js';
 import { renderUrgent, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
@@ -129,7 +129,7 @@ export default async function handler(req, res) {
           state = 'error';
         }
         return res.status(200).json({
-          config: { ...cfg, lang, graphVersion: ver },
+          config: { ...cfg, lang, graphVersion: ver, recipients: whatsappRecipientsMasked() },
           phone: phoneRes.ok ? phoneRes.body : { error: phoneRes.error, code: phoneRes.code },
           waba: wabaId ? { id: wabaId, source: wabaSource } : null,
           templates, templatesError, verdict, state,
