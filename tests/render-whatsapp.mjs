@@ -190,6 +190,26 @@ assert.strictEqual(r.failed, 2, 'API error: both counted as failed');
   globalThis.fetch = realFetch;
 }
 
+// ── an explicit recipient list bypasses resolution entirely ──
+// The admin TEST uses this so a delivery check goes to the configured test
+// number(s) only. A test that pages every subscriber is one nobody clicks
+// twice — the same reason the email test sends only to the signed-in admin.
+{
+  const realFetch = globalThis.fetch;
+  let askedForSubs = false;
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url).includes('/rest/v1/pr_subscribers')) { askedForSubs = true; return { ok: true, status: 200, text: async () => '[]' }; }
+    return realFetch(url, opts);
+  };
+  calls = []; apiOk = true;
+  const r2 = await wa.sendWhatsAppUrgent(item, { to: ['+20 100 000 0077'] });
+  assert.ok(!askedForSubs, 'an explicit list skips the subscriber lookup entirely');
+  assert.deepStrictEqual(calls.map((c) => c.body.to), ['201000000077'],
+    `only the given number is messaged, normalised (got ${JSON.stringify(calls.map((c) => c.body.to))})`);
+  assert.strictEqual(r2.sent, 1, 'one message');
+  globalThis.fetch = realFetch;
+}
+
 // ── status shape for the admin UI ──
 const st = wa.whatsappStatus();
 assert.deepStrictEqual([st.enabled, st.hasToken, st.hasPhoneId, st.recipients, st.template], [true, true, true, 2, 'pr_urgent'], 'status reflects env');

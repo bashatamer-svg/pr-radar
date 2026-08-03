@@ -222,6 +222,12 @@ gets nothing. All queries live in `lib/db.js`.
   clean send. `whatsappConfigured()` deliberately no longer requires recipients,
   or a list managed entirely in Admin would read "unconfigured". Numbers are
   shown masked (country code + last 4) on the subscriber row and in the check.
+  **Admin → Tools → "Send test alert" is scoped to `WHATSAPP_TO` ONLY**
+  (`sendWhatsAppUrgent(item, {to})`), so a delivery check never pages the team —
+  the same rule as the email test going to the signed-in admin. With the channel
+  configured but `WHATSAPP_TO` empty it refuses and names the variable; with the
+  channel not configured at all it stays the existing safe no-op, because
+  pointing at `WHATSAPP_TO` when there is no token is the wrong problem.
   The WhatsApp message LEADS with the same `urgentTier()` label as the email
   subject (URGENT / ALERT) — the template's header line is static text and
   cannot vary per message, so the tier has to live inside `{{1}}`.

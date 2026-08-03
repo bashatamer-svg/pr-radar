@@ -132,6 +132,38 @@ const check = async () => {
   SUBS = [];
 }
 
+// ── the admin TEST is scoped to WHATSAPP_TO, never the subscriber list ──
+{
+  const realFetch = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes('/rest/v1/pr_subscribers')) {
+      return { ok: true, status: 200, text: async () => JSON.stringify([{ whatsapp: '201999999999' }]) };
+    }
+    if (u.includes('/messages')) { sent.push(JSON.parse(opts.body).to); return { ok: true, status: 200, json: async () => ({}), text: async () => '{}' }; }
+    return realFetch(url, opts);
+  };
+  let out;
+  const res = { status: () => res, json: (b) => { out = b; return res; }, setHeader() {}, end() {} };
+  await handler({ method: 'POST', query: { resource: 'whatsapp-test' }, headers: { authorization: 'Bearer admin' } }, res);
+  assert.deepStrictEqual(sent, ['201000000000', '201111111111'],
+    `the test messages WHATSAPP_TO only (got ${JSON.stringify(sent)})`);
+  assert.ok(!sent.includes('201999999999'), 'and never the subscriber list');
+
+  // With WHATSAPP_TO empty the test refuses rather than quietly paging everyone.
+  const keep = process.env.WHATSAPP_TO;
+  delete process.env.WHATSAPP_TO;
+  sent.length = 0;
+  let out2;
+  const res2 = { status: () => res2, json: (b) => { out2 = b; return res2; }, setHeader() {}, end() {} };
+  await handler({ method: 'POST', query: { resource: 'whatsapp-test' }, headers: { authorization: 'Bearer admin' } }, res2);
+  assert.match(out2.error, /WHATSAPP_TO/, 'it says which variable to set');
+  assert.strictEqual(sent.length, 0, 'and sends nothing');
+  process.env.WHATSAPP_TO = keep;
+  globalThis.fetch = realFetch;
+}
+
 // ── nothing configured at all ──
 {
   delete process.env.WHATSAPP_PHONE_ID;

@@ -24,7 +24,7 @@ import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
 import { isGoogleNews } from '../lib/resolve.js';
 import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
 import { XMLParser } from 'fast-xml-parser';
-import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipients } from '../lib/whatsapp.js';
+import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipients, whatsappConfigured } from '../lib/whatsapp.js';
 import { renderUrgent, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
@@ -270,12 +270,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, ...result });
       }
       if (resource === 'whatsapp-test') {
-        // Deliver a sample urgent alert to the configured recipients so ops can
-        // verify the number, opt-in, and template approval before going live.
+        // Deliver a sample alert so ops can verify the number, the opt-in and
+        // the template before going live. Scoped to WHATSAPP_TO ONLY — a test
+        // that pages every subscriber is one nobody clicks twice, which is the
+        // same reason the email test sends only to the signed-in admin.
+        // Order matters: with the channel not configured at all, the honest
+        // answer is the existing safe no-op — telling someone to set
+        // WHATSAPP_TO when they have no token or number sends them to the
+        // wrong problem. Only ask for it once the channel could actually send.
+        const testTo = whatsappRecipients();
+        if (whatsappConfigured() && !testTo.length) {
+          return res.status(400).json({ error: 'set WHATSAPP_TO in the environment to choose who a test message goes to — the test deliberately does not page the subscriber list' });
+        }
         const sample = { brand: 'Vodafone', sentiment: 'negative', importance: 5,
           headline: 'Test alert from PR Radar — please ignore',
           pr_angle: 'Action · This is a WhatsApp delivery test' };
-        const result = await sendWhatsAppUrgent(sample);
+        const result = await sendWhatsAppUrgent(sample, { to: testTo });
         await auditReq(req, who, 'whatsapp.test', who.actor, result);
         return res.status(200).json({ ok: true, ...result });
       }

@@ -513,7 +513,7 @@ function renderTools(){
     </div>
     <div class="card">
       <h2>WhatsApp urgent alerts</h2>
-      <div class="nm" style="line-height:1.6;margin:0 0 11px">The <b>same stories that trigger an instant email</b> — <b>Impact 4 or 5</b>, plus <b>any negative Vodafone story</b> at any Impact — are also sent as WhatsApp DMs, tagged <b>URGENT</b> (Impact 5) or <b>ALERT</b>. The official API can’t post to a group, so it messages people individually. Recipients come from <b>Admin → Subscribers</b> (add a number to a person’s row); <code>WHATSAPP_TO</code> overrides that list when set. The number, token and template stay in the environment.</div>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">The <b>same stories that trigger an instant email</b> — <b>Impact 4 or 5</b>, plus <b>any negative Vodafone story</b> at any Impact — are also sent as WhatsApp DMs, tagged <b>URGENT</b> (Impact 5) or <b>ALERT</b>. The official API can’t post to a group, so it messages people individually. Recipients are <b>everyone with a number in Admin → Subscribers</b>, plus anything in <code>WHATSAPP_TO</code> — combined, with duplicates messaged once. <b>Send test alert goes to <code>WHATSAPP_TO</code> only</b>, so a delivery check never pages the team. The number, token and template stay in the environment.</div>
       <div class="nm" id="waStatus" style="font-weight:700;color:var(--ink-2);margin-bottom:10px">Checking…</div>
       <div class="form">
         <button class="btn" id="waTestBtn" type="button" disabled>Send test alert</button>
