@@ -67,6 +67,20 @@ for (const id of cards) {
   assert.ok(await page.$(`#${id} .xp[data-fmt="xls"]`), `${id} has its own Excel button`);
   assert.ok(await page.$(`#${id} .xp[data-fmt="pdf"]`), `${id} has its own PDF button`);
 }
+// A long-press on a chart used to select its SVG text and raise iOS's Copy /
+// Look Up bar right over the graph (live, 3 Aug). Charts carry nothing worth
+// selecting — these very export buttons are how you take the numbers out — so
+// the selection could only obscure what you were reading. The ⊞ Table view is
+// deliberately exempt: it IS the copyable surface.
+const sel = await page.evaluate(() => {
+  const cs = (s) => getComputedStyle(document.querySelector(s)).webkitUserSelect
+    || getComputedStyle(document.querySelector(s)).userSelect;
+  return { card: cs('.cardc'), kpis: cs('.kpis'), table: cs('.cardc .tbl') };
+});
+assert.strictEqual(sel.card, 'none', 'a chart card is not selectable');
+assert.strictEqual(sel.kpis, 'none', 'nor are the KPI tiles');
+assert.strictEqual(sel.table, 'text', 'but the Table view still is — that is the surface you copy from');
+
 // The KPI tiles are not a .cardc but they ARE a section — Summary is otherwise
 // unreachable, since it has no chart card of its own.
 assert.ok(await page.$('#c-kpi .xp[data-fmt="xls"]'), 'the KPI row exports its Summary to Excel');

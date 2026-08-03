@@ -103,6 +103,15 @@
   a.li:hover{background:var(--raise);color:var(--red)}
   .legend .sw{width:10px;height:10px;border-radius:3px;flex:none}
   .legend .sw.line{height:3px;border-radius:2px;width:14px}
+  /* A long-press anywhere on a chart selected its SVG text and raised iOS's
+     Copy / Find Selection / Look Up bar straight over the graph, with a blue
+     wash across the plot (live, 3 Aug). Charts hold nothing worth selecting —
+     the numbers live in ⊞ Table and the ⤓ XLS / ⤓ PDF exports — so the
+     selection could only ever obscure the thing you were trying to read.
+     The TABLE view keeps text selection on purpose: it IS the copyable
+     surface, and it is the one place a reader has a reason to drag over. */
+  .cardc,.kpis{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  .cardc .tbl{-webkit-user-select:text;user-select:text}
   .cbody{margin-top:6px}
   .cbody svg{display:block;width:100%}
   .cbody.faded{opacity:.45;transition:opacity .15s}
