@@ -32,9 +32,21 @@ assert.strictEqual(wa.whatsappConfigured(), false, 'not configured');
 
 // ── alert line is a single line (Meta rejects newlines in template variables) ──
 const line = wa.whatsappAlertLine(item);
-assert.ok(!/[\n\t]/.test(line), 'alert line has no newlines/tabs');
+const actionLine = wa.whatsappActionLine(item);
+assert.ok(!/[\n\t]/.test(line) && !/[\n\t]/.test(actionLine), 'neither paragraph has newlines/tabs');
 assert.ok(/Vodafone · negative — Vodafone Cash outage spreads nationwide/.test(line), 'brand · sentiment — headline');
-assert.ok(/Action: Prepare a holding line/.test(line), 'pulls the pr_angle Action clause');
+// The action is its OWN paragraph now, not a suffix on the story line — a
+// variable value cannot contain a newline, so two paragraphs need two variables.
+assert.ok(!/Action:/.test(line), 'the story line no longer carries the action');
+assert.ok(/^Action: Prepare a holding line/.test(actionLine), 'the action is the second paragraph');
+// Meta requires every declared variable to be filled, so paragraph 2 always has
+// content — but it must never invent an action that the classifier did not give.
+{
+  const noAction = wa.whatsappActionLine({ headline: 'x', summary: 'Summary sentence.' });
+  assert.strictEqual(noAction, 'Summary sentence.', 'falls back to the summary, not an invented action');
+  const bare = wa.whatsappActionLine({ headline: 'x' });
+  assert.ok(/open the board/i.test(bare) && !/^Action:/.test(bare), 'and to a plain pointer when there is nothing at all');
+}
 
 // ── configured → one template message per recipient, correct shape ──
 process.env.WHATSAPP_ENABLED = '1';
@@ -58,32 +70,38 @@ assert.strictEqual(c.body.messaging_product, 'whatsapp', 'messaging_product set'
 assert.strictEqual(c.body.type, 'template', 'sends a template (proactive-safe)');
 assert.strictEqual(c.body.template.name, 'pr_urgent', 'template name from env');
 assert.strictEqual(c.body.template.language.code, 'ar', 'template language from env');
-const param = c.body.template.components[0].parameters[0];
-assert.strictEqual(param.text, line, 'the body variable carries the alert line');
-// Meta's editor REJECTS positional {{1}}; variables must be NAMED, and a named
-// template must be SENT with parameter_name or the call fails in a way that
-// looks exactly like a missing template (#132001).
-assert.strictEqual(param.parameter_name, 'alert', 'named parameter by default, matching a {{alert}} template');
+const params = c.body.template.components[0].parameters;
+assert.strictEqual(params.length, 2, 'two variables — the story and the action are separate paragraphs');
+assert.strictEqual(params[0].text, line, 'first variable = what happened');
+assert.strictEqual(params[1].text, actionLine, 'second variable = what to do about it');
+const param = params[0];
+// The parameter's SHAPE has to match how the approved template declares its
+// variable, and a mismatch fails as #132001 — indistinguishable from a template
+// that does not exist. The live template uses positional {{1}}, so the default
+// must send NO parameter_name; adding one would break a working channel.
+assert.ok(!('parameter_name' in param),
+  `positional by default, matching the live {{1}} template (got ${JSON.stringify(param)})`);
 
-// An older positional {{1}} template still works — a numeric var name means
-// "send it the old way", so an existing approved template is not orphaned.
+// If Meta ever forces a NAMED variable, the same code sends the other shape —
+// the env var holds the name exactly as written in the approved body.
 {
-  process.env.WHATSAPP_TEMPLATE_VAR = '1';
+  process.env.WHATSAPP_TEMPLATE_VAR = 'story,action';
   calls = [];
   await wa.sendWhatsAppUrgent(item);
-  const p1 = calls[0].body.template.components[0].parameters[0];
-  assert.ok(!('parameter_name' in p1), 'a numeric var name sends the positional form');
-  assert.strictEqual(p1.text, line, 'still carries the alert line');
+  const named = calls[0].body.template.components[0].parameters;
+  assert.strictEqual(named[0].parameter_name, 'story', 'names in the env send the named form, in order');
+  assert.strictEqual(named[1].parameter_name, 'action', 'including the second variable');
+  assert.strictEqual(named[0].text, line, 'still carries the story line');
   delete process.env.WHATSAPP_TEMPLATE_VAR;
 }
 
-// The name is taken verbatim from the env, so it can match whatever Meta approved.
+// …and an explicit number is still positional, so setting it defensively is safe.
 {
-  process.env.WHATSAPP_TEMPLATE_VAR = 'alert_line';
+  process.env.WHATSAPP_TEMPLATE_VAR = '1,2';
   calls = [];
   await wa.sendWhatsAppUrgent(item);
-  assert.strictEqual(calls[0].body.template.components[0].parameters[0].parameter_name, 'alert_line',
-    'the variable name comes from WHATSAPP_TEMPLATE_VAR');
+  assert.ok(calls[0].body.template.components[0].parameters.every((p) => !('parameter_name' in p)),
+    'explicit numeric var names are positional too');
   delete process.env.WHATSAPP_TEMPLATE_VAR;
 }
 assert.deepStrictEqual(wa.whatsappRecipients().sort(), ['201000000001', '201000000002'].sort(), 'digits-only recipients');
