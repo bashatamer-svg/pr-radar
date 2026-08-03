@@ -73,10 +73,15 @@ logic into a function file. New pages get a rewrite in `vercel.json`.
 Sources (`lib/sources.js`): 10 brand/market Google-News queries (AR+EN) + 7
 site-scoped sweeps covering the team's named outlet list + 14 direct outlet RSS
 feeds (the only ones that carry a byline) = 31 daily. The 15-min urgent poll
-runs the 10 brand queries only. Direct feeds are probe-verified; 30 unverified
+runs the 10 brand queries only. Direct feeds are probe-verified; **2** unverified
 candidates remain staged in `lib/feed-candidates.js`. The 3 Aug probe promoted
-exactly ONE of 31 (Aitnews, 10/10 bylined) — the staged list is picked over, so
-treat a further sweep of guessed `/rss` and `/feed` suffixes as low-yield.
+exactly ONE of 31 (Aitnews, 10/10 bylined) and DISPROVED 28 — 22 that 404/403'd
+and 7 whose URL served an HTML page — so those were retired from the staging
+file rather than re-probed forever; all are still swept by a `site:` query in
+SITE_FEEDS, so what was lost is the byline, not the coverage. Treat another
+sweep of guessed `/rss` and `/feed` suffixes as low-yield. The one live lead is
+**Youm7**: `SectionRss?SectionID=0` returned a valid RSS document with zero
+items, so the endpoint shape is right and only the section id is wrong.
 
 Integrations: Supabase (service-role key, PostgREST), Anthropic (classifier +
 byline fallback + narrative grouping), Resend (all email), WhatsApp Cloud API

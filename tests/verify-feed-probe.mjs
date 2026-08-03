@@ -1,12 +1,17 @@
 // Admin → Tools → "Probe feeds" — the diagnosis, not just the status code.
 //
 // The 3 Aug run promoted 1 of 31 candidates. Most of the rest 404'd, which is a
-// dead end — but SIX answered 200/202 and reported nothing, and the panel
-// printed a bare "tried: 200 · 200" for them. That reads identically to a dead
-// host while meaning the opposite: the server is alive and serving something,
-// so the URL SHAPE is wrong and there is a real feed to find. Without a reason
-// the only move left is to guess another suffix, which is how the list got
-// picked over in the first place.
+// dead end — but eight URLs answered 200/202 and reported nothing, and the
+// panel printed a bare "tried: 200 · 200" for them. That reads identically to a
+// dead host while meaning the opposite: the server is alive and serving
+// something, so the URL SHAPE is wrong and there may be a real feed to find.
+// Without a reason the only move left is to guess another suffix, which is how
+// the list got picked over in the first place.
+//
+// Re-probing with the reason attached settled all eight in one click: seven
+// were HTML pages (no feed there, retired) and one — Youm7 — was a VALID RSS
+// document with no items, i.e. the right endpoint and the wrong section id.
+// That single distinction is the whole value of this test.
 //
 // Pinned here: each 200-with-no-items failure names what actually came back.
 import assert from 'node:assert';
@@ -46,8 +51,8 @@ const first = (id) => FEED_CANDIDATES.find((c) => c.id === id).urls[0];
 
 // ── a real feed is reported with its item and byline counts ──
 {
-  BODIES = { [first('mcit')]: { body: FEED, type: 'application/rss+xml' } };
-  const d = await probe('mcit');
+  BODIES = { [first('youm7')]: { body: FEED, type: 'application/rss+xml' } };
+  const d = await probe('youm7');
   const row = d.rows[0];
   assert.strictEqual(row.working, true, 'a valid feed is reported working');
   assert.strictEqual(row.items, 1, 'with its item count');
@@ -56,10 +61,12 @@ const first = (id) => FEED_CANDIDATES.find((c) => c.id === id).urls[0];
 }
 
 // ── 200 + an HTML page: the outlet has no feed AT THIS PATH ──
-// This is what Al Shorouk, MCIT and the Orange newsroom almost certainly are.
+// The commonest real answer — seven of the eight were this (Al Shorouk, MCIT,
+// the Orange newsroom, Amwal Al Ghad, Enterprise, CNN Business Arabic, Zawya),
+// and knowing it is what let them be retired rather than re-probed forever.
 {
-  BODIES = { [first('mcit')]: { body: '<!DOCTYPE html><html><body>news</body></html>', type: 'text/html' } };
-  const d = await probe('mcit');
+  BODIES = { [first('youm7')]: { body: '<!DOCTYPE html><html><body>news</body></html>', type: 'text/html' } };
+  const d = await probe('youm7');
   const a = d.rows[0].attempts[0];
   assert.strictEqual(a.ok, false, 'an HTML page is not a feed');
   assert.strictEqual(a.status, 200, 'the status is still reported');
@@ -69,8 +76,8 @@ const first = (id) => FEED_CANDIDATES.find((c) => c.id === id).urls[0];
 
 // ── 200 + valid XML that simply is not RSS/Atom ──
 {
-  BODIES = { [first('mcit')]: { body: '<?xml version="1.0"?><sitemapindex><sitemap/></sitemapindex>', type: 'application/xml' } };
-  const d = await probe('mcit');
+  BODIES = { [first('youm7')]: { body: '<?xml version="1.0"?><sitemapindex><sitemap/></sitemapindex>', type: 'application/xml' } };
+  const d = await probe('youm7');
   assert.strictEqual(d.rows[0].attempts[0].note, 'XML, root <sitemapindex>',
     'a non-feed XML document names its root, so the next guess is informed');
 }
@@ -79,15 +86,15 @@ const first = (id) => FEED_CANDIDATES.find((c) => c.id === id).urls[0];
 // Completely different from the above, and the difference decides whether the
 // URL is worth keeping.
 {
-  BODIES = { [first('mcit')]: { body: '<?xml version="1.0"?><rss><channel></channel></rss>', type: 'application/rss+xml' } };
-  const d = await probe('mcit');
+  BODIES = { [first('youm7')]: { body: '<?xml version="1.0"?><rss><channel></channel></rss>', type: 'application/rss+xml' } };
+  const d = await probe('youm7');
   assert.strictEqual(d.rows[0].attempts[0].note, 'feed with 0 items', 'an empty feed says so');
 }
 
 // ── 200 + nothing at all ──
 {
-  BODIES = { [first('mcit')]: { body: '', type: 'text/html' } };
-  const d = await probe('mcit');
+  BODIES = { [first('youm7')]: { body: '', type: 'text/html' } };
+  const d = await probe('youm7');
   assert.strictEqual(d.rows[0].attempts[0].note, 'empty body', 'an empty response says so');
 }
 
@@ -96,7 +103,7 @@ const first = (id) => FEED_CANDIDATES.find((c) => c.id === id).urls[0];
 // a dead host would drown the six that matter in the twenty-four that don't.
 {
   BODIES = {};
-  const d = await probe('mcit');
+  const d = await probe('youm7');
   const a = d.rows[0].attempts[0];
   assert.strictEqual(a.status, 404, 'a missing feed is still a 404');
   assert.strictEqual(a.note, undefined, 'and carries no note');
