@@ -600,7 +600,8 @@ async function runWhatsappCheck(){
     } else if(d.phone&&d.phone.error){
       rows.push(`<div class="row"><div class="who"><div class="em">Sender number unreadable</div><div class="nm">${esc(d.phone.error)}</div></div></div>`);
     }
-    if(d.waba) rows.push(`<div class="row"><div class="who"><div class="em">Account ${esc(d.waba.id)}</div><div class="nm">${esc(d.waba.source)}</div></div></div>`);
+    if(d.waba) rows.push(`<div class="row"><div class="who"><div class="em">Account ${esc(d.waba.id)}</div><div class="nm">${esc(d.waba.source)}</div>
+      ${d.waba.accountReview?`<div class="nm">account review <b style="color:${d.waba.accountReview==='APPROVED'?'#0c7a43':'#b60009'}">${esc(d.waba.accountReview)}</b></div>`:''}</div></div>`);
     // WHO gets paged. The count alone says it is configured, not that it is the
     // right people — and this is the list that gets woken at 3am.
     const rcp=(d.config&&d.config.recipients)||[];

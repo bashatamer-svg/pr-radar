@@ -23,6 +23,9 @@ process.env.WHATSAPP_TO = '201000000000,201111111111';
 const PHONE = { id: '111222333', display_phone_number: '+20 10 0000 0000', verified_name: 'PR Radar', quality_rating: 'GREEN' };
 // The NUMBER's own review state, which Meta runs separately from the template.
 let NAME_STATUS = 'APPROVED';
+// The WABA's own review — the one queue that is invisible everywhere else on
+// the panel, and the only thing that can answer "is Meta still deciding?".
+let ACCOUNT_REVIEW = 'APPROVED';
 let TEMPLATES = [];
 let SUBS = [];
 let resolveWaba = true;
@@ -42,6 +45,7 @@ globalThis.fetch = async (url, opts = {}) => {
   }
   if (u.includes('/message_templates')) return ok({ data: TEMPLATES });
   if (u.includes('name_status')) return ok({ name_status: NAME_STATUS, platform_type: 'CLOUD_API' });
+  if (u.includes('account_review_status')) return ok({ account_review_status: ACCOUNT_REVIEW });
   return ok(PHONE);
 };
 
@@ -238,4 +242,20 @@ const check = async () => {
   assert.strictEqual(d.state, 'ready', 'name approved + template approved = ready');
 }
 
-console.log('WHATSAPP-CHECK OK — the diagnostic separates the three causes of #132001 (not approved / wrong language / template lives on another account), names the fix for each, separates a template problem from a display name still in review (#131037), resolves the account from the phone number with WHATSAPP_WABA_ID as a fallback, and never returns the token');
+// ── the account's own review state is reported ──
+// Once the template and the display name have both come back, the only
+// question left is whether Meta still owes an answer at all. Nothing else on
+// this panel can say, so a passive "let's wait and see" had no evidence
+// either way.
+{
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
+  NAME_STATUS = 'APPROVED';
+  ACCOUNT_REVIEW = 'PENDING';
+  const d = await check();
+  assert.strictEqual(d.waba.accountReview, 'PENDING', 'a review still in flight is surfaced');
+  ACCOUNT_REVIEW = 'APPROVED';
+  const done = await check();
+  assert.strictEqual(done.waba.accountReview, 'APPROVED', 'and so is a finished one');
+}
+
+console.log('WHATSAPP-CHECK OK — the diagnostic separates the three causes of #132001 (not approved / wrong language / template lives on another account), names the fix for each, separates a template problem from a display name still in review (#131037), reports the account review state so "is Meta still deciding?" has an answer, resolves the account from the phone number with WHATSAPP_WABA_ID as a fallback, and never returns the token');

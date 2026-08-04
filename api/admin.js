@@ -99,6 +99,17 @@ export default async function handler(req, res) {
             wabaSource = 'resolved from the phone number';
           }
         }
+        // 2b. Is Meta still deciding anything? account_review_status on the
+        // WABA is the one remaining review that is NOT visible anywhere else on
+        // this panel, and it answers the only question worth asking once the
+        // template and the display name have both come back: is there a queue
+        // we are in, or is the ball entirely in our court? Separate call, so an
+        // unsupported field cannot break the WABA lookup.
+        let accountReview = null;
+        if (wabaId) {
+          const rev = await g(`${encodeURIComponent(wabaId)}?fields=account_review_status`);
+          if (rev.ok && rev.body?.account_review_status) accountReview = rev.body.account_review_status;
+        }
         // 3. the templates that account actually has
         let templates = null, templatesError = null;
         if (wabaId) {
@@ -174,7 +185,7 @@ export default async function handler(req, res) {
             fromSubscribers: subList.length, fromEnv: envList.length,
           },
           phone: phoneRes.ok ? phoneRes.body : { error: phoneRes.error, code: phoneRes.code },
-          waba: wabaId ? { id: wabaId, source: wabaSource } : null,
+          waba: wabaId ? { id: wabaId, source: wabaSource, ...(accountReview ? { accountReview } : {}) } : null,
           templates, templatesError, verdict, state,
         });
       }
