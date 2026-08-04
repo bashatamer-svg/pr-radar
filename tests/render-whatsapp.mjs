@@ -10,7 +10,10 @@ let apiOk = true;
 // The real shape of a Meta refusal. #131037 is the one that actually blocked
 // production on 4 Aug: template APPROVED, account resolved, and every send
 // still refused because the SENDER's display name was awaiting review.
-let apiErr = { message: 'WhatsApp provided number needs display name approval before message can be sent.', code: 131037, type: 'OAuthException' };
+// Verbatim from the production log, parenthetical code and all — Meta opens
+// the message with its own code, which is exactly what made a naive prefix
+// print "#131037 (#131037) …" the first time this reason reached the panel.
+let apiErr = { message: '(#131037) WhatsApp provided number needs display name approval before message can be sent.', code: 131037, type: 'OAuthException' };
 globalThis.fetch = async (url, opts) => {
   const u = String(url);
   if (u.includes('graph.facebook.com')) {
@@ -126,12 +129,20 @@ assert.strictEqual(r.failed, 2, 'API error: both counted as failed');
 // The panel used to say "2 failed (check logs)" — a dead end for the only
 // person who can fix it, since an admin cannot read a function log. Meta names
 // the problem precisely, so that name has to travel back to the button.
-assert.deepStrictEqual(r.errors, ['#131037 WhatsApp provided number needs display name approval before message can be sent.'],
-  'the refusal reason is returned, with Meta\'s error code');
+assert.deepStrictEqual(r.errors, ['(#131037) WhatsApp provided number needs display name approval before message can be sent.'],
+  'the refusal reason comes back verbatim, with the code printed exactly once');
 {
   // Two recipients blocked by ONE account-level problem is one fact, not two:
   // repeating it per recipient hides that a single fix clears them all.
   assert.strictEqual(r.errors.length, 1, 'identical reasons are collapsed');
+  // When the message does NOT already name the code, the code is added — that
+  // is what makes an unfamiliar refusal searchable in Meta's docs.
+  const wasErr = apiErr;
+  apiErr = { message: 'Recipient phone number not in allowed list.', code: 131030 };
+  const bare = await wa.sendWhatsAppUrgent(item);
+  assert.deepStrictEqual(bare.errors, ['#131030 Recipient phone number not in allowed list.'],
+    'a message without its code gets one');
+  apiErr = wasErr;
   // A non-JSON body must still say something useful rather than nothing.
   const saved = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: false, status: 503, text: async () => '<html>gateway</html>' });
