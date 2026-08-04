@@ -81,6 +81,13 @@ export default async function handler(req, res) {
         };
         // 1. the sender number — proves the token works and the id is real
         const phoneRes = await g(`${encodeURIComponent(phoneId)}?fields=id,display_phone_number,verified_name,quality_rating`);
+        // 1b. The NUMBER's own review state, fetched separately so that a Graph
+        // version which does not expose these fields cannot take the whole
+        // phone read down with it. name_status is the field that matters: an
+        // approved TEMPLATE is only half the gate, and a display name still in
+        // review fails every send with #131037 while everything else reads fine.
+        const nameRes = await g(`${encodeURIComponent(phoneId)}?fields=name_status,code_verification_status,platform_type`);
+        if (phoneRes.ok && nameRes.ok) Object.assign(phoneRes.body, nameRes.body);
         // 2. which account owns it. Not every Graph version exposes this field
         //    from the phone node, so WHATSAPP_WABA_ID can supply it instead.
         let wabaId = process.env.WHATSAPP_WABA_ID || null;
@@ -135,6 +142,17 @@ export default async function handler(req, res) {
           const opts = byName.map((t) => `${t.language} (${t.status})`).join(', ');
           verdict = `"${cfg.template}" is on this account but not in "${lang}". Available: ${opts}. Set WHATSAPP_TEMPLATE_LANG to the matching code.`;
           state = 'error';
+        }
+        // The template is only HALF the gate. Meta reviews the sending number's
+        // DISPLAY NAME separately, and until that passes every send fails with
+        // #131037 — which is exactly what happened on 4 Aug, with this panel
+        // reading "ready" the whole time. A verdict that says ready while
+        // nothing can send is worse than no verdict at all.
+        const nameStatus = phoneRes.ok ? phoneRes.body?.name_status : null;
+        if (nameStatus && nameStatus !== 'APPROVED' && state !== 'error') {
+          const who = phoneRes.body?.verified_name ? `"${phoneRes.body.verified_name}"` : 'this number';
+          verdict = `the number cannot send yet — its display name ${who} is ${nameStatus}. Meta reviews the display name separately from the template, and until it passes every send fails with #131037. Nothing to configure; ${state === 'ready' ? 'the template is already approved' : 'the template is still in review too'}.`;
+          state = 'waiting';
         }
         return res.status(200).json({
           config: {

@@ -21,6 +21,8 @@ process.env.WHATSAPP_PHONE_ID = '111222333';
 process.env.WHATSAPP_TO = '201000000000,201111111111';
 
 const PHONE = { id: '111222333', display_phone_number: '+20 10 0000 0000', verified_name: 'PR Radar', quality_rating: 'GREEN' };
+// The NUMBER's own review state, which Meta runs separately from the template.
+let NAME_STATUS = 'APPROVED';
 let TEMPLATES = [];
 let SUBS = [];
 let resolveWaba = true;
@@ -39,6 +41,7 @@ globalThis.fetch = async (url, opts = {}) => {
       : { ok: false, status: 400, json: async () => ({ error: { message: 'nonexisting field', code: 100 } }), text: async () => '' };
   }
   if (u.includes('/message_templates')) return ok({ data: TEMPLATES });
+  if (u.includes('name_status')) return ok({ name_status: NAME_STATUS, platform_type: 'CLOUD_API' });
   return ok(PHONE);
 };
 
@@ -172,4 +175,39 @@ const check = async () => {
   process.env.WHATSAPP_PHONE_ID = '111222333';
 }
 
-console.log('WHATSAPP-CHECK OK — the diagnostic separates the three causes of #132001 (not approved / wrong language / template lives on another account), names the fix for each, resolves the account from the phone number with WHATSAPP_WABA_ID as a fallback, and never returns the token');
+// ── the template is APPROVED but the NUMBER's display name is not ──
+// Live on 4 Aug: pr_urgent cleared review, the account resolved, the panel read
+// "ready" — and every send failed #131037 because Meta reviews the sending
+// number's display name separately. A verdict that says ready while nothing can
+// send is worse than no verdict, so the number's state overrides the template's.
+{
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
+  NAME_STATUS = 'PENDING_REVIEW';
+  const d = await check();
+  assert.strictEqual(d.state, 'waiting', 'an unapproved display name is not "ready"');
+  assert.match(d.verdict, /display name "PR Radar" is PENDING_REVIEW/, 'it names the display name and its state');
+  assert.match(d.verdict, /#131037/, 'and the error code that will be seen until it clears');
+  assert.match(d.verdict, /template is already approved/, 'while making clear the template half is done');
+  assert.strictEqual(d.phone.name_status, 'PENDING_REVIEW', 'the raw status is reported for the panel to colour');
+}
+
+// ── a REAL problem still wins over the display name ──
+// A missing template is something to fix now; a name in review is a wait. If
+// the wait masked the fix, the admin would sit watching the wrong thing.
+{
+  TEMPLATES = [];
+  NAME_STATUS = 'PENDING_REVIEW';
+  const d = await check();
+  assert.strictEqual(d.state, 'error', 'a missing template is still an error, not a wait');
+  assert.match(d.verdict, /no template named/, 'and the template problem is what gets named');
+}
+
+// ── both approved → ready ──
+{
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
+  NAME_STATUS = 'APPROVED';
+  const d = await check();
+  assert.strictEqual(d.state, 'ready', 'name approved + template approved = ready');
+}
+
+console.log('WHATSAPP-CHECK OK — the diagnostic separates the three causes of #132001 (not approved / wrong language / template lives on another account), names the fix for each, separates a template problem from a display name still in review (#131037), resolves the account from the phone number with WHATSAPP_WABA_ID as a fallback, and never returns the token');
