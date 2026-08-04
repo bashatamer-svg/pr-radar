@@ -148,10 +148,23 @@ export default async function handler(req, res) {
         // #131037 — which is exactly what happened on 4 Aug, with this panel
         // reading "ready" the whole time. A verdict that says ready while
         // nothing can send is worse than no verdict at all.
+        // name_status has TWO passing values, not one. AVAILABLE_WITHOUT_REVIEW
+        // means the name may be used without review — treating it as a blocker
+        // told the operator to wait on something Meta had already cleared.
+        const NAME_OK = ['APPROVED', 'AVAILABLE_WITHOUT_REVIEW'];
         const nameStatus = phoneRes.ok ? phoneRes.body?.name_status : null;
-        if (nameStatus && nameStatus !== 'APPROVED' && state !== 'error') {
+        // A +1 555 number is the fictional range Meta auto-provisions as a TEST
+        // number. It can only ever message a handful of pre-registered
+        // recipients, so it will never serve a team — and no amount of template
+        // or display-name approval changes that. Worth saying out loud, because
+        // every other field on this panel reads perfectly healthy.
+        const isTestNumber = /^\+1\s*555/.test(String(phoneRes.ok ? phoneRes.body?.display_phone_number || '' : ''));
+        if (nameStatus && !NAME_OK.includes(nameStatus) && state !== 'error') {
           const who = phoneRes.body?.verified_name ? `"${phoneRes.body.verified_name}"` : 'this number';
           verdict = `the number cannot send yet — its display name ${who} is ${nameStatus}. Meta reviews the display name separately from the template, and until it passes every send fails with #131037. Nothing to configure; ${state === 'ready' ? 'the template is already approved' : 'the template is still in review too'}.`;
+          state = 'waiting';
+        } else if (isTestNumber && state === 'ready') {
+          verdict = `${verdict} BUT the sender ${phoneRes.body.display_phone_number} is in the +1 555 range Meta auto-provisions as a TEST number: it can only message recipients pre-registered against it, which is why sends can still fail #131037 with everything above green. Register your own business number to reach the team.`;
           state = 'waiting';
         }
         return res.status(200).json({

@@ -202,6 +202,34 @@ const check = async () => {
   assert.match(d.verdict, /no template named/, 'and the template problem is what gets named');
 }
 
+// ── AVAILABLE_WITHOUT_REVIEW is a PASS, not a wait ──
+// Meta's name_status has two passing values. Treating everything that is not
+// APPROVED as a blocker told the operator to wait on a review Meta had already
+// exempted them from — live on 4 Aug, and a worse failure than saying nothing,
+// because it pointed away from the real cause.
+{
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
+  NAME_STATUS = 'AVAILABLE_WITHOUT_REVIEW';
+  const d = await check();
+  assert.strictEqual(d.state, 'ready', 'a name usable without review does not block');
+  assert.ok(!/cannot send yet/.test(d.verdict), 'and is not reported as a wait');
+}
+
+// ── a +1 555 sender is a TEST number, and that outranks a green panel ──
+// Everything checkable can read healthy while sends still fail, because a test
+// number only reaches recipients pre-registered against it. The panel has to
+// say so or it is quietly wrong.
+{
+  PHONE.display_phone_number = '+1 555-428-5748';
+  TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];
+  NAME_STATUS = 'AVAILABLE_WITHOUT_REVIEW';
+  const d = await check();
+  assert.strictEqual(d.state, 'waiting', 'a test number is not a ready channel');
+  assert.match(d.verdict, /TEST number/, 'the panel names what the sender actually is');
+  assert.match(d.verdict, /Register your own business number/, 'and what to do about it');
+  PHONE.display_phone_number = '+20 10 0000 0000';
+}
+
 // ── both approved → ready ──
 {
   TEMPLATES = [{ name: 'pr_urgent', language: 'en', status: 'APPROVED', category: 'UTILITY' }];

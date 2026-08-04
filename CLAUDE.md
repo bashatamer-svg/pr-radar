@@ -254,10 +254,17 @@ gets nothing. All queries live in `lib/db.js`.
   "1 failed (check logs)", which is a dead end for the one person who can fix
   it, so `sendOne` returns the API's code + message and the panel prints it
   (deduped — five recipients blocked by one account-level problem is one fact).
-  Note the sender read **+1 555-428-5748**: the fictional +1 555 range Meta
-  auto-provisions as a TEST number, which can only ever message ~5
-  pre-registered recipients. Confirm in WhatsApp Manager before treating the
-  channel as live. Pinned by `render-whatsapp`.
+  The number's own review state is `name_status` on the phone node, and it has
+  **TWO passing values** — `APPROVED` *and* `AVAILABLE_WITHOUT_REVIEW` (the
+  business is exempt from review). Treating everything ≠ APPROVED as a blocker
+  told the operator to wait on a review Meta had already cleared. Live reading
+  is `AVAILABLE_WITHOUT_REVIEW` + `CLOUD_API`, so the display name is NOT what
+  is failing. The sender is **+1 555-428-5748** — the fictional +1 555 range
+  Meta auto-provisions as a TEST number, which only reaches recipients
+  pre-registered against it, and that is the remaining explanation for #131037
+  with every checkable field green. `whatsapp-check` now says so itself.
+  Registering a real business number is the only fix. Pinned by
+  `render-whatsapp` + `verify-whatsapp-check`.
   The WhatsApp message LEADS with the same `urgentTier()` label as the email
   subject (URGENT / ALERT) — the template's header line is static text and
   cannot vary per message, so the tier has to live inside `{{1}}`.
