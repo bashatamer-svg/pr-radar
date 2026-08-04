@@ -596,7 +596,7 @@ async function runWhatsappCheck(){
     if(d.phone&&!d.phone.error){
       rows.push(`<div class="row"><div class="who"><div class="em">${esc(d.phone.display_phone_number||d.phone.id)}</div>
         <div class="nm">${esc(d.phone.verified_name||'—')} · quality ${esc(d.phone.quality_rating||'—')} · phone id ${esc(d.phone.id||'')}</div>
-        ${d.phone.name_status?`<div class="nm">display name <b style="color:${d.phone.name_status==='APPROVED'?'#0c7a43':'#b60009'}">${esc(d.phone.name_status)}</b>${d.phone.platform_type?` · ${esc(d.phone.platform_type)}`:''}</div>`:''}</div></div>`);
+        ${d.phone.name_status?`<div class="nm">display name <b style="color:${['APPROVED','AVAILABLE_WITHOUT_REVIEW'].includes(d.phone.name_status)?'#0c7a43':'#b60009'}">${esc(d.phone.name_status)}</b>${d.phone.platform_type?` · ${esc(d.phone.platform_type)}`:''}</div>`:''}</div></div>`);
     } else if(d.phone&&d.phone.error){
       rows.push(`<div class="row"><div class="who"><div class="em">Sender number unreadable</div><div class="nm">${esc(d.phone.error)}</div></div></div>`);
     }
