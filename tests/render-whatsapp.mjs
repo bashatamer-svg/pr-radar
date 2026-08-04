@@ -7,13 +7,17 @@ delete process.env.WHATSAPP_ENABLED;
 
 let calls = [];
 let apiOk = true;
+// The real shape of a Meta refusal. #131037 is the one that actually blocked
+// production on 4 Aug: template APPROVED, account resolved, and every send
+// still refused because the SENDER's display name was awaiting review.
+let apiErr = { message: 'WhatsApp provided number needs display name approval before message can be sent.', code: 131037, type: 'OAuthException' };
 globalThis.fetch = async (url, opts) => {
   const u = String(url);
   if (u.includes('graph.facebook.com')) {
     calls.push({ url: u, body: JSON.parse(opts.body), auth: opts.headers.Authorization });
     return apiOk
       ? { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.x' }] }), text: async () => '{}' }
-      : { ok: false, status: 400, json: async () => ({}), text: async () => '{"error":{"message":"bad"}}' };
+      : { ok: false, status: 400, json: async () => ({}), text: async () => JSON.stringify({ error: apiErr }) };
   }
   throw new Error('unexpected fetch ' + u);
 };
@@ -119,6 +123,22 @@ calls = []; apiOk = false;
 r = await wa.sendWhatsAppUrgent(item);
 assert.strictEqual(r.sent, 0, 'API error: none counted as sent');
 assert.strictEqual(r.failed, 2, 'API error: both counted as failed');
+// The panel used to say "2 failed (check logs)" — a dead end for the only
+// person who can fix it, since an admin cannot read a function log. Meta names
+// the problem precisely, so that name has to travel back to the button.
+assert.deepStrictEqual(r.errors, ['#131037 WhatsApp provided number needs display name approval before message can be sent.'],
+  'the refusal reason is returned, with Meta\'s error code');
+{
+  // Two recipients blocked by ONE account-level problem is one fact, not two:
+  // repeating it per recipient hides that a single fix clears them all.
+  assert.strictEqual(r.errors.length, 1, 'identical reasons are collapsed');
+  // A non-JSON body must still say something useful rather than nothing.
+  const saved = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 503, text: async () => '<html>gateway</html>' });
+  const down = await wa.sendWhatsAppUrgent(item);
+  assert.deepStrictEqual(down.errors, ['HTTP 503'], 'an unparseable refusal falls back to the status code');
+  globalThis.fetch = saved;
+}
 
 // ── recipients come from Admin → Subscribers when WHATSAPP_TO is unset ──
 // The env var needs a Vercel edit AND a redeploy, so in practice the list never
@@ -214,4 +234,4 @@ assert.strictEqual(r.failed, 2, 'API error: both counted as failed');
 const st = wa.whatsappStatus();
 assert.deepStrictEqual([st.enabled, st.hasToken, st.hasPhoneId, st.recipients, st.template], [true, true, true, 2, 'pr_urgent'], 'status reflects env');
 
-console.log('WHATSAPP OK — no-op unconfigured; single-line template var; one template/recipient with correct shape; fail-soft on API error; status shape');
+console.log('WHATSAPP OK — no-op unconfigured; single-line template var; one template/recipient with correct shape; fail-soft on API error, whose REASON (the API error code + message, deduped) is returned to the caller instead of only the log; status shape');

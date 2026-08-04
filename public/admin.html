@@ -628,7 +628,14 @@ async function runWhatsappTest(){
     const d=await r.json().catch(()=>({}));
     if(!r.ok){ msg.textContent=d.error||'Failed.'; msg.className='formmsg err'; }
     else if(d.skipped){ msg.textContent='WhatsApp isn’t configured yet.'; msg.className='formmsg err'; }
-    else{ msg.className='formmsg '+(d.failed?'err':'ok'); msg.textContent=`Sent to ${d.sent} of ${d.recipients}`+(d.failed?` · ${d.failed} failed (check logs)`:' ✓'); }
+    else{
+      msg.className='formmsg '+(d.failed?'err':'ok');
+      // Meta says exactly what is wrong; "check logs" sent the one person who
+      // could fix it to a place they have no access to. Print the reason.
+      const why=(d.errors||[]).join(' · ');
+      msg.innerHTML=esc(`Sent to ${d.sent} of ${d.recipients}`+(d.failed?` · ${d.failed} failed`:' ✓'))
+        +(why?`<div style="margin-top:5px;font-weight:600">${esc(why)}</div>`:'');
+    }
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; }
   btn.disabled=false; btn.textContent=label;
 }

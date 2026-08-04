@@ -247,6 +247,17 @@ gets nothing. All queries live in `lib/db.js`.
   configured but `WHATSAPP_TO` empty it refuses and names the variable; with the
   channel not configured at all it stays the existing safe no-op, because
   pointing at `WHATSAPP_TO` when there is no token is the wrong problem.
+  **A failed send now names its reason.** `pr_urgent` was APPROVED on 4 Aug and
+  every send still failed **`#131037 — the sender's display name needs approval`**:
+  the template clearing review is only half of it, the NUMBER's display name is
+  reviewed separately and blocks all sending until it passes. The panel said
+  "1 failed (check logs)", which is a dead end for the one person who can fix
+  it, so `sendOne` returns the API's code + message and the panel prints it
+  (deduped — five recipients blocked by one account-level problem is one fact).
+  Note the sender read **+1 555-428-5748**: the fictional +1 555 range Meta
+  auto-provisions as a TEST number, which can only ever message ~5
+  pre-registered recipients. Confirm in WhatsApp Manager before treating the
+  channel as live. Pinned by `render-whatsapp`.
   The WhatsApp message LEADS with the same `urgentTier()` label as the email
   subject (URGENT / ALERT) — the template's header line is static text and
   cannot vary per message, so the tier has to live inside `{{1}}`.
