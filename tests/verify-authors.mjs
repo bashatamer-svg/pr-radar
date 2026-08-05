@@ -83,5 +83,5 @@ const probe = await fetchAuthorProbe('https://besraha.com/keyword/318029/1');
 assert.strictEqual(fetches, 0, 'probe fetched a tag page');
 check('probe skips tag page', `${probe.author}|${probe.outcome}`, 'null|no-byline');
 
-console.log(`\n${pass}/26 PASS`);
-assert.strictEqual(pass, 26, 'not all 26 passed');
+console.log(`\n${pass}/31 PASS`);
+assert.strictEqual(pass, 31, 'not all 31 passed');
