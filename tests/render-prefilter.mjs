@@ -75,8 +75,17 @@ const REQUESTED = [
   'telecomreviewafrica.com', 'developingtelecoms.com', 'commsupdate.com', 'adigitalboom.com',
   'zawya.com', 'mubasher.info', 'reuters.com', 'asharqbusiness.com', 'alarabiya.net',
   'cnnbusinessarabic.com', 'arabfinance.com', 'tra.gov.eg', 'mcit.gov.eg', 'egx.com.eg',
-  'cabinet.gov.eg', 'vodafone.com.eg', 'orange.eg', 'etisalat.eg', 'te.eg',
+  'cabinet.gov.eg',
+  // The four operator domains (vodafone.com.eg, orange.eg, etisalat.eg, te.eg)
+  // are deliberately ABSENT — removed on user decision 5 Aug after the sweep
+  // produced only store pages, promos and a personalised share card that put a
+  // customer's phone number in the daily brief. Asserted excluded below.
 ];
+for (const d of ['vodafone.com.eg', 'orange.eg', 'etisalat.eg', 'te.eg']) {
+  const swept = SITE_FEEDS.some((f) => decodeURIComponent(f.url).includes(`site:${d}`))
+    || DIRECT_FEEDS.some((f) => f.url.includes(d));
+  assert.ok(!swept, `operator domain must not be a source: ${d}`);
+}
 const allQueries = SITE_FEEDS.map((f) => decodeURIComponent(f.url)).join(' ');
 const directHosts = DIRECT_FEEDS.map((f) => new URL(f.url).hostname.replace(/^www\.|^en\./, ''));
 for (const d of REQUESTED) {
@@ -87,7 +96,7 @@ for (const d of REQUESTED) {
 // the outlet's entire output (the volume problem the prefilter exists to stop).
 for (const f of SITE_FEEDS) {
   const q = decodeURIComponent(f.url);
-  const scoped = /فودافون|Vodafone|اتصالات|المحمول|الإنترنت|تليكوم/.test(q) || f.id === 'site-newsrooms';
+  const scoped = /فودافون|Vodafone|اتصالات|المحمول|الإنترنت|تليكوم/.test(q);
   assert.ok(scoped, `${f.id}: site query must be brand/sector scoped`);
 }
 

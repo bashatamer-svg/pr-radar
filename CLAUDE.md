@@ -70,9 +70,11 @@ logic into a function file. New pages get a rewrite in `vercel.json`.
 | `/api/geo?send=1` | Mon 07:00 | no-op unless `GEO_ENABLED=1` |
 | `/api/alerts?notify=1` | daily 05:45 | health push — silent unless a check is warn/crit, and deduped on the subject so a chronic problem mails once, not daily |
 
-Sources (`lib/sources.js`): 10 brand/market Google-News queries (AR+EN) + 7
+Sources (`lib/sources.js`): 10 brand/market Google-News queries (AR+EN) + 6
 site-scoped sweeps covering the team's named outlet list + 14 direct outlet RSS
-feeds (the only ones that carry a byline) = 31 daily. The 15-min urgent poll
+feeds (the only ones that carry a byline) = 30 daily. The four operator
+domains are deliberately NOT sources (user decision 5 Aug — their pages are
+stores, promos and share cards, not news; pinned by `render-prefilter`). The 15-min urgent poll
 runs the 10 brand queries only. Direct feeds are probe-verified; **3** unverified
 candidates remain staged in `lib/feed-candidates.js`. The 3 Aug probe promoted
 exactly ONE of 31 (Aitnews, 10/10 bylined) and DISPROVED 28 — 22 that 404/403'd
