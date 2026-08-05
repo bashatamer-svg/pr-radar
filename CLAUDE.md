@@ -88,7 +88,11 @@ items, so the endpoint shape is right and only the section id is wrong.
 Integrations: Supabase (service-role key, PostgREST), Anthropic (classifier +
 byline fallback + narrative grouping), Resend (all email), WhatsApp Cloud API
 (`WHATSAPP_*` SET in Vercel against the new **PR Radar** WABA — sends reach Meta
-but are refused while `pr_urgent` is PENDING review; the official API cannot post
+but are refused with `#131037` — `pr_urgent` IS APPROVED (4 Aug) and the display
+name passes (`AVAILABLE_WITHOUT_REVIEW`), so the blocker is the sender itself:
+a Meta-provisioned `+1 555` TEST number that only reaches pre-registered
+recipients. Registering a real business number is the remaining step (see the
+WhatsApp Gotcha). The official API cannot post
 to groups, DMs only. Recipients = `pr_subscribers.whatsapp` ∪ `WHATSAPP_TO`).
 
 Optional tuning vars (sane defaults, set only to override): `CLASSIFIER_MODEL`,
@@ -164,9 +168,9 @@ gets nothing. All queries live in `lib/db.js`.
 | Where | Fact |
 |---|---|
 | `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
-| Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (5 active subscribers, 2 Aug). Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy. Set **`OPS_ALERT_TO`** too, or the daily health push records its alert and reaches nobody (it falls back to `RADAR_TO`) |
-| `pr_state.daily_bulletin_sent` | Still **22 Jul** at 2 Aug 22:00 UTC, and still not drift: the marker stamps on any send, and every 05:00Z run since had an empty digest. It should advance on the **3 Aug** run — 5 stories are queued, all of which landed after 2 Aug's run. If it has NOT moved by then, that is a genuine miss; check Resend first (a stale marker is not a missed send) |
-| `pr_items` | **Cause found and fixed 2 Aug** — the bursts (100 parked in the 7 days to 2 Aug) were the classifier omitting items from an otherwise-valid reply, which parsed cleanly and so never retried; see the omission Gotcha. 75 historical rows remain parked in the 7d window and **0 in the last 48h**. Clear the residue with Admin → Tools → "Re-classify parked stories" |
+| Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (6 active subscribers, 5 Aug). Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy. Set **`OPS_ALERT_TO`** too, or the daily health push records its alert and reaches nobody (it falls back to `RADAR_TO`) |
+| `pr_state.daily_bulletin_sent` | RESOLVED — advancing daily since the 3 Aug run; read **05 Aug 05:00** on 5 Aug (live-verified). The ten-day freeze was the marker-stamping bug fixed 2 Aug (see the two-recipient-lists Gotcha). **A stale marker is not a missed send** — check Resend, not `pr_state` |
+| `pr_items` | **Cause found and fixed 2 Aug** — the bursts (100 parked in the 7 days to 2 Aug) were the classifier omitting items from an otherwise-valid reply, which parsed cleanly and so never retried; see the omission Gotcha. **73** burst-era rows still sit parked in the rolling 7d window (5 Aug; 0 parked in the last 24h — the fix holds) and keep the Health check red until they age out ~6 Aug or are cleared with Admin → Tools → "Re-classify parked stories" |
 | Meta | A **new WABA "PR Radar"** was created 3 Aug alongside the old *Test WhatsApp Business Account*; account status Approved, business verification still Unverified. **Templates do not transfer between accounts**, so `pr_urgent` must exist and be APPROVED on whichever WABA `WHATSAPP_PHONE_ID` belongs to. `#132001` cannot distinguish its three causes (unapproved / wrong language code / wrong account) — use **Admin → Tools → "Check account & template"** (`?view=whatsapp-check`), which asks Meta from production and names the fix. Set `WHATSAPP_WABA_ID` if the account can't be resolved from the phone number. The template body carries **TWO variables** — `{{1}}` the story, `{{2}}` the action — because a variable's VALUE cannot contain a newline, so the paragraph break has to live in the template. The send shape must match how they are declared: `WHATSAPP_TEMPLATE_VAR` is a CSV of the variable names in order (default `1,2` = positional; names like `story,action` send `parameter_name`). A mismatch fails as `#132001`, exactly like a missing template |
 | `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
 
@@ -337,7 +341,12 @@ gets nothing. All queries live in `lib/db.js`.
 - **Never add a feed URL unprobed.** A 404 fails silently and the radar looks
   calm while blind. Candidates live in `lib/feed-candidates.js`; Admin → Tools
   → "Probe feeds" verifies them FROM PRODUCTION (the sandbox has no egress to
-  news hosts), then a verified URL moves into `DIRECT_FEEDS`.
+  news hosts), then a verified URL moves into `DIRECT_FEEDS`. Don't guess URL
+  shapes at an outlet — the probe reads a 200's body and names what came back
+  (HTML page / XML root / empty feed), and when a candidate resolves to an
+  HTML page it follows the feed the page itself DECLARES
+  (`<link rel="alternate">`) — asking the page beats suffix-guessing, which is
+  what disproved 28 staged candidates. Pinned by `verify-feed-probe`.
 - **Direct outlet feeds AND site sweeps are prefiltered** (`isWorthClassifying`):
   a national daily's firehose is mostly football/crime, and every item would
   otherwise cost a classifier call. SITE_FEEDS were exempt as "query-scoped" —
