@@ -71,16 +71,32 @@
   .formmsg{width:100%;font-size:11.5px;font-weight:700;margin-top:2px}
   .formmsg.ok{color:var(--pos)} .formmsg.err{color:var(--red-deep)}
 
-  .row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--hair-2)}
+  /* A .row is identity + actions, and .acts is flex:none — so .who, the only
+     FLEXIBLE child, absorbed every shortfall. The Users row's four controls
+     need 303px of the 328px a 390px phone leaves inside the card, so the email
+     got 15px against the 228px it wanted: "tame…" above a column of
+     one-word-per-line meta text, and the role pill clipped away entirely
+     (live, 6 Aug). Giving .who a flex BASIS makes the row BREAK instead of
+     starve — when identity and actions can't share a line, .acts wraps below
+     and right-aligns, keeping the toggle and ✕ where they sit on desktop.
+     Width-driven, not a breakpoint, so it holds for every row type (users,
+     subscribers, requests, the WhatsApp check) at every viewport: a row whose
+     actions DO fit is untouched. Identity text now wraps rather than
+     ellipsising — hiding half an address, or the role, is worse than two lines. */
+  .row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--hair-2)}
   .row:first-child{border-top:none}
-  .row .who{flex:1;min-width:0}
-  .row .who .em{font-size:13px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .who{flex:1 1 180px;min-width:0}
+  .row .who .em{font-size:13px;font-weight:700;color:var(--ink);overflow-wrap:anywhere}
   .row .who .nm{font-size:11.5px;color:var(--muted)}
   .cats{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
   .cat{font-size:10px;font-family:var(--mono);background:var(--hair-2);color:var(--ink-2);padding:2px 7px;border-radius:6px}
   .cat.all{background:var(--pos-bg);color:var(--pos)}
   .cat.wa{background:#e9f7ef;color:#0c7a43;font-family:var(--sans);font-weight:700}
-  .row .acts{flex:none;display:flex;gap:6px;align-items:center}
+  /* margin-left:auto only bites once the cluster has wrapped onto its own line
+     (on one line .who has already eaten the free space). It wraps INTERNALLY
+     too: below ~330px the cluster alone is wider than the card, and a row that
+     can't shrink widens the whole DOCUMENT — the tab-row lesson above. */
+  .row .acts{flex:none;max-width:100%;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;align-items:center;margin-left:auto}
   .toggle{cursor:pointer;border:1px solid var(--hair);background:var(--card);border-radius:20px;width:42px;height:24px;position:relative;flex:none}
   .toggle::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--faint);transition:all .15s}
   .toggle[aria-pressed=true]{background:var(--pos);border-color:var(--pos)}

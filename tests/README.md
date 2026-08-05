@@ -40,6 +40,7 @@ are **skipped**, the unit suite still runs.
 | Custom date-range reports (exec summary, appendix, Word/PDF export) | `smoke-report-range` (backend), `render-reports-page` (browser) |
 | Surge detection (calendar + rolling windows) | `smoke-task7`, `render-surge-rolling` |
 | Board header fits a phone without crushing the wordmark | `render-header-mobile` |
+| Admin list rows on a phone — identity readable, actions wrap beneath it | `render-admin-rows` |
 | Board UI (lanes, filters, deep links, auto-refresh, bylines, coverage) | `render-task11..15`, `render-lanes`, `render-deeplink`, `render-autorefresh`, `render-desk-byline`, `render-coverage`, `verify-bidi` |
 | Trends narratives (token clustering, LLM grouping + fallbacks, real-data regression, deep-link integrity) | `render-narrative-cluster`, `narr-ai`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives`, `render-deeplink` |
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |

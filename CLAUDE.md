@@ -346,6 +346,20 @@ gets nothing. All queries live in `lib/db.js`.
   important child `display:none`, never let identity text be the flexible one,
   and test at 390px — `render-header-mobile` asserts nothing renders narrower
   than its own content. Pinned by `render-header-mobile` + `render-adminui`.
+  **It recurred in the admin list rows** (6 Aug): a `.row` is identity + an
+  action cluster, `.acts` is `flex:none`, so `.who` again absorbed everything —
+  the Users row's four controls need 303px of the 328px a 390px phone leaves
+  inside the card, so the email got **15px** of the 228px it wanted (`tame…`,
+  the role pill clipped away entirely, the meta line 144px tall at one word per
+  line) while the document still never overflowed. The fix for a row that must
+  keep BOTH halves is a flex **basis**, not `flex:1`: `.who{flex:1 1 180px}` +
+  `flex-wrap` on the row makes it BREAK instead of starve — actions wrap below
+  and right-align, and a row whose actions do fit (subscribers' three icons) is
+  untouched. Width-driven, so there is no breakpoint to keep in sync. `.acts`
+  needs `max-width:100%` too or `flex:none` refuses to shrink and widens the
+  document below ~330px, and identity text WRAPS (`overflow-wrap:anywhere`)
+  rather than ellipsising — hiding half an address, or the role, is worse than
+  two lines. Pinned by `render-admin-rows`.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
