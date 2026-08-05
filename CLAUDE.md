@@ -336,10 +336,14 @@ gets nothing. All queries live in `lib/db.js`.
   calm while blind. Candidates live in `lib/feed-candidates.js`; Admin → Tools
   → "Probe feeds" verifies them FROM PRODUCTION (the sandbox has no egress to
   news hosts), then a verified URL moves into `DIRECT_FEEDS`.
-- **Direct outlet feeds are prefiltered** (`isWorthClassifying`): a national
-  daily's firehose is mostly football/crime, and every item would otherwise cost
-  a classifier call. Query-scoped Google-News feeds bypass the filter; sector
-  stories naming no brand still pass it.
+- **Direct outlet feeds AND site sweeps are prefiltered** (`isWorthClassifying`):
+  a national daily's firehose is mostly football/crime, and every item would
+  otherwise cost a classifier call. SITE_FEEDS were exempt as "query-scoped" —
+  disproven 5 Aug: Google News does not reliably honour the brand conjunction
+  in `(site:…) (brands)` and returned Al Mal's/Reuters' general firehose
+  (412 of 944 rows in 7d, 0 relevant), halving the Health screening rate.
+  Only the 10 quoted brand queries in FEEDS bypass the filter; sector stories
+  naming no brand still pass it.
 - **Author extraction is first-VALID-wins** across all sources (JSON-LD →
   metas → visible bylines) — junk in a high source must never mask a lower
   real byline. Junk classes already filtered: outlet names, UI placeholders,

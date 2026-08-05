@@ -52,8 +52,14 @@ const byId = Object.fromEntries(ALL_FEEDS.map((f) => [f.id, f]));
 for (const f of DIRECT_FEEDS) assert.strictEqual(byId[f.id].direct, true, `${f.id} flagged direct`);
 for (const f of FEEDS) assert.ok(!byId[f.id].direct, `${f.id} is query-scoped, not direct`);
 
-// 6b. Site-scoped sweeps are query-scoped like FEEDS — never prefiltered.
-for (const f of SITE_FEEDS) assert.ok(!byId[f.id].direct, `${f.id} is query-scoped, not direct`);
+// 6b. Site-scoped sweeps ARE prefiltered. They were assumed query-scoped and
+// exempt — disproven live 5 Aug: Google News does not reliably honour the
+// brand conjunction in `(site:…) (brands)` and returned Al Mal's and Reuters'
+// general firehose (Ukraine, Gaza, heatwaves) — 412 of 944 rows scanned in 7d,
+// zero relevant, each one a paid classifier call, and the Health screening
+// rate diluted to half its baseline. A genuinely scoped result names a brand
+// or sector term and passes the filter anyway, so gating costs nothing.
+for (const f of SITE_FEEDS) assert.strictEqual(byId[f.id].direct, true, `${f.id} items must pass the prefilter`);
 // ...and they stay OUT of the 15-min urgent poll, which keeps to brand queries.
 const pollIds = new Set(BRAND_FEEDS.map((f) => f.id));
 for (const f of SITE_FEEDS) assert.ok(!pollIds.has(f.id), `${f.id} must not run on the urgent poll`);
