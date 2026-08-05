@@ -28,6 +28,7 @@ are **skipped**, the unit suite still runs.
 | One daily brief per day, even with `RADAR_TO` unset | `verify-daily-once` |
 | Severity-5 alerts reach subscribers when `RADAR_TO` is unset | `verify-urgent-recipients` |
 | Admin email alert test reaches only the requesting admin | `verify-alert-test-tool` |
+| The board's 🔔 fires the real alert late, gated by the live rule | `verify-send-alert-tool` |
 | Deliverability scoped to PR Radar's sends, not the shared account | `verify-deliverability-scope` |
 | WhatsApp account/template diagnostic (the 3 causes of #132001) | `verify-whatsapp-check` |
 | Subscriber editing + WhatsApp number on a subscriber | `render-adminui`, `render-whatsapp` |

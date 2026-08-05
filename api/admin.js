@@ -15,7 +15,8 @@ import {
   allFeedback, setFeedbackResolved,
   listUsers, upsertUser, setUserRole, setUserActive, removeUser,
   recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor, itemsForDupeScan, mergeDuplicateInto,
-  parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber, whatsappSubscribers } from '../lib/db.js';
+  parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber, whatsappSubscribers,
+  itemsByIds, activeSubscribers, getStateTime, touchState } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
 import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
@@ -26,6 +27,7 @@ import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
 import { XMLParser } from 'fast-xml-parser';
 import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipients, whatsappConfigured } from '../lib/whatsapp.js';
 import { renderUrgent, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
+import { postUrgentWebhook } from '../lib/notify.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
 // function room beyond the default; every other admin op returns in well under a second.
@@ -426,6 +428,60 @@ export default async function handler(req, res) {
         try { remaining = await parkedItemCount({ days }); } catch { remaining = null; }
         await auditReq(req, who, 'items.reclassify', 'items', { found: parked.length, resolved, kept, stillParked });
         return res.status(200).json({ ok: true, found: parked.length, resolved, kept, stillParked, remaining });
+      }
+      if (resource === 'send-alert') {
+        // Fire the REAL urgent path for one stored card, after the fact.
+        // Alerts normally fire at ingest only — so when a human corrects a
+        // card INTO alert-qualifying territory (the Inas Ezzeddin case arrived
+        // branded e& off an unnamed "شركة اتصالات" and was corrected to
+        // Vodafone), the alert its readers should have had has already been
+        // skipped, silently. This is the only path that can fire it late.
+        // Same rule, renderer, recipients and channels as ingest — an alert
+        // sent this way must be indistinguishable from one sent on time.
+        const id = Number(req.body?.id);
+        if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'pass the card id' });
+        const [item] = await itemsByIds([id]);
+        if (!item) return res.status(404).json({ error: `no card #${id}` });
+        if (!item.is_relevant) return res.status(400).json({ error: `card #${id} is hidden — unhide it before alerting on it` });
+        // The GATE is the live rule, not the admin's judgement: a channel that
+        // carries non-qualifying stories is a channel the team learns to ignore.
+        if (!isInstantAlert(item)) {
+          return res.status(400).json({ error: `card #${id} does not qualify: the rule is Impact 4-5, or a negative Vodafone story (this card is ${item.brand || 'no brand'} / ${item.sentiment || 'no sentiment'} / Impact ${item.importance || 0})` });
+        }
+        // Once per card. A second click must not page the team twice — but the
+        // guard is per-card state, not a hard wall, so a genuine re-alert
+        // (story escalated days later) stays possible via force.
+        const KEY = `manual_alert_${id}`;
+        const already = await getStateTime(KEY).catch(() => 0);
+        if (already && !req.body?.force) {
+          return res.status(409).json({ error: `an alert for card #${id} was already sent ${new Date(already).toISOString().slice(0, 16)}Z — pass force:true to send it again` });
+        }
+        // Recipient resolution copied from the ingest path (api/radar.js):
+        // RADAR_TO wins when set; otherwise every active subscriber, category
+        // filters deliberately ignored — same fail-safe direction, one
+        // unexpected email beats a missed crisis.
+        let alertTo = process.env.RADAR_TO || '';
+        if (!alertTo.trim()) {
+          const subs = await activeSubscribers().catch(() => []);
+          alertTo = subs.map((s) => s.email).filter(Boolean).join(',');
+        }
+        if (!alertTo) return res.status(500).json({ error: 'no recipients: RADAR_TO is unset and there are no active subscribers' });
+        const tier = urgentTier(item);
+        const subject = `${tier.label} — ${item.headline}`.slice(0, 140);
+        const boardUrl = process.env.BOARD_URL || '';
+        let email;
+        try { email = await sendBulletin(renderUrgent(item, boardUrl), subject, alertTo); }
+        catch (e) {
+          await auditReq(req, who, 'alert.manual', String(id), { tier: tier.label, error: e.message });
+          return res.status(502).json({ error: `send failed: ${e.message}` });
+        }
+        // Same side channels as ingest, each fail-soft (no-op unless configured).
+        await postUrgentWebhook(item, boardUrl);
+        const wa = await sendWhatsAppUrgent(item).catch((e) => ({ sent: 0, failed: 0, error: e.message }));
+        await touchState(KEY).catch(() => {});
+        const result = { ok: true, id, tier: tier.label, emailed: email.sent || 0, emailFailed: email.failed || 0, whatsapp: wa };
+        await auditReq(req, who, 'alert.manual', String(id), { tier: tier.label, emailed: result.emailed, re: !!already });
+        return res.status(200).json(result);
       }
       if (resource === 'alert-test') {
         // Prove the EMAIL alert path from production — tier wording, recipient

@@ -101,6 +101,9 @@
   /* Viewers are read-only — hide the write controls (pins/hide/votes) entirely. */
   body[data-role="viewer"] .fb.pin, body[data-role="viewer"] .fb.hide,
   body[data-role="viewer"] .fb.up, body[data-role="viewer"] .fb.down{ display:none }
+  /* The alert bell PAGES PEOPLE — admin only, and hidden until the role is
+     known so a viewer never sees it flash in and out. */
+  body:not([data-role="admin"]) .fb.alert{ display:none }
 
   /* ── spotlight ── */
   .spotlight{display:none;align-items:center;gap:11px;cursor:pointer;margin:12px 16px 0;color:#fff;
@@ -671,6 +674,7 @@ function cardHtml(it){
     <div class="foot">
       <button class="btn copy" type="button" onclick="copyBrief(${it.id},this)">⧉ Copy brief</button>
       <button class="fb share" type="button" title="Share a branded snapshot" onclick="snapshotCard(${it.id})">📸</button>
+      <button class="fb alert" type="button" title="Send this card as an instant alert — email (and WhatsApp when live) to the full alert list. For cards corrected after ingest; the rule still applies." onclick="sendAlert(${it.id},this)">🔔</button>
       <button class="fb pin" aria-pressed="${pinned}" title="Pin for the team" onclick="togglePin(${it.id},'pin',this)">📌</button>
       <button class="fb hide" aria-pressed="${hidden}" title="Hide from the team view" onclick="togglePin(${it.id},'hide',this)">🙈</button>
       <button class="fb up" aria-pressed="${fb===1}" title="Useful" onclick="vote(${it.id},1,this)">▲</button>
@@ -688,6 +692,27 @@ async function copyBrief(id,btn){
   const text=[head,it.headline,act?`Action: ${act}`:'',linkOf(it)].filter(Boolean).join('\n');
   try{ await navigator.clipboard.writeText(text); }catch(e){ const t=document.createElement('textarea'); t.value=text; document.body.appendChild(t); t.select(); try{document.execCommand('copy');}catch(_){} t.remove(); }
   const old=btn.textContent; btn.textContent='✓ Copied'; btn.classList.add('copied'); setTimeout(()=>{ btn.textContent=old; btn.classList.remove('copied'); },1500);
+}
+// Admin: fire the real urgent path for one card, after the fact — for cards
+// corrected INTO alert territory after ingest (alerts normally fire at ingest
+// only). Confirms first: this button pages the whole alert list.
+async function sendAlert(id,btn){
+  const it=ITEMS.find(x=>x.id===id); if(!it) return;
+  if(!confirm(`Send "${(it.headline||'').slice(0,80)}" as an instant alert to the full alert list?`)) return;
+  btn.disabled=true; const old=btn.textContent; btn.textContent='…';
+  try{
+    const r=await afetch('/api/admin?resource=send-alert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    const d=await r.json().catch(()=>({}));
+    if(r.status===409 && confirm((d.error||'Already sent.')+'\n\nSend again anyway?')){
+      const r2=await afetch('/api/admin?resource=send-alert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,force:true})});
+      const d2=await r2.json().catch(()=>({}));
+      alert(r2.ok?`Alert sent (${d2.tier}) — emailed ${d2.emailed}.`:(d2.error||'Failed.'));
+    }
+    else if(!r.ok) alert(d.error||'Failed.');
+    else{ btn.textContent='✓'; setTimeout(()=>{ btn.textContent=old; },2000);
+      alert(`Alert sent (${d.tier}) — emailed ${d.emailed}${d.emailFailed?`, ${d.emailFailed} failed`:''}.`); }
+  }catch(e){ alert('Network error.'); }
+  btn.disabled=false; if(btn.textContent==='…') btn.textContent=old;
 }
 async function vote(id,val,btn){
   const cur=btn.getAttribute('aria-pressed')==='true'; const next=cur?null:val;
