@@ -531,9 +531,11 @@ export default async function handler(req, res) {
   }
 
   const relevant = classified.filter((i) => i.is_relevant && i.importance >= 2);
-  // Impact 4-5, or ANY negative Vodafone story whatever its Impact — a negative
-  // story about us is worth knowing inside the quarter hour even when its
-  // pickup is small, and waiting for the 05:00 brief could cost most of a day.
+  // Impact 4-5, or ANY negative story about a tracked operator whatever its
+  // Impact — a negative story is worth knowing inside the quarter hour even when
+  // its pickup is small, and waiting for the 05:00 brief could cost most of a
+  // day. Rivals included since 5 Aug: their trouble is market intelligence the
+  // team wants while it is still developing.
   // The rule lives in lib/email.js beside the tier it drives, so the trigger and
   // the wording of the alert can't disagree. On the history to date this fires
   // about once every five days.

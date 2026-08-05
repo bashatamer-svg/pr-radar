@@ -91,11 +91,13 @@ const call = async (body, bearer = 'admin') => {
 // ── the live rule gates it: a non-qualifying card cannot page the team ──
 {
   sent = [];
-  items = [{ ...CARD, id: 7, brand: 'e&', importance: 3 }];   // rival negative below 4
+  // A sector story: negative, but names no operator, so the widened rule still
+  // excludes it. (An e& negative WOULD qualify since 5 Aug — rivals alert too.)
+  items = [{ ...CARD, id: 7, brand: 'market', sentiment: 'negative', importance: 3 }];
   const { code, out } = await call({ id: 7 });
   assert.strictEqual(code, 400, `non-qualifying card refused (got ${code})`);
   assert.match(String(out.error), /does not qualify/, 'with the rule stated');
-  assert.match(String(out.error), /e&/, 'and what the card actually is');
+  assert.match(String(out.error), /market/, 'and what the card actually is');
   assert.strictEqual(sent.length, 0, 'nothing sent');
 }
 

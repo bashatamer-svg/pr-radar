@@ -111,11 +111,14 @@ const urgentOf = (sent) => sent.filter((m) => /^URGENT —/.test(m.subject || ''
 }
 
 // ── WHICH stories trip the instant alert, and how loudly ──
-// Impact 4-5, or ANY negative Vodafone story whatever its Impact — a bad story
-// about us shouldn't wait for the 05:00 brief just because its pickup is small.
-// A negative story about a RIVAL is their problem: it alerts only if it also
-// scores 4+. Sentiment is the story's own tone for the brand it names, so
-// without the brand check every rival outage would page the team.
+// Impact 4-5, or ANY negative story about one of the FOUR TRACKED OPERATORS
+// whatever its Impact — a bad story shouldn't wait for the 05:00 brief just
+// because its pickup is small, and a rival's trouble is market intelligence
+// the team wants while it is still developing (user decision, 5 Aug; rivals
+// were previously excluded on a volume fear that live data disproved — two
+// competitor negatives below Impact 4 in the preceding 30 days).
+// `market` and unbranded items still do NOT alert on sentiment alone: neither
+// names an operator, so neither gives the team something to act on.
 {
   const { isInstantAlert, urgentTier } = await import(`${new URL('..', import.meta.url).pathname}/lib/email.js`);
   const cases = [
@@ -127,8 +130,12 @@ const urgentOf = (sent) => sent.filter((m) => /^URGENT —/.test(m.subject || ''
     [{ importance: 2, brand: 'Vodafone', sentiment: 'negative' }, true, 'ALERT', 'negative about us, small pickup'],
     [{ importance: 3, brand: 'Vodafone', sentiment: 'positive' }, false, null, 'good news waits for the brief'],
     [{ importance: 3, brand: 'Vodafone', sentiment: 'neutral' }, false, null, 'neutral waits for the brief'],
-    [{ importance: 3, brand: 'Orange', sentiment: 'negative' }, false, null, "a rival's problem is not our alert"],
-    [{ importance: 2, brand: 'e&', sentiment: 'negative' }, false, null, 'nor a small one'],
+    [{ importance: 3, brand: 'Orange', sentiment: 'negative' }, true, 'ALERT', "a rival's trouble is intelligence we want early"],
+    [{ importance: 2, brand: 'e&', sentiment: 'negative' }, true, 'ALERT', 'even a small one'],
+    [{ importance: 1, brand: 'WE', sentiment: 'negative' }, true, 'ALERT', 'any Impact, for any tracked operator'],
+    // The line the widening must NOT cross: no operator named, no alert.
+    [{ importance: 3, brand: 'market', sentiment: 'negative' }, false, null, 'a sector story names no operator to act on'],
+    [{ importance: 3, brand: null, sentiment: 'negative' }, false, null, 'nor does an unbranded one'],
   ];
   for (const [item, want, label, why] of cases) {
     assert.strictEqual(isInstantAlert(item), want,
@@ -153,6 +160,11 @@ const urgentOf = (sent) => sent.filter((m) => /^URGENT —/.test(m.subject || ''
   assert.ok(/a negative Vodafone story/.test(soft), 'the body says why it fired');
   const hard = renderUrgent({ id: 2, importance: 5, brand: 'Vodafone', sentiment: 'negative', headline: 'y', summary: 's' }, '');
   assert.ok(/● URGENT/.test(hard) && /severity-5 reputational threat/.test(hard), 'a real crisis still reads URGENT');
+  // With rivals alerting too, the why-line must NAME the brand — otherwise the
+  // reader cannot tell our crisis from a competitor's without reading on.
+  const rival = renderUrgent({ id: 3, importance: 2, brand: 'Orange', sentiment: 'negative', headline: 'z', summary: 's' }, '');
+  assert.ok(/a negative Orange story/.test(rival), 'a rival alert names the rival, not Vodafone');
+  assert.ok(!/negative Vodafone/.test(rival), 'and never mislabels it as ours');
 }
 
-console.log('URGENT-RECIPIENTS OK — Impact 4-5 and any negative Vodafone story alert instantly (rivals only at 4+), tiered URGENT vs ALERT in both subject and body, to every active subscriber when RADAR_TO is unset (category filters ignored) and to RADAR_TO alone when set');
+console.log('URGENT-RECIPIENTS OK — Impact 4-5 and any negative story about a tracked operator alert instantly (market/unbranded do not), tiered URGENT vs ALERT in both subject and body, to every active subscriber when RADAR_TO is unset (category filters ignored) and to RADAR_TO alone when set');

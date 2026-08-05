@@ -65,7 +65,7 @@ logic into a function file. New pages get a rewrite in `vercel.json`.
 | Cron (vercel.json) | Schedule (UTC) | Notes |
 |---|---|---|
 | `/api/radar` | daily 05:00 | full run: ingest + daily bulletin (`RADAR_TO` + subscribers) + stored-author backfill |
-| `/api/radar?urgentOnly=1` | every 15 min | ingest + instant email/WhatsApp for anything `isInstantAlert` (Impact 4-5, or any negative Vodafone story); skips bulletin |
+| `/api/radar?urgentOnly=1` | every 15 min | ingest + instant email/WhatsApp for anything `isInstantAlert` (Impact 4-5, or any negative story about a tracked operator); skips bulletin |
 | `/api/report?period=week&send=1` | Mon 06:00 | no-op unless `REPORT_EMAIL_ENABLED=1` |
 | `/api/geo?send=1` | Mon 07:00 | no-op unless `GEO_ENABLED=1` |
 | `/api/alerts?notify=1` | daily 05:45 | health push — silent unless a check is warn/crit, and deduped on the subject so a chronic problem mails once, not daily |
@@ -209,11 +209,16 @@ gets nothing. All queries live in `lib/db.js`.
   **Only 5 alerts in real time**; a 4 waits for the
   05:00 brief.
 - **Instant alerts fire on `isInstantAlert` (`lib/email.js`), not on Impact 5.**
-  Impact 4-5 **or** any negative *Vodafone* story at any Impact — a bad story
-  about us shouldn't wait out the 05:00 brief because its pickup was small. The
-  brand check is load-bearing: sentiment is the story's own tone for the brand it
-  names, so without it every rival outage would page the team; a rival's negative
-  alerts only if it also scores 4+. `urgentTier()` sits beside the rule and
+  Impact 4-5 **or** any negative story about one of the four tracked operators
+  (`TRACKED_OPERATORS`) at any Impact — a bad story shouldn't wait out the 05:00
+  brief because its pickup was small, and a rival's trouble is intelligence the
+  team wants while it is still developing (**widened 5 Aug, user decision**;
+  rivals were previously excluded on the theory that "every rival outage would
+  page the team" — live data disproved it: **two** competitor negatives below
+  Impact 4 in 30 days). `market` and unbranded items still do NOT alert on
+  sentiment alone — neither names an operator to act on. Because rivals now
+  alert, `urgentTier().why` NAMES the brand ("a negative Orange story"), so a
+  reader can tell a competitor's problem from ours in the header. `urgentTier()` sits beside the rule and
   drives the badge, the "why it fired" line **and** the subject in `api/radar.js`
   — only Impact 5 says URGENT, everything else says ALERT, because labelling all
   of it URGENT is how an alert channel earns being ignored. Both live in

@@ -497,7 +497,7 @@ function renderTools(){
     </div>
     <div class="card">
       <h2>Instant alerts (email)</h2>
-      <div class="nm" style="line-height:1.6;margin:0 0 11px">Anything at <b>Impact 4 or 5</b>, plus <b>any negative Vodafone story</b> at any Impact, is emailed within 15 minutes of landing — Impact 5 as <b>URGENT</b>, the rest as <b>ALERT</b>. Send yourself a sample to check delivery and how it reads. It goes <b>only to you</b>, never to the subscriber list.</div>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">Anything at <b>Impact 4 or 5</b>, plus <b>any negative story about Vodafone, Orange, WE or e&amp;</b> at any Impact, is emailed within 15 minutes of landing — Impact 5 as <b>URGENT</b>, the rest as <b>ALERT</b>. Send yourself a sample to check delivery and how it reads. It goes <b>only to you</b>, never to the subscriber list.</div>
       <div class="form">
         <select id="atTier" class="btn ghost" style="flex:0 0 auto">
           <option value="5">Impact 5 · URGENT</option>
@@ -510,7 +510,7 @@ function renderTools(){
     </div>
     <div class="card">
       <h2>WhatsApp urgent alerts</h2>
-      <div class="nm" style="line-height:1.6;margin:0 0 11px">The <b>same stories that trigger an instant email</b> — <b>Impact 4 or 5</b>, plus <b>any negative Vodafone story</b> at any Impact — are also sent as WhatsApp DMs, tagged <b>URGENT</b> (Impact 5) or <b>ALERT</b>. The official API can’t post to a group, so it messages people individually. Recipients are <b>everyone with a number in Admin → Subscribers</b>, plus anything in <code>WHATSAPP_TO</code> — combined, with duplicates messaged once. <b>Send test alert goes to <code>WHATSAPP_TO</code> only</b>, so a delivery check never pages the team. The number, token and template stay in the environment.</div>
+      <div class="nm" style="line-height:1.6;margin:0 0 11px">The <b>same stories that trigger an instant email</b> — <b>Impact 4 or 5</b>, plus <b>any negative story about one of the four operators</b> at any Impact — are also sent as WhatsApp DMs, tagged <b>URGENT</b> (Impact 5) or <b>ALERT</b>. The official API can’t post to a group, so it messages people individually. Recipients are <b>everyone with a number in Admin → Subscribers</b>, plus anything in <code>WHATSAPP_TO</code> — combined, with duplicates messaged once. <b>Send test alert goes to <code>WHATSAPP_TO</code> only</b>, so a delivery check never pages the team. The number, token and template stay in the environment.</div>
       <div class="nm" id="waStatus" style="font-weight:700;color:var(--ink-2);margin-bottom:10px">Checking…</div>
       <div class="form">
         <button class="btn" id="waTestBtn" type="button" disabled>Send test alert</button>

@@ -446,7 +446,7 @@ export default async function handler(req, res) {
         // The GATE is the live rule, not the admin's judgement: a channel that
         // carries non-qualifying stories is a channel the team learns to ignore.
         if (!isInstantAlert(item)) {
-          return res.status(400).json({ error: `card #${id} does not qualify: the rule is Impact 4-5, or a negative Vodafone story (this card is ${item.brand || 'no brand'} / ${item.sentiment || 'no sentiment'} / Impact ${item.importance || 0})` });
+          return res.status(400).json({ error: `card #${id} does not qualify: the rule is Impact 4-5, or a negative story about a tracked operator (this card is ${item.brand || 'no brand'} / ${item.sentiment || 'no sentiment'} / Impact ${item.importance || 0})` });
         }
         // Once per card. A second click must not page the team twice — but the
         // guard is per-card state, not a hard wall, so a genuine re-alert
