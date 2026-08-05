@@ -35,6 +35,21 @@ const sevIdx = SYSTEM.indexOf('3. severity');
 const ruleIdx = SYSTEM.indexOf('THE BRAND IS NAMED BUT IS NOT THE ACCUSED');
 assert.ok(sentIdx < ruleIdx && ruleIdx < sevIdx, 'the rule lives inside the sentiment definition');
 
+// ── an unnamed "شركة اتصالات" is not e& ──
+// "اتصالات" is the generic Arabic word for telecom as well as half of e&'s
+// name. A court story accusing an unnamed "شركة اتصالات" of registering five
+// lines without consent was branded e& (live, 5 Aug) — the accused was in
+// fact Vodafone, and the outlet had deliberately withheld the name, which is
+// exactly what Egyptian press does in accusation stories. Guessed attribution
+// of an accusation is the worst possible failure for a reputation tool.
+const un = SYSTEM.slice(SYSTEM.indexOf('AN UNNAMED OPERATOR IS NOT e&'));
+assert.ok(un.length > 200, 'the classifier carries the unnamed-operator rule');
+assert.ok(/NEVER the brand e&/.test(un), 'the bare generic phrase is excluded from e&');
+assert.ok(/DO NOT GUESS a brand/.test(un) && /"market"/.test(un),
+  'an unnamed operator falls to market, not to a guessed brand');
+assert.ok(/house context/.test(un), 'house knowledge may supply the name when the press withholds it');
+assert.ok(/إيناس عز الدين/.test(un), 'the worked example is the live miss itself');
+
 // ── follow-ups to a brand-linked story are RELEVANT, not celebrity noise ──
 // The sentiment rule alone was not enough: two follow-ups to the ad-music
 // plagiarism row ("the Tawlet song is taken down") arrived with no brand in
