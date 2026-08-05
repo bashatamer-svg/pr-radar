@@ -35,6 +35,25 @@ const sevIdx = SYSTEM.indexOf('3. severity');
 const ruleIdx = SYSTEM.indexOf('THE BRAND IS NAMED BUT IS NOT THE ACCUSED');
 assert.ok(sentIdx < ruleIdx && ruleIdx < sevIdx, 'the rule lives inside the sentiment definition');
 
+// ── follow-ups to a brand-linked story are RELEVANT, not celebrity noise ──
+// The sentiment rule alone was not enough: two follow-ups to the ad-music
+// plagiarism row ("the Tawlet song is taken down") arrived with no brand in
+// the headline, the model CONNECTED them (brand: Vodafone) and still filed
+// them is_relevant:false as music news (live, 5 Aug). The team never saw how
+// the story it was already tracking ended. This rule is the relevance half.
+const fu = SYSTEM.slice(SYSTEM.indexOf('FOLLOW-UPS TO A BRAND-LINKED STORY'));
+assert.ok(fu.length > 200, 'the classifier carries the follow-up relevance rule');
+assert.ok(/RELEVANT even when the brand appears nowhere in the headline/.test(fu),
+  'the rule covers the unnamed-brand follow-up');
+assert.ok(/how the story ends/.test(fu), 'the rule states why: the team must see the ending');
+assert.ok(/celebrity\/music\/sport noise/.test(fu), 'the misfiling it forbids is named');
+assert.ok(/brand set and is_relevant false/.test(fu) && /non-Egypt or/.test(fu),
+  'setting a brand asserts the connection — brand+irrelevant is confined to non-Egypt/duplicate');
+assert.ok(/Tawlet song is taken down/.test(fu), 'the worked example is the live miss itself');
+// It must live in SCOPE, before the model has decided relevance — not after.
+assert.ok(SYSTEM.indexOf('FOLLOW-UPS TO A BRAND-LINKED STORY') < SYSTEM.indexOf('NOT A REGULATORY MONITOR'),
+  'the follow-up rule sits in the scope section');
+
 // ── the no-inversion convention it has to coexist with ──
 // A story about a rival's ad being disputed is negative for the RIVAL, by the
 // same rule — that only works while sentiment stays the brand's own tone.

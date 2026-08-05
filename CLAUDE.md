@@ -453,9 +453,17 @@ gets nothing. All queries live in `lib/db.js`.
   wrong, so neutral" is the tempting wrong answer, and the classifier gave both
   answers to the same story 90 minutes apart (live, 2026-07-31). The rule now
   lives in the sentiment section: subject-of-the-controversy ⇒ negative;
-  not-the-accused softens **severity** (2–3), never the sentiment. Judgement
-  calls like this get written into the prompt and pinned by
-  `verify-judgement-rules`, which asserts on the exported `SYSTEM` string.
+  not-the-accused softens **severity** (2–3), never the sentiment.
+  **And its follow-ups stay RELEVANT** — the sentiment rule alone was not
+  enough: two later chapters of the same plagiarism row ("the Tawlet song is
+  taken down") arrived with no brand in the headline, the classifier CONNECTED
+  them (`brand: Vodafone`) and still filed them irrelevant as music news
+  (live, 5 Aug; user decision to include). The scope section now says a story
+  the model can connect to a brand-linked controversy/campaign is relevant even
+  with the brand unnamed, and that brand-set + is_relevant:false is confined to
+  non-Egypt/duplicate cases. Judgement calls like this get written into the
+  prompt and pinned by `verify-judgement-rules`, which asserts on the exported
+  `SYSTEM` string.
 - **A duplicate is COVERAGE, not garbage.** Within a run `fuzzyDedupe` always
   kept every cluster member as a `pr_instances` row; across runs all four passes
   (hash, headline Jaccard, summary hash/Jaccard, semantic) just filtered the
