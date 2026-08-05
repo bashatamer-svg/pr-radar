@@ -374,9 +374,29 @@ gets nothing. All queries live in `lib/db.js`.
   row of ACTIONS: one a reader must scroll sideways to find may as well not
   exist (the opposite call to the tab row, where the tabs are navigation and
   scrolling is the known idiom). Pinned by `render-card-foot`.
+  **Worst instance: the Trends leaderboards** (6 Aug). `.lrow` is name + spark +
+  bar + value + chevron, and everything except the name is unshrinkable
+  (`.val` is flex:none nowrap text ~192px — "38 · 24% negative · 9 Vod-neg";
+  `.spark` a fixed 72px), so `.nm` took the whole shortfall: **0px at 360, 17px
+  at 390, 57px at 430** against the 168–200px it needed. Outlet intelligence
+  read `ك.. / D.. / O..`, Journalist intelligence `م.. / J..`, the journalist's
+  outlets sub-line vanished and the sentiment bar was squeezed to **0px** — the
+  "which outlet is talking about us" question the cards exist to answer was
+  unanswerable on every phone. Now the row STACKS below 560px (`flex-wrap` +
+  `.nm{flex:1 1 100%}` wrapping, bar+value beneath, `.spark{display:none}`) —
+  extending to every row what this file already did for `.lrow.narr`, which is
+  why narrative rows alone had always been readable. The Trends header carried
+  the board's original `.ttl{flex:1}` fault too: 342px of content at 320px,
+  panning the page 22px and truncating "Trends" itself; the clock now hides
+  below 560px, the same call `index.html` makes at the same width. Pinned by
+  `render-leaderboard-mobile`. **Reports (`reports.html`) was measured over the
+  same widths and is clean** — its `.row` of two `flex:1` action buttons shares
+  the shortfall evenly and only grows taller below 360px; don't "fix" it.
   General rule for this whole family: a flex row of controls needs an explicit
   give — wrap, scroll, or a hidden child — and `flex:none` on anything whose
-  size is part of its usability (touch targets, identity text).
+  size is part of its usability (touch targets, identity text). A row whose
+  siblings are ALL unshrinkable has no give at all: measure it at 320/360/390
+  rather than trusting that the flexible child will cope.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
