@@ -461,9 +461,14 @@ gets nothing. All queries live in `lib/db.js`.
   (live, 5 Aug; user decision to include). The scope section now says a story
   the model can connect to a brand-linked controversy/campaign is relevant even
   with the brand unnamed, and that brand-set + is_relevant:false is confined to
-  non-Egypt/duplicate cases. Judgement calls like this get written into the
-  prompt and pinned by `verify-judgement-rules`, which asserts on the exported
-  `SYSTEM` string.
+  non-Egypt/duplicate cases. **And an unnamed «شركة اتصالات» is never e&** —
+  the word اتصالات is generic Arabic for telecom, and Egyptian press
+  deliberately withholds the operator's name in accusation stories; the
+  classifier once pinned such an accusation (actually Vodafone — the Inas
+  Ezzeddin 5-lines case, 5 Aug) on e&. Unnamed operator ⇒ brand `market`,
+  never a guess; the Context doc may supply the name. Judgement calls like
+  this get written into the prompt and pinned by `verify-judgement-rules`,
+  which asserts on the exported `SYSTEM` string.
 - **A duplicate is COVERAGE, not garbage.** Within a run `fuzzyDedupe` always
   kept every cluster member as a `pr_instances` row; across runs all four passes
   (hash, headline Jaccard, summary hash/Jaccard, semantic) just filtered the
