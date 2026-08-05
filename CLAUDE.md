@@ -109,9 +109,9 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_items` | One story card. `author` NULL (never '') = shown as newsroom; `is_relevant=false` = hidden everywhere; `team_share` tri-state (true pin / false hide / null algorithm); `importance` 1–5 |
 | `pr_instances` | Every outlet that ran the story (coverage spread), FK → items |
 | `pr_users` / `pr_audit` | Sign-in allowlist + roles; audit trail. **Live-only: missing from schema.sql** (see Drift) |
-| `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency) |
+| `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency; `manual_alert_<id>` = the board's 🔔 already fired for that card) |
 | `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users). `whatsapp` NULL (never '') = not paged; `active` gates BOTH channels |
-| `pr_context` | Admin-editable house knowledge injected into classification |
+| `pr_context` | Admin-editable house knowledge injected into classification. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
 | `pr_feed_health` | Per-feed failure streaks (bulletin footer) |
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
@@ -218,7 +218,17 @@ gets nothing. All queries live in `lib/db.js`.
   Impact 4 in 30 days). `market` and unbranded items still do NOT alert on
   sentiment alone — neither names an operator to act on. Because rivals now
   alert, `urgentTier().why` NAMES the brand ("a negative Orange story"), so a
-  reader can tell a competitor's problem from ours in the header. `urgentTier()` sits beside the rule and
+  reader can tell a competitor's problem from ours in the header.
+  **Alerts are evaluated at INGEST ONLY** — nothing ever re-runs the rule over
+  stored cards. So a card CORRECTED into the qualifying band after the fact
+  (5 Aug: a court story branded e& off an unnamed «شركة اتصالات», corrected to
+  Vodafone) has already silently missed its alert. The board's admin-only **🔔**
+  (`?resource=send-alert`) is the only path that fires it late: same rule, same
+  `renderUrgent`, same recipients, same side channels, audited as
+  `alert.manual`. It is gated on the LIVE rule (not the admin's judgement),
+  refuses a hidden card, and answers 409 on a second click — one `pr_state`
+  marker per card, `force:true` to override for a genuine re-alert. Pinned by
+  `verify-send-alert-tool`. `urgentTier()` sits beside the rule and
   drives the badge, the "why it fired" line **and** the subject in `api/radar.js`
   — only Impact 5 says URGENT, everything else says ALERT, because labelling all
   of it URGENT is how an alert channel earns being ignored. Both live in
@@ -566,7 +576,9 @@ gets nothing. All queries live in `lib/db.js`.
   sends a sample through the real `renderUrgent`/`sendBulletin` at a chosen
   tier — always to the signed-in admin only, never the subscriber list.
   "Send test alert" beside it is **WhatsApp-only** and template-blocked, so it
-  proves nothing about email.
+  proves nothing about email. To send a REAL alert for a REAL card (a
+  correction that missed its ingest-time alert), use the board card's **🔔** —
+  that one DOES reach the full alert list; see the instant-alert Gotcha.
 5. **Admin → Health** — 12 live checks + 14-day alert history, computed on
   open. Five answer "did it run?" (brief freshness vs stories waiting, ingest
   volume, parked stories, recipients, dead feeds). Seven answer harder
