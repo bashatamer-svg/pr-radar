@@ -48,6 +48,14 @@ check('هنا الزاهد still a person', cleanAuthor('هنا الزاهد', '
 check('keyword page flagged', isNonArticlePage('https://besraha.com/keyword/318029/1'), true);
 check('tag page flagged', isNonArticlePage('https://elghad.news/tag/%D8%B4%D8%B1%D9%83%D8%A9/'), true);
 check('WP /archives/ permalink NOT flagged', isNonArticlePage('https://alahalygate.com/archives/341270'), false);
+// Personalised share cards — Google indexed a Vodafone Cash year-in-review
+// page and the daily brief mailed a private mobile number to the list as a
+// "win" (live, 5 Aug). Either tell alone must catch it.
+check('share-card page flagged (both tells)', isNonArticlePage('https://web.vodafone.com.eg/cash/share?l=ar&typ=nst&image=newYear3.jpg&a=27&b=201006903694'), true);
+check('a /share path segment alone flags', isNonArticlePage('https://example.com/cash/share?l=ar'), true);
+check('a phone number as a query VALUE alone flags', isNonArticlePage('https://example.com/promo?msisdn=201006903694'), true);
+check('a short numeric id param NOT flagged', isNonArticlePage('https://example.com/article?id=341270'), false);
+check('a "shared-services" segment NOT flagged', isNonArticlePage('https://mcit.gov.eg/shared-services/news/12'), false);
 // 20b/20c. a bare email address is a CMS account, not a byline (production
 //     case: "melfaramawy416@gmail.com" rendered as a journalist) — but the
 //     "Name <email>" feed shape still yields the human part.

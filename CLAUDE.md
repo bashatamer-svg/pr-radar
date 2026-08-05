@@ -348,7 +348,10 @@ gets nothing. All queries live in `lib/db.js`.
   metas → visible bylines) — junk in a high source must never mask a lower
   real byline. Junk classes already filtered: outlet names, UI placeholders,
   emails, photo credits (تصوير/أرشيفية). Tag/keyword/search archive URLs are
-  killed at ingest (`isNonArticlePage`).
+  killed at ingest (`isNonArticlePage`), and so are personalised share cards:
+  a `/share` path segment, or a full phone number as a query VALUE — a Vodafone
+  Cash year-in-review page slipped past the newsroom sweep and the daily brief
+  mailed a private mobile number to the list as a "win" (live, 5 Aug).
 - **The weekly email output must stay byte-identical** unless intentionally
   changed — `buildReportRange` was added *beside* `buildReport` for this
   reason. Email HTML is table-layout + inline styles only.
