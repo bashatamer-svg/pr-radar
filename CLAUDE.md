@@ -360,6 +360,23 @@ gets nothing. All queries live in `lib/db.js`.
   document below ~330px, and identity text WRAPS (`overflow-wrap:anywhere`)
   rather than ellipsising — hiding half an address, or the role, is worse than
   two lines. Pinned by `render-admin-rows`.
+  **And in the board card's `.foot`** (6 Aug), which is the third shape of the
+  same fault: a row of controls with nowhere to give. A viewer sees 3 (Copy, 📸,
+  Open) and fits; an ADMIN sees 8 — 359px of controls in the 322px a 390px phone
+  leaves inside a card — so with no wrap every one of them shrank: both labels
+  folded into FOUR lines inside 59px/69px boxes, the icon buttons dropped from
+  their 38px touch target to 30px, and the row overflowed anyway, panning the
+  whole page (3px at 390, 73px at 320). So the board bug was admin-only, which
+  is why five months of viewer use never surfaced it. Fixed with
+  `flex-wrap` on `.foot` + `flex:none` on `.btn`/`.fb` so controls keep their
+  designed size and the row breaks; `.btn.open`'s `margin-left:auto` still
+  right-anchors it on whichever line it lands on. Wrap, not `overflow-x`, for a
+  row of ACTIONS: one a reader must scroll sideways to find may as well not
+  exist (the opposite call to the tab row, where the tabs are navigation and
+  scrolling is the known idiom). Pinned by `render-card-foot`.
+  General rule for this whole family: a flex row of controls needs an explicit
+  give — wrap, scroll, or a hidden child — and `flex:none` on anything whose
+  size is part of its usability (touch targets, identity text).
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
