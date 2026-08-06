@@ -55,7 +55,7 @@ behaviour gets a regression test in the same commit.
 | `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
 | `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
 | `scripts/` | One-off generators run manually (OG images) |
-| `tests/*.mjs` | The suite. `narr-fixture.mjs` is captured production data, not a test |
+| `tests/*.mjs` | The suite. `narr-fixture.mjs` (captured production data) and `byline-cases.mjs` (the byline ledger) are DATA, not tests — both are in the runner's `EXCLUDE` |
 
 New shared behaviour goes in `lib/` and is imported by `api/`; never duplicate
 logic into a function file. New pages get a rewrite in `vercel.json`.
@@ -534,8 +534,24 @@ gets nothing. All queries live in `lib/db.js`.
   multi-segment split only. Hardening each regex would be whack-a-mole; the
   funnel's bottom holds for JSON-LD, metas, bylines, datelines and the AI alike.
   **A stored junk byline is never revisited** — the backfill selects
-  `author=is.null`, so a wrong name is permanent until someone NULLs it.
+  `author=is.null`, so a wrong name is permanent until someone NULLs it. Two
+  live rows carried residue; both cleared 6 Aug with user approval.
   Pinned by `verify-author-markup`.
+  **This was the third byline bug in a week, each fixed somewhere different** —
+  so validation was consolidated into ONE funnel, `judgeByline` +
+  `BYLINE_RULES` (`lib/author.js`), where every rejection carries the rule's
+  NAME. Three things follow, and they are the whole reason it is worth the
+  indirection: a new lesson is one entry in one list; `extractAuthorFromHtml`
+  takes `{trace}` and reports which source produced a candidate and which rule
+  killed it (so `inspectAuthorPage` can say *why*, where it used to report only
+  the story-subject refusal and read as a flat "no byline"); and LOOSE
+  extraction patterns became safe to add, because nothing reaches the board
+  without passing the same rules — `itemprop=author`, `class="…author…"` and
+  `<address>` went in on that basis, all previously unread. `cleanNameChecked`
+  is the bare-string face for callers holding no page (RSS `<dc:creator>`, the
+  model's answer). **Reported cases live in `tests/byline-cases.mjs` and the
+  loop for adding one is the playbook below** — read it before touching this
+  code. Pinned by `verify-byline-cases`.
   **And the SUBJECT of a story is not its author** (6 Aug, user-reported): an
   Ahram Online interview was filed with the byline of the CEO being interviewed,
   and two Arabic cards credited the person quoted in their own «X: quote»
@@ -766,6 +782,43 @@ gets nothing. All queries live in `lib/db.js`.
   from this repo would be reaching into shared state, which the hard rules
   forbid; the number is honest anyway, because the tier ceiling is shared too.
 - WhatsApp preview caches are sticky — test OG changes with a `?v=N` URL.
+
+## When a wrong byline is reported
+
+Bylines are the one field users check against the source, so this is the most
+frequently reported class of bug — three in the first week of August. Each was
+fixed in a different place, which is how the next one was guaranteed. The loop
+below is the fix for THAT, and it is not optional; the whole point is that a
+report costs one ledger entry instead of an hour of regex archaeology.
+
+1. **Add the case FIRST, and watch it fail.** `tests/byline-cases.mjs` is a data
+   table: `REJECT` (what must never be stored) and `ACCEPT` (real names a guard
+   must not eat). Record `reported`, `outlet`, `why`, and either `raw` (a bare
+   candidate) or `html` (run through the whole cascade). A case written AFTER
+   the fix only proves the fix exists, not that it answers what was reported.
+2. **Diagnose with the trace, not by reading regexes.** `extractAuthorFromHtml`
+   takes `{ trace: [] }` and fills it with `{source, raw, ok, reason}` for every
+   candidate; Admin → Tools → "Verify verdicts" shows it per card. The reason
+   names the rule, so you learn immediately whether the value was never
+   extracted (a coverage gap) or extracted and wrongly accepted (a rule gap).
+3. **Fix in ONE place: `BYLINE_RULES` / `judgeByline` (`lib/author.js`).** Every
+   rejection rule lives in that one ordered list with a name. Resist adding a
+   guard beside the pattern that leaked — that is the scattering this replaced.
+   A coverage gap is the exception: add the pattern to `bylineCandidates`, which
+   is safe precisely because everything it emits is vetted by the same funnel.
+4. **Sweep production for the same fault, then clear it.** A stored byline is
+   NEVER revisited — the backfill selects `author=is.null` — so a wrong name is
+   permanent. Read-only SQL over `pr_items` finds siblings (the Astro case had
+   one, at a different outlet); NULLing them is a data write, so **ask first**,
+   then let the nightly backfill re-resolve.
+5. `npm test -- byline` replays the ledger. Every earlier case must still pass —
+   that is the actual guarantee being maintained.
+
+Two rules that outrank any clever extraction: **an honest blank beats a
+confident wrong name** (the board renders `—` / newsroom, and that is a
+supported outcome, not a failure), and **a judgement the model gets wrong needs
+a deterministic guard beside the instruction** — firming up the AI prompt has
+never once been sufficient.
 
 ## Verifying work
 

@@ -35,7 +35,9 @@ const server = createServer((req, res) => {
       if (view === 'audit') return j(audit);
       if (view === 'author-gap') return j({ missing: 5, days: 7 });
       if (view === 'author-inspect') return j({ days: 30, count: 2, rows: [
-        { id: 11, source: 'جريدة كابيتال', headline: 'قصة بلا توقيع', url: 'https://x/1', outcome: 'no-byline', status: 200, author: null, textStart: 'القاهرة — نص وكالة بدون توقيع', candidates: [], subjects: ['Jacques Marco'] },
+        { id: 11, source: 'جريدة كابيتال', headline: 'قصة بلا توقيع', url: 'https://x/1', outcome: 'no-byline', status: 200, author: null, textStart: 'القاهرة — نص وكالة بدون توقيع', candidates: [], subjects: ['Jacques Marco'],
+          trace: [{ source: 'meta', raw: 'Jacques Marco', ok: false, reason: 'in-headline' },
+                  { source: 'byline', raw: 'x" data-astro-c', ok: false, reason: 'markup' }] },
         { id: 12, source: 'الشروق', headline: 'قصة محجوبة', url: 'https://x/2', outcome: 'fetch-failed', status: 403, author: null, textStart: '', candidates: [], tried: [{ profile: 'desktop', status: 403 }, { profile: 'desktop+referer', status: 403 }, { profile: 'mobile', status: 403 }] },
       ] });
       if (view === 'whatsapp-status') return j({ enabled: true, hasToken: true, hasPhoneId: true, recipients: 2, template: 'pr_urgent' });
@@ -140,6 +142,14 @@ assert.ok(/card #11/.test(aiRows), 'and names the card id for cross-reference');
 // A name refused as the story's SUBJECT is reported, or "no byline" reads as a
 // bug on a page that plainly shows a name.
 assert.ok(/refused as the story's subject: Jacques Marco/.test(aiRows), 'a refused subject name is shown: ' + aiRows.slice(0, 200));
+// The TRACE is the diagnosis: every candidate, the source that produced it and
+// the RULE that judged it. Without the reason the panel lists rejects with no
+// way to tell a coverage gap ("never extracted") from a rule gap ("extracted
+// and wrongly accepted") — which is the first question every byline report asks.
+assert.ok(/what the page offered/.test(aiRows), 'the trace is labelled: ' + aiRows.slice(0, 240));
+for (const bit of ['meta', 'in-headline', 'byline', 'markup']) {
+  assert.ok(aiRows.includes(bit), `the trace names "${bit}" (source and rule, per candidate)`);
+}
 
 // WhatsApp card — status shown, test button enabled + sends
 await page.waitForTimeout(150);

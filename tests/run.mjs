@@ -16,7 +16,7 @@ import { createRequire } from 'node:module';
 const DIR = new URL('.', import.meta.url).pathname;
 mkdirSync(DIR + 'out', { recursive: true });
 
-const EXCLUDE = new Set(['run.mjs', 'narr-fixture.mjs']);
+const EXCLUDE = new Set(['run.mjs', 'narr-fixture.mjs', 'byline-cases.mjs']);
 const filter = process.argv[2] || '';
 const files = readdirSync(DIR).filter((f) => f.endsWith('.mjs') && !EXCLUDE.has(f) && f.includes(filter)).sort();
 
