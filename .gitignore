@@ -1,4 +1,9 @@
 node_modules/
+# `npm install` (documented in tests/README.md for the browser tests) writes a
+# lockfile. This repo has never tracked one — there is no build step and one
+# dev-only dependency — so ignore it rather than leave every session with a
+# stray untracked file after running the tests.
+package-lock.json
 .env
 .env.local
 .env.*.local
