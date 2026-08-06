@@ -371,7 +371,7 @@ function renderUsers(){
   $('#content').innerHTML=`
     <div class="card">
       <h2>Add a user</h2>
-      <div class="nm" style="line-height:1.6;margin:0 0 10px">Adding someone sets them up completely: a <b>starter password</b> made from their first name plus <code>123</code> (Tamer Basha → <code>tamer123</code>), and an email with their sign-in and a link to the board. They change the password themselves from <b>Password</b> in the top bar. Give the <b>name</b> — the password and the greeting are built from it. Anyone who already has a password <b>keeps it</b>: nothing is reset and no password is emailed.</div>
+      <div class="nm" style="line-height:1.6;margin:0 0 10px">Adding someone sets them up completely: a <b>starter password</b> made from their first name plus <code>123</code> (Tamer Basha → <code>tamer123</code>), and an email with their sign-in and a link to the board. They change the password themselves from <b>Account → Change password</b> in the top bar of the board. Give the <b>name</b> — the password and the greeting are built from it. Anyone who already has a password <b>keeps it</b>: nothing is reset and no password is emailed.</div>
       <div class="form">
         <input id="uEmail" type="email" placeholder="email@vodafone.com" autocomplete="off">
         <input id="uName" type="text" placeholder="Name (used for the password)" autocomplete="off">
@@ -451,7 +451,7 @@ async function addUser(){
 // RESET, not "change": a strong temporary password is GENERATED (the admin
 // never has to invent one) and pre-filled — accept it as-is, or type your own.
 // Shown once after applying so it can be copied and shared; the user changes
-// it themselves after signing in (Password link on the board).
+// it themselves after signing in (Account → Change password on the board).
 function genTempPassword(){
   // unambiguous set (no 0/O, 1/l/I) — this gets read out over the phone
   const chars='abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';

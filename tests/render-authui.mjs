@@ -54,7 +54,12 @@ const errs = [];
   await page.goto('http://localhost:8903/', { waitUntil: 'networkidle' });
   await page.waitForSelector('.card', { timeout: 4000 });
   assert.strictEqual(await page.getAttribute('body', 'data-role'), 'viewer', 'body tagged viewer');
-  assert.ok(await page.$eval('#account .who', el => /viewer@vodafone/.test(el.textContent)), 'account shows viewer email');
+  // Identity and the account actions live behind the Account button now. Open
+  // it and assert they are VISIBLE — text inside a display:none panel would
+  // satisfy a textContent check while showing the user nothing.
+  await page.click('#acctBtn');
+  assert.ok(await page.$eval('#account .who .em', el => /viewer@vodafone/.test(el.textContent) && el.getBoundingClientRect().width > 0),
+    'the account menu shows which account you are signed into');
   const pinShown = await page.$eval('#item-1 .fb.pin', el => getComputedStyle(el).display !== 'none').catch(() => true);
   assert.strictEqual(pinShown, false, 'viewer: pin control is hidden');
   const upShown = await page.$eval('#item-1 .fb.up', el => getComputedStyle(el).display !== 'none').catch(() => true);
@@ -63,7 +68,10 @@ const errs = [];
   assert.ok(await page.$('#item-1 .btn.copy'), 'viewer keeps read-only copy brief');
   // viewer sees NO admin link, but does see the change-password link
   assert.ok(!(await page.$('#account a[href="/admin"]')), 'viewer: no admin link');
-  assert.ok(await page.$('#account a[href="/account"]'), 'viewer: has change-password link');
+  // A VIEWER must be able to change their own password — they are the majority
+  // of accounts and the ones handed a generated starter password.
+  assert.ok(await page.$eval('#account a[href="/account"]', el => el.getBoundingClientRect().width > 0),
+    'viewer: the change-password item is there and visible');
   await page.close();
 }
 

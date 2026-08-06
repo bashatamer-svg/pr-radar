@@ -435,6 +435,22 @@ gets nothing. All queries live in `lib/db.js`.
   size is part of its usability (touch targets, identity text). A row whose
   siblings are ALL unshrinkable has no give at all: measure it at 320/360/390
   rather than trusting that the flexible child will cope.
+  **And the "hidden child" escape has its own trap** (6 Aug): the board header
+  paid for its room with `.account .who,.account .acctlink.pw{display:none}`
+  below 560px — which deleted the ONLY route to `/account`, so on a phone nobody
+  could change their password, while the welcome email says "open Password in the
+  top bar" and two lines later suggests Add to Home Screen. Nothing failed and no
+  test could see it: the control was simply absent. Hiding a child is only safe
+  when its FUNCTION is reachable another way; a route with one entry point is not
+  a candidate. Identity + change-password + sign-out now live in an **account
+  menu** (`Account ▾`, `renderAccount`/`wireAccountMenu` in `public/index.html`)
+  — one button that never needs to shed anything, so the breakpoint where the
+  feature disappeared no longer exists. The guide, the admin help text and
+  `renderWelcome` all name `Account → Change password`; change the menu and all
+  four move together. `stats.html`/`reports.html` deliberately have no menu —
+  they carry a `.back` to the board, and PR Radar pages are self-contained, so a
+  third copy would be three places to drift. Pinned by `render-account-menu`
+  (320/390/560/900px, viewer AND admin) + `render-authui`.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.

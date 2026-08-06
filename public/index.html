@@ -76,15 +76,50 @@
   .clock .t{font-family:var(--mono);font-size:12px;font-weight:700;line-height:1.1}
   .clock .d{font-family:var(--mono);font-size:8px;color:var(--faint);letter-spacing:.08em}
   /* Takes the slack AND the shortfall: flex:1 pushes the cluster right, and
-     min-width:0 lets the email inside it truncate first. */
+     min-width:0 lets what's inside it give way first. */
   .account{flex:1 1 auto;display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
-  .account .who{flex:0 1 auto;min-width:0;font-size:11px;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .account .signout,.account .acctlink{cursor:pointer;text-decoration:none;border:1px solid var(--hair);background:var(--raise);
+  /* The guide "?" and the Admin pill — NAVIGATION, which is why they stay out in
+     the row while everything about your own account moved into the menu below. */
+  .account .acctlink{cursor:pointer;text-decoration:none;border:1px solid var(--hair);background:var(--raise);
                     color:var(--ink-2);font-size:11px;border-radius:8px;padding:5px 9px;font-weight:600;white-space:nowrap}
-  .account .signout:hover,.account .acctlink:hover{border-color:var(--faint)}
+  .account .acctlink:hover{border-color:var(--faint)}
   .account .acctlink.guide{width:28px;height:28px;padding:0;border-radius:50%;display:grid;place-items:center;font-weight:800}
+
+  /* ── account menu ──
+     Identity, Change password and Sign out used to sit in the header as three
+     separate pills, and the row could not hold them: below 560px both the email
+     and the PASSWORD link were display:none. So on a phone there was no route to
+     the change-password page at all — while the welcome email tells every new
+     user to "open Password in the top bar", and in the same breath suggests Add
+     to Home Screen. One trigger button holds all three, so the cluster has
+     nothing left to shed and the width where it breaks no longer exists. */
+  .acct{position:relative;flex:none}
+  .acct-btn{cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--hair);background:var(--raise);
+            color:var(--ink-2);font-family:inherit;font-size:11px;font-weight:600;border-radius:8px;padding:5px 9px;white-space:nowrap}
+  .acct-btn:hover{border-color:var(--faint)}
+  .acct-btn .chev{transition:transform .15s}
+  .acct[data-open=true] .acct-btn{border-color:var(--faint);background:var(--card)}
+  .acct[data-open=true] .acct-btn .chev{transform:rotate(180deg)}
+  /* display:none, not visibility — a closed menu must have NO box, or the
+     header's "is anything crushed?" guard measures a panel nobody can see. */
+  .acct-menu{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:60;
+             min-width:212px;max-width:min(264px,calc(100vw - 24px));
+             background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:6px;
+             box-shadow:0 14px 40px -12px rgba(16,20,28,.3)}
+  .acct[data-open=true] .acct-menu{display:block}
+  .acct-menu .who{padding:7px 9px 9px;border-bottom:1px solid var(--hair-2);margin-bottom:5px}
+  /* The address WRAPS. Ellipsising it is how you end up showing half an email
+     to someone trying to check which account they are signed into. */
+  .acct-menu .who .em{font-size:12px;font-weight:700;color:var(--ink);line-height:1.35;overflow-wrap:anywhere}
+  .acct-menu .who .rl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
+  .acct-item{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;cursor:pointer;text-align:left;
+             border:0;background:none;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink-2);
+             padding:10px 9px;border-radius:9px;text-decoration:none}
+  .acct-item:hover{background:var(--raise);color:var(--ink)}
+  .acct-item .ic{flex:none;font-size:13px;line-height:1;width:15px;text-align:center}
+  .acct-item.danger{color:var(--red-deep)}
+  .acct-item.danger:hover{background:var(--neg-bg)}
   @media (max-width:560px){
-    .account .who,.account .acctlink.pw{display:none}
     /* The wordmark is the FIRST thing to drop on a phone, not the last.
        .ttl was the only flex:1 child in a row of flex:none ones, so it absorbed
        ALL the overflow: at 390px it measured 1px against 69px of content and
@@ -93,8 +128,8 @@
        stays hostage to how wide the account cluster happens to be (it grows with
        role and email). Both pills go icon-only TOGETHER: Trends keeping its
        label while Reports had lost its own read as a broken button. */
-    /* The nav row has room for both labels at 390px; only the clock goes, and
-       the account cluster sheds its email and password link as before. */
+    /* The nav row has room for both labels at 390px; only the clock goes — the
+       account cluster is one button now and sheds nothing. */
     .top .clock{display:none}
     .trow{padding:0 12px;gap:9px}
   }
@@ -442,11 +477,46 @@ function renderAccount(){
   let h=`<a class="acctlink guide" href="/guide" title="How it works — a quick guide">?</a>`;
   if(ME&&ME.role==='admin'){ h+=`<a class="acctlink" href="/admin" title="Admin panel — users, subscribers, feedback, audit">⚙ Admin</a>`; }
   if(ME&&ME.email){
-    h+=`<a class="acctlink pw" href="/account" title="Change your password">Password</a>`;
-    h+=`<span class="who" title="Signed in as ${esc(ME.role)}">${esc(ME.email)}</span>`;
-    h+=`<button class="signout" type="button" onclick="signOut()">Sign out</button>`;
+    // Everything about YOUR account behind one button: which account you are
+    // signed into, changing the password, and signing out. All three were
+    // separate header pills, and the two that mattered most were hidden on a
+    // phone for want of room.
+    h+=`<div class="acct" id="acct" data-open="false">
+      <button class="acct-btn" type="button" id="acctBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenu"
+              title="Your account — change your password or sign out">Account
+        <svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 9 7 7 7-7"/></svg>
+      </button>
+      <div class="acct-menu" id="acctMenu" role="menu" aria-labelledby="acctBtn">
+        <div class="who"><div class="em">${esc(ME.email)}</div><div class="rl">${esc(ME.role||'')}</div></div>
+        <a class="acct-item" role="menuitem" href="/account"><span class="ic" aria-hidden="true">🔒</span>Change password</a>
+        <button class="acct-item danger" role="menuitem" type="button" id="acctOut"><span class="ic" aria-hidden="true">⇥</span>Sign out</button>
+      </div>
+    </div>`;
   }
   el.innerHTML=h;
+  wireAccountMenu();
+}
+// Wired after every render, since renderAccount replaces the whole cluster.
+function wireAccountMenu(){
+  const wrap=$('#acct'), btn=$('#acctBtn'); if(!wrap||!btn) return;
+  const setOpen=(open)=>{ wrap.dataset.open=String(open); btn.setAttribute('aria-expanded',String(open)); };
+  btn.onclick=(e)=>{ e.stopPropagation(); setOpen(wrap.dataset.open!=='true'); };
+  const out=$('#acctOut'); if(out) out.onclick=()=>{ setOpen(false); signOut(); };
+  // Choosing an item closes it, and so does clicking away or pressing Escape —
+  // a menu you can only dismiss by picking something is a menu that traps you.
+  wrap.querySelectorAll('.acct-item').forEach(i=>i.addEventListener('click',()=>setOpen(false)));
+  if(!wireAccountMenu._global){
+    wireAccountMenu._global=true;
+    document.addEventListener('click',(e)=>{ const w=$('#acct'); if(w&&!w.contains(e.target)) closeAcct(); });
+    document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeAcct(); });
+  }
+}
+// aria-expanded has to move WITH the panel, or a screen reader announces a menu
+// that is no longer there.
+function closeAcct(){
+  const w=$('#acct'); if(!w) return;
+  w.dataset.open='false';
+  const b=$('#acctBtn'); if(b) b.setAttribute('aria-expanded','false');
 }
 
 const BRANDS = ['Vodafone','Orange','WE','e&'];
