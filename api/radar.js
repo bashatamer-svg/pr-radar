@@ -523,7 +523,10 @@ export default async function handler(req, res) {
           )];
           for (const u of urls) {
             const outlet = (insts[0] && insts[0].outlet) || it.source;
-            const person = cleanAuthor(await fetchAuthor(u, outlet), outlet);
+            // The HEADLINE is the guard against crediting the story's subject:
+            // an interviewee's name is often the first on the page (see the
+            // author Gotcha), so the extractor needs to know what this story is.
+            const person = cleanAuthor(await fetchAuthor(u, outlet, { headline: it.headline }), outlet);
             if (person) { it.author = person; if (insts[0]) insts[0].author = person; break; }
           }
         })

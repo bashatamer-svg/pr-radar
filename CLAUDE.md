@@ -502,7 +502,31 @@ gets nothing. All queries live in `lib/db.js`.
 - **Author extraction is first-VALID-wins** across all sources (JSON-LD →
   metas → visible bylines) — junk in a high source must never mask a lower
   real byline. Junk classes already filtered: outlet names, UI placeholders,
-  emails, photo credits (تصوير/أرشيفية). Tag/keyword/search archive URLs are
+  emails, photo credits (تصوير/أرشيفية).
+  **And the SUBJECT of a story is not its author** (6 Aug, user-reported): an
+  Ahram Online interview was filed with the byline of the CEO being interviewed,
+  and two Arabic cards credited the person quoted in their own «X: quote»
+  headline — the board attributed words to named people as if they had written
+  them, which is worse than an honest "—". The AI prompt ALREADY forbade "a
+  person merely mentioned or quoted IN the story (an official, a CEO)", so this
+  is the recurring lesson: a judgement the model gets wrong needs a
+  DETERMINISTIC guard beside the instruction. `isStorySubject()` +
+  `isNamedInHeadline()` (`lib/author.js`) now gate EVERY candidate on both paths
+  — an interviewee reaches JSON-LD and `<meta name=author>` too, so the check
+  cannot live only on the AI answer. Signals: a name beside a job title, a name
+  introduced by a quote verb, or a name that appears in the headline. Two
+  calibration traps, both found by the test: the ROLE window must stay ~30 chars
+  (wider, and an unlabelled byline above a paragraph about a minister is thrown
+  away) and the quote verb must be IMMEDIATELY adjacent (`X said` / `said X`) —
+  at 22 chars it rejected the real byline in `Fintech Gate: Riham Ali` /
+  `Vodafone Egypt said …`, the commonest shape in news copy. An explicit `By` /
+  `بقلم` / `كتب` before the name overrides everything. The headline is now
+  THREADED from all three callers (`fetchAuthor`/`fetchAuthorProbe`/
+  `inspectAuthorPage` take `{ headline }`) and passed to the model as context.
+  `author-inspect` reports rejected names as `subjects`, so the panel can't read
+  "no byline" for a page that plainly shows one. Pinned by
+  `verify-author-subject`. The three live rows were cleared to NULL (newsroom) —
+  never guessed at. Tag/keyword/search archive URLs are
   killed at ingest (`isNonArticlePage`), and so are personalised share cards:
   a `/share` path segment, or a full phone number as a query VALUE — a Vodafone
   Cash year-in-review page slipped past the newsroom sweep and the daily brief

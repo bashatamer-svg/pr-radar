@@ -347,7 +347,7 @@ export default async function handler(req, res) {
         const stale = await itemsMissingAuthor({ days, limit });
         const rows = await Promise.all((stale || []).map(async (it) => {
           const url = [it.resolved_url, it.url].find((u) => u && !isGoogleNews(u)) || null;
-          const probe = await inspectAuthorPage(url, it.source);
+          const probe = await inspectAuthorPage(url, it.source, { headline: it.headline });
           return { id: it.id, source: it.source, headline: (it.headline || '').slice(0, 100), url, ...probe };
         }));
         return res.status(200).json({ days, count: rows.length, rows });
