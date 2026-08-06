@@ -212,6 +212,20 @@ gets nothing. All queries live in `lib/db.js`.
   filter bug for cards behaving as designed. Pinned by `render-guide`.
   **Only 5 alerts in real time**; a 4 waits for the
   05:00 brief.
+- **The board's Sort chip re-orders; it never filters.** `◉ Impact` is the
+  original order (lane → Impact → spread → recency) and is what LOADS. It is
+  deliberately NOT persisted the way `pr_win` is: a Newest sort set once and
+  forgotten quietly pushes an Impact 5 below a trickle of fresh trivia, and on a
+  board whose job is surfacing the worst thing first the safe order has to be
+  the one that comes back after a reload. `↓ Newest` DROPS the three lane
+  sections for one flat chronological run (user decision, 6 Aug) — sorting by
+  time *inside* the lanes still buries the freshest story under two headings,
+  which is the only question the control exists to answer. Impact stays the
+  tie-break, so equally fresh cards are not left in API order. Cards keep their
+  lane TINT, so a needs-response story still reads red in the stream, and a
+  single `↓ Newest first` header opens the list — without it, absent lanes read
+  as a rendering bug rather than the order you picked. The status line names the
+  order only when it is not the default. Pinned by `render-board-sort`.
 - **Instant alerts fire on `isInstantAlert` (`lib/email.js`), not on Impact 5.**
   Impact 4-5 **or** any negative story about one of the four tracked operators
   (`TRACKED_OPERATORS`) at any Impact — a bad story shouldn't wait out the 05:00

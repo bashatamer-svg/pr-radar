@@ -415,6 +415,7 @@
     <div class="status" id="status"></div>
     <div class="frow" id="sentRow"></div>
     <div class="frow" id="winRow"></div>
+    <div class="frow" id="sortRow"></div>
   </div>
 
   <div class="dfilter" id="dfilter" hidden></div>
@@ -529,6 +530,14 @@ const SENT = {
 const IMP = {5:'#e60000',4:'#f27100',3:'#e2a900',2:'#3a7ac2',1:'#9aa2ad'};
 
 let ITEMS=[]; let fBrand='all', fSent='all', fWin=Number(localStorage.getItem('pr_win'))||2, fPin='all', fLowConf='all';
+// Card ORDER. 'impact' is the board's original and only order — biggest first,
+// within the three lanes. 'newest' sets the lanes aside for one flat run in
+// publication order, which is the honest shape of "what just landed": sorting
+// by time INSIDE the lanes would still bury the freshest story under two
+// sections. Deliberately NOT persisted (unlike pr_win): a sort you set once and
+// forgot would quietly hide an Impact 5 below a trickle of fresh trivia, and on
+// a monitoring board the safe default has to be what loads.
+let fSort='impact';
 // Deep-link filters from the Trends page: click a category / outlet / journalist
 // there to land on the board showing exactly those cards.
 let fCat=params.get('cat')||'', fOutlet=params.get('outlet')||'', fAuthor=params.get('author')||'';
@@ -829,12 +838,21 @@ async function togglePin(id,mode,btn){
 function pass(it){ if(fPin==='pinned'&&!isPinned(it)) return false; if(fLowConf==='low'&&!isLowConf(it)) return false; if(fBrand!=='all'&&(it.brand||'')!==fBrand) return false; if(fSent!=='all'&&laneOf(it)!==fSent) return false; if(fIds.length&&!fIds.includes(it.id)) return false; if(fCat&&(it.category||'')!==fCat) return false; if(fOutlet&&!itemHasOutlet(it,fOutlet)) return false; if(fAuthor&&!itemHasAuthor(it,fAuthor)) return false; return true; }
 function render(){
   buildPulse(); buildSpotlight();
-  const shown=ITEMS.filter(pass).sort((a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(laneOf(a))-rank(laneOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||new Date(b.published_at||b.seen_at||0)-new Date(a.published_at||a.seen_at||0); });
+  // Newest keeps Impact as its TIE-BREAK, so two stories filed the same minute
+  // still arrive biggest-first rather than in whatever order the API returned.
+  const at=it=>new Date(it.published_at||it.seen_at||0);
+  const shown=ITEMS.filter(pass).sort(fSort==='newest'
+    ? (a,b)=>at(b)-at(a)||(b.importance||0)-(a.importance||0)
+    : (a,b)=>{ const rank=s=>s==='negative'?0:s==='neutral'?1:2; return rank(laneOf(a))-rank(laneOf(b))||(b.importance||0)-(a.importance||0)||spreadOf(b)-spreadOf(a)||at(b)-at(a); });
   const neg=ITEMS.filter(i=>sentOf(i)==='negative').length;
   const brandNote=fBrand==='all'?'':` · <b>${esc(fBrand)}</b>`;
   // Sentiment is each brand's own, so this is simply "stories that ran negative"
   // across everyone tracked — the plain word is now the accurate one.
-  $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg" title="Stories that ran negative for the brand they are about, across all tracked brands">${neg} negative</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>`;
+  // Only the NON-default order is named. Impact is what the board has always
+  // done, so announcing it on every load would be noise on a line already
+  // carrying three counts — but a flat, lane-less board must say why.
+  const sortNote=fSort==='newest'?`<span class="sep">·</span><span><b>Newest</b> first</span>`:'';
+  $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg" title="Stories that ran negative for the brand they are about, across all tracked brands">${neg} negative</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>${sortNote}`;
   // Deep-link filter banner (arrived from Trends) with a one-click clear.
   const df=deepFilter(); const dfEl=$('#dfilter');
   if(df){ const note=(fIds.length&&fIdsTotal>fIds.length)?` <span class="dfsub">top ${fIds.length} of ${fIdsTotal} by reach</span>`:'';
@@ -844,9 +862,18 @@ function render(){
   if(!shown.length){ list.innerHTML=`<div class="empty">${df?`No cards for this ${esc(df.kind.toLowerCase())} in the current window.<br>Try a wider window, or clear the filter above.`:'Nothing matches this filter.<br>Clear the brand or widen the time window.'}</div>`; return; }
   const SEC=[['negative','Needs a response','#e60000'],['positive','Wins to amplify','#0f9d58'],['neutral','Market & noted','#5b6675']];
   let html='';
-  for(const [key,label,color] of SEC){ const rows=shown.filter(i=>laneOf(i)===key); if(!rows.length) continue;
-    html+=`<div class="sechead"><span class="tick" style="background:${color}"></span><span class="lab">${label}</span><span class="n" style="background:${color}">${rows.length}</span></div>`;
-    html+=rows.map(cardHtml).join(''); }
+  if(fSort==='newest'){
+    // FLAT: one chronological run, no lane grouping. The cards keep their lane
+    // TINT (a needs-response card is still red-washed), so the signal survives
+    // even where the sections don't. One header still opens the list — without
+    // it, missing lanes read as a rendering bug rather than the order you chose.
+    html=`<div class="sechead"><span class="tick" style="background:#5b6675"></span><span class="lab">↓ Newest first</span><span class="n" style="background:#5b6675">${shown.length}</span></div>`
+      +shown.map(cardHtml).join('');
+  } else {
+    for(const [key,label,color] of SEC){ const rows=shown.filter(i=>laneOf(i)===key); if(!rows.length) continue;
+      html+=`<div class="sechead"><span class="tick" style="background:${color}"></span><span class="lab">${label}</span><span class="n" style="background:${color}">${rows.length}</span></div>`;
+      html+=rows.map(cardHtml).join(''); }
+  }
   list.innerHTML=html; stagger(list); animateBars(list);
   if(location.hash){ const el=document.getElementById(location.hash.slice(1)); if(el) el.scrollIntoView(); }
 }
@@ -857,6 +884,7 @@ function syncControls(){
   $('#sentRow').querySelectorAll('.chip[data-v]').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===fSent)));
   const pc=$('#sentRow .chip[data-pin]'); if(pc) pc.setAttribute('aria-pressed',String(fPin==='pinned'));
   const lc=$('#sentRow .chip[data-lowconf]'); if(lc) lc.setAttribute('aria-pressed',String(fLowConf==='low'));
+  $('#sortRow').querySelectorAll('.chip[data-sort]').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.sort===fSort)));
 }
 function buildFilters(){
   const sent=$('#sentRow');
@@ -873,6 +901,13 @@ function buildFilters(){
   const wopts=[['1','24 hours'],['2','48 hours'],['7','Week'],['30','Month']];
   win.innerHTML=`<span class="flabel">Since</span>`+wopts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fWin)===v}">${l}</button>`).join('');
   win.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ fWin=Number(c.dataset.v); localStorage.setItem('pr_win',c.dataset.v); win.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===c.dataset.v))); load(); });
+  // Sort is a re-order of what is already loaded — no refetch, and nothing is
+  // ever hidden by it, which is why it sits apart from the filter rows above.
+  const srt=$('#sortRow');
+  const sopts=[['impact','◉ Impact','Biggest first — Impact, then how many outlets ran it. Grouped into the three lanes.'],
+               ['newest','↓ Newest','Most recent first, as one flat list. The lane sections are set aside so the freshest story is always at the top.']];
+  srt.innerHTML=`<span class="flabel">Sort</span>`+sopts.map(([v,l,t])=>`<button class="chip" type="button" data-sort="${v}" aria-pressed="${fSort===v}" title="${t}">${l}</button>`).join('');
+  srt.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ fSort=c.dataset.sort; syncControls(); render(); });
   $('#bar2').hidden=false;
 }
 

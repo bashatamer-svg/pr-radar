@@ -48,6 +48,7 @@ are **skipped**, the unit suite still runs.
 | Card footer on a phone — an admin's 8 controls wrap, none shrink | `render-card-foot` |
 | Trends leaderboards on a phone — names readable, bar survives, header fits | `render-leaderboard-mobile` |
 | Board UI (lanes, filters, deep links, auto-refresh, bylines, coverage) | `render-task11..15`, `render-lanes`, `render-deeplink`, `render-autorefresh`, `render-desk-byline`, `render-coverage`, `verify-bidi` |
+| Sort chip — Impact keeps the lanes, Newest goes flat, neither hides a card | `render-board-sort` |
 | Trends narratives (token clustering, LLM grouping + fallbacks, real-data regression, deep-link integrity) | `render-narrative-cluster`, `narr-ai`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives`, `render-deeplink` |
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
