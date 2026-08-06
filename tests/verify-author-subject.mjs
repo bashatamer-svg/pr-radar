@@ -47,6 +47,58 @@ assert.ok(isStorySubject('Jacques Marco', 'Jacques Marco, CEO of Axis Pay, said 
 assert.ok(isStorySubject('Jacques Marco', 'the market has tripled, said Jacques Marco'),
   'and so does one introduced by a quote verb');
 
+/* ── 1b. THE REAL PAGE: the journalist IS captured ────────────────────────── */
+// The screenshot the user sent shows what the page actually prints:
+//
+//   INTERVIEW| … Axis Pay targets 3 mln users: Axis CEO
+//   Doaa A.Moneim , Thursday 6 Aug 2026
+//   Egypt's mobile wallet market has expanded … Jacques Marco, founder and CEO
+//   of Axis Pay, told Ahram Online …
+//
+// Two separate defects met here, and the first version of this guard only fixed
+// one of them:
+//   * the byline is UNLABELLED — no "By", no byline class, and Ahram links the
+//     journalist as /Search.aspx?author=… , which the /author/ PATH pattern misses
+//   * flattened, the text reads "…3 mln users: Axis CEO Doaa A.Moneim , Thursday
+//     6 Aug 2026", so the HEADLINE's own "CEO" sits nine characters before the
+//     journalist's name — the subject guard rejected the real author
+// The fix is that positive byline evidence wins: a name followed by the
+// publication date is a byline, and is also extracted in its own right.
+const realPage = `<html><body><article><h1>${HEADLINE}</h1>
+  <p><a href="/Search.aspx?author=Doaa">Doaa A.Moneim</a> , Thursday 6 Aug 2026</p>
+  <p>Egypt's mobile wallet market has expanded from around 15 million users before the COVID-19 pandemic to about 50 million today, creating substantial room for fintech growth as Axis Pay targets three million customers within the next two to three years, Jacques Marco, founder and CEO of Axis Pay, told Ahram Online in a short interview following a media roundtable organized by the company on Tuesday.</p>
+  </article></body></html>`;
+assert.strictEqual(extractAuthorFromHtml(realPage, 'Ahram Online', { headline: HEADLINE }), 'Doaa A.Moneim',
+  'the journalist who wrote it is captured from the "<name> , <date>" byline');
+// The role word in the headline must not condemn a name that carries a dateline.
+assert.strictEqual(
+  isStorySubject('Doaa A.Moneim', "targets 3 mln users: Axis CEO Doaa A.Moneim , Thursday 6 Aug 2026 Egypt's mobile wallet"),
+  false,
+  'a dateline outranks a role word sitting in the headline before the byline');
+// …while the interviewee in the same body is still refused.
+assert.ok(isStorySubject('Jacques Marco', realPage.replace(/<[^>]+>/g, ' ')),
+  'and the interviewee in the same page is still read as the subject');
+
+// Datelines come in several shapes, and Arabic pages print them too.
+for (const [line, who] of [
+  ['Mona Said | 6 Aug 2026', 'Mona Said'],
+  ['Mona Said, Aug 6 2026', 'Mona Said'],
+  ['Mona Said , 06/08/2026', 'Mona Said'],
+  ['أحمد سمير , الخميس 6 أغسطس 2026', 'أحمد سمير'],
+]) {
+  const page = `<html><body><article><h1>Vodafone expands its network</h1><p>${line}</p>
+    <p>The operator said coverage would grow across three governorates this year.</p></article></body></html>`;
+  assert.strictEqual(extractAuthorFromHtml(page, 'Some Outlet', { headline: 'Vodafone expands its network' }), who,
+    `dateline byline captured: "${line}"`);
+}
+// And a date deep in the copy is NOT a byline — the window is the opening only,
+// and the separator is required, or "…on Tuesday" would start crediting people.
+const noByline = `<html><body><article><h1>Vodafone expands its network</h1>
+  <p>The operator confirmed the rollout, and Ahmed Fathy told reporters on Tuesday that work had begun.</p>
+  </article></body></html>`;
+assert.strictEqual(extractAuthorFromHtml(noByline, 'Some Outlet', { headline: 'Vodafone expands its network' }), null,
+  'a name near a weekday inside a sentence is not a byline');
+
 /* ── 2. …and the same page WITH a real byline still yields it ─────────────── */
 // The guard must not turn every interview into a bylineless card: Ahram prints
 // the journalist under the headline, and that name wins.

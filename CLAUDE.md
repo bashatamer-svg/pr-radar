@@ -524,9 +524,25 @@ gets nothing. All queries live in `lib/db.js`.
   THREADED from all three callers (`fetchAuthor`/`fetchAuthorProbe`/
   `inspectAuthorPage` take `{ headline }`) and passed to the model as context.
   `author-inspect` reports rejected names as `subjects`, so the panel can't read
-  "no byline" for a page that plainly shows one. Pinned by
-  `verify-author-subject`. The three live rows were cleared to NULL (newsroom) —
-  never guessed at. Tag/keyword/search archive URLs are
+  "no byline" for a page that plainly shows one.
+  **The same page then showed the OTHER half of the bug** (user-reported minutes
+  later): its real byline is `Doaa A.Moneim , Thursday 6 Aug 2026` — no "By", no
+  byline class, and Ahram links journalists as `/Search.aspx?author=…`, a QUERY
+  param the `/author/` PATH pattern missed. So the cascade found nothing and the
+  AI read the body. Worse, the first version of the guard would have REJECTED
+  her: flattened, the text runs `…3 mln users: Axis CEO Doaa A.Moneim , Thursday
+  6 Aug 2026`, so the headline's own "CEO" sits nine characters before the
+  journalist's name. Rule that resolves both: **positive byline evidence wins** —
+  a name followed by a DATELINE is a byline (`DATELINE_AFTER` exempts it from the
+  subject check, exactly as an explicit `By` does), and `datelineCandidates()`
+  now EXTRACTS that shape from the flattened opening (1500 chars, separator
+  required) as the lowest-priority source. It walks back over tokens and stops at
+  an ALL-CAPS token or a role word, or the run climbs out of the byline into the
+  headline. Do NOT rebuild it as one regex with the `i` flag: under `i`,
+  `\p{Lu}` matches lowercase too, and the capture swallowed whole clauses
+  ("its network Mona Said") — the test caught it. #1960 now reads
+  `Doaa A.Moneim`; #886 and #430 stay NULL (unknown, never guessed) and will be
+  re-probed by the backfill. Pinned by `verify-author-subject`. Tag/keyword/search archive URLs are
   killed at ingest (`isNonArticlePage`), and so are personalised share cards:
   a `/share` path segment, or a full phone number as a query VALUE — a Vodafone
   Cash year-in-review page slipped past the newsroom sweep and the daily brief
