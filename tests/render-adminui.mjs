@@ -35,7 +35,7 @@ const server = createServer((req, res) => {
       if (view === 'audit') return j(audit);
       if (view === 'author-gap') return j({ missing: 5, days: 7 });
       if (view === 'author-inspect') return j({ days: 30, count: 2, rows: [
-        { id: 11, source: 'جريدة كابيتال', headline: 'قصة بلا توقيع', url: 'https://x/1', outcome: 'no-byline', status: 200, author: null, textStart: 'القاهرة — نص وكالة بدون توقيع', candidates: [] },
+        { id: 11, source: 'جريدة كابيتال', headline: 'قصة بلا توقيع', url: 'https://x/1', outcome: 'no-byline', status: 200, author: null, textStart: 'القاهرة — نص وكالة بدون توقيع', candidates: [], subjects: ['Jacques Marco'] },
         { id: 12, source: 'الشروق', headline: 'قصة محجوبة', url: 'https://x/2', outcome: 'fetch-failed', status: 403, author: null, textStart: '', candidates: [], tried: [{ profile: 'desktop', status: 403 }, { profile: 'desktop+referer', status: 403 }, { profile: 'mobile', status: 403 }] },
       ] });
       if (view === 'whatsapp-status') return j({ enabled: true, hasToken: true, hasPhoneId: true, recipients: 2, template: 'pr_urgent' });
@@ -127,6 +127,19 @@ assert.ok(/no byline on page/.test(aiRows), 'no-byline verdict shown');
 assert.ok(/page opens:/.test(aiRows) && /نص وكالة/.test(aiRows), 'opening text shown as evidence');
 assert.ok(/blocked \/ unreachable \(403\)/.test(aiRows), 'blocked verdict shown with HTTP status');
 assert.ok(/tried: desktop → 403 · desktop\+referer → 403 · mobile → 403/.test(aiRows), 'per-profile attempt evidence shown');
+// THE ARTICLE ITSELF. Every other line on this panel is second-hand evidence;
+// without a link the admin cannot check the page's real byline, which is exactly
+// what a wrong author (an interviewee stored as the journalist) requires.
+const aiLink = await page.$eval('#aiRows a[href="https://x/1"]', (el) => ({
+  text: el.textContent.trim(), target: el.getAttribute('target'), rel: el.getAttribute('rel') || '',
+}));
+assert.match(aiLink.text, /open article/i, `each row links to the article (got "${aiLink.text}")`);
+assert.strictEqual(aiLink.target, '_blank', 'in a new tab, so the panel is not lost');
+assert.ok(/noopener/.test(aiLink.rel), 'with rel=noopener');
+assert.ok(/card #11/.test(aiRows), 'and names the card id for cross-reference');
+// A name refused as the story's SUBJECT is reported, or "no byline" reads as a
+// bug on a page that plainly shows a name.
+assert.ok(/refused as the story's subject: Jacques Marco/.test(aiRows), 'a refused subject name is shown: ' + aiRows.slice(0, 200));
 
 // WhatsApp card — status shown, test button enabled + sends
 await page.waitForTimeout(150);

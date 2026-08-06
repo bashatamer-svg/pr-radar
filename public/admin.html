@@ -771,8 +771,12 @@ async function runAuthorInspect(){
           <div style="font-size:12px"><b style="color:${col}">${esc(lab)}${x.status&&x.outcome==='fetch-failed'?' ('+esc(String(x.status))+')':''}</b>
             ${x.author?` — <b dir="auto">${esc(x.author)}</b> (will fill on the next backfill)`:''} · <span class="nm">${esc(x.source||'')}</span></div>
           <div dir="auto" style="font-size:12px;color:var(--ink-2);margin-top:2px">${esc(x.headline||'')}</div>
+          ${/^https?:\/\//i.test(x.url||'')?`<div style="font-size:11px;margin-top:3px">
+            <a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--red);text-decoration:none;font-weight:700">Open article ↗</a>
+            <span style="color:var(--faint)"> · card #${esc(String(x.id))} · ${esc((x.url.split('/')[2]||''))}</span></div>`:''}
           ${x.outcome==='fetch-failed'&&x.tried&&x.tried.length?`<div style="font-size:11px;color:var(--faint);margin-top:2px">tried: ${esc(x.tried.map(t=>t.profile+' → '+t.status).join(' · '))}</div>`:''}
           ${x.outcome==='no-byline'&&x.textStart?`<div dir="auto" style="font-size:11px;color:var(--faint);margin-top:4px;line-height:1.5">page opens: “${esc(x.textStart.slice(0,200))}…”</div>`:''}
+          ${x.subjects&&x.subjects.length?`<div dir="auto" style="font-size:11px;color:#8a5a00;margin-top:2px">refused as the story's subject: <b>${esc(x.subjects.join(' · '))}</b> — open the article and check the real byline</div>`:''}
           ${x.candidates&&x.candidates.length?`<div dir="auto" style="font-size:11px;color:var(--faint);margin-top:2px">rejected candidates: ${esc(x.candidates.join(' · '))}</div>`:''}
         </div>`;
       }).join('');
