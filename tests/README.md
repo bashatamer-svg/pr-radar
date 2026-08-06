@@ -39,6 +39,7 @@ are **skipped**, the unit suite still runs.
 | Forgot-password: neutral answer, admin queue, self-clearing, no migration | `verify-password-reset` (backend), `render-reset-ui` (browser) |
 | Author capture (cascade, AI fallback, ingest-time, backfill, sweep) | `verify-authors`, `verify-ai-author`, `render-poll-author`, `render-author-backfill` |
 | An interviewee/quoted executive is never stored as the byline | `verify-author-subject` |
+| Scraped tag residue / URL slugs are never stored as the byline | `verify-author-markup` |
 | Emails & webhooks (bulletin, urgent, report, no-token links) | `render-notoken`, `render-lanes-email-report`, `smoke-task2`, `render-whatsapp`, `send-guard` |
 | No `?t=` token in any URL — emails, webhooks **and** every static page | `render-notoken` |
 | Custom date-range reports (exec summary, appendix, Word/PDF export) | `smoke-report-range` (backend), `render-reports-page` (browser) |

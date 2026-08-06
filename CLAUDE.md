@@ -517,6 +517,25 @@ gets nothing. All queries live in `lib/db.js`.
   metas → visible bylines) — junk in a high source must never mask a lower
   real byline. Junk classes already filtered: outlet names, UI placeholders,
   emails, photo credits (تصوير/أرشيفية).
+  **And RAW MARKUP is not a byline** (6 Aug, user-reported): an Astro page filed
+  `بريد-لتسهيل-تقديم-التظلمات" data-astro-c` as the author — the tail of an href
+  slug, the closing quote, and the start of `data-astro-cid-*`. Several byline
+  patterns capture `[^<]{2,60}` after hopping to the first `>`, so an attribute
+  VALUE containing `>` lands the hop INSIDE the tag and the capture runs from
+  mid-attribute into the next one. The reason nothing objected is the real
+  lesson: `cleanAuthor` returned a **single-segment** candidate unchecked —
+  `looksLikePerson` only ever ran on names that split into segments, so a lone
+  blob of markup was waved through. Guards now sit in `cleanName`, below every
+  source: `MARKUP_JUNK` (a name has no `<>="{}`, no `data-`/`aria-`, no
+  `href=`), `looksLikeSlug` (two hyphens in one whitespace-free token is a path
+  segment, not Jean-Pierre), and `NAME_SHAPE` on the single-segment path. Word
+  count is deliberately NOT capped there — Egyptian bylines run to five parts
+  (`أحمد محمد عبد الله السيد`), and `looksLikePerson`'s 2–4 cap guards the
+  multi-segment split only. Hardening each regex would be whack-a-mole; the
+  funnel's bottom holds for JSON-LD, metas, bylines, datelines and the AI alike.
+  **A stored junk byline is never revisited** — the backfill selects
+  `author=is.null`, so a wrong name is permanent until someone NULLs it.
+  Pinned by `verify-author-markup`.
   **And the SUBJECT of a story is not its author** (6 Aug, user-reported): an
   Ahram Online interview was filed with the byline of the CEO being interviewed,
   and two Arabic cards credited the person quoted in their own «X: quote»
