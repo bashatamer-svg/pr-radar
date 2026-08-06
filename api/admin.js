@@ -574,14 +574,19 @@ export default async function handler(req, res) {
         // Welcome email — ONLY when we actually set the password. Someone who
         // already had one must never be sent a password they don't have: that
         // reads as "your password changed" and sends them to a login that fails.
-        let emailed = null, emailError = null;
+        let emailed = null, emailError = null, bccd = false;
         if (notify !== false && credentials === 'created') {
           // BCC the admin so the send lands in their own inbox as the record of
           // who was told what — this response is gone the moment the page is
           // closed. forceBcc because RADAR_BCC_EXCLUDE is about the standing
-          // monitor copy, not one asked for at send time. Skipped when the admin
-          // IS the recipient.
+          // monitor copy, not one asked for at send time.
+          // TWO cases have no BCC, and both are reported rather than assumed:
+          // the admin adding THEMSELVES (they are already the To), and a
+          // token-driven call, which has no address of its own. The panel used
+          // to claim "you are BCC'd" unconditionally — true for the ordinary
+          // path, a lie for those two.
           const bcc = who.email && who.email !== addr ? who.email : null;
+          bccd = !!bcc;
           try {
             await sendBulletin(
               renderWelcome({ name: person, email: addr, password, role: wantRole, boardUrl: process.env.BOARD_URL, support: who.email || null, subscribed: onBrief }),
@@ -603,7 +608,7 @@ export default async function handler(req, res) {
           ok: true, user, role: wantRole,
           credentials, credentialsError: credError || null,
           password: credentials === 'created' ? password : null,
-          subscriber, emailed, emailError,
+          subscriber, emailed, emailError, bccd,
         });
       }
       const { email, name, categories, whatsapp } = req.body || {};

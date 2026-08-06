@@ -349,9 +349,15 @@ gets nothing. All queries live in `lib/db.js`.
   rename it for every four-letter first name (`mona123` → `mona1234`) and break
   the only thing the convention is for — an admin saying it without looking it
   up. Only a 1–2 letter first name is topped up (`Ed` → `ed1234`).
-  Each step is reported separately (`credentials` / `subscriber` / `emailed`)
-  because a provisioned account whose email bounced needs a human to pass the
-  password on, and that must not read like a clean run. Both defaults are ON in
+  Each step is reported separately (`credentials` / `subscriber` / `emailed` /
+  `bccd`) because a provisioned account whose email bounced needs a human to pass
+  the password on, and that must not read like a clean run. The admin's own BCC
+  copy is the only lasting record (the panel dies with the page), and it rides
+  `who.email` — so it does NOT exist for a service-token call or when an admin
+  adds themselves; `bccd` reports which, because the panel claimed it either way.
+  **A test authenticating as `CRON_SECRET` cannot see any of that** — a service
+  principal has no email, so the BCC and support-address branches are dead under
+  it, which is exactly how the BCC shipped untested. Both defaults are ON in
   the UI — a checkbox the admin has to hunt for is one that stays unticked.
   Pinned by `verify-user-provision` + `render-user-create`.
 - **A prompt cache is only worth ASKING for when a read can follow the write.**

@@ -411,7 +411,7 @@ function showProvision(d){
   } else if(d.credentials==='failed'){
     L.push(`<div class="pline bad">${esc(d.user&&d.user.email||'')} is allowlisted, but no password could be set${d.credentialsError?` (${esc(d.credentialsError)})`:''}. They cannot sign in until you use <b>Reset password</b> on their row.</div>`);
   }
-  if(d.emailed===true) L.push(`<div class="pline">Sign-in details emailed to them ✓ — you are BCC&rsquo;d, so the copy is in your inbox too.</div>`);
+  if(d.emailed===true) L.push(`<div class="pline">Sign-in details emailed to them ✓${d.bccd?' — you are BCC&rsquo;d, so the copy is in your inbox too.':''}</div>`);
   else if(d.emailed===false) L.push(`<div class="pline bad">The email did NOT send${d.emailError?` — ${esc(d.emailError)}`:''}. Send them the password above yourself.</div>`);
   else if(d.credentials==='created') L.push(`<div class="pline">No email sent (you unticked it) — pass the password on yourself.</div>`);
   const SUBTEXT={added:'Added to the daily brief.',reactivated:'Their paused daily-brief subscription was switched back on.',

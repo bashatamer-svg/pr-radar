@@ -14,8 +14,10 @@
 //   4. the welcome email carries that person's own address + password, no token
 //   5. every step is reported separately, so a failed send can't read as clean
 import assert from 'node:assert';
+import crypto from 'node:crypto';
 
 process.env.CRON_SECRET = 'admin';
+process.env.ADMIN_EMAILS = 'boss@vodafone.com';
 process.env.SUPABASE_URL = 'https://fake.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key';
 process.env.SUPABASE_JWT_SECRET = 'jwt-secret';
@@ -25,6 +27,17 @@ process.env.BOARD_URL = 'https://pr-radar.example.com/';
 process.env.RADAR_TOKEN = 'SEKRIT-TOKEN-123';
 
 const ok = (t) => ({ ok: true, status: 200, text: async () => t, json: async () => JSON.parse(t || 'null') });
+
+// A real HS256 session token, signed with the same secret lib/auth.js verifies
+// against — so the signed-in path below goes through the actual verification
+// rather than a stub of it.
+const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+function sessionFor(email) {
+  const h = b64({ alg: 'HS256', typ: 'JWT' });
+  const p = b64({ email, role: 'authenticated', aud: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 });
+  const sig = crypto.createHmac('sha256', process.env.SUPABASE_JWT_SECRET).update(`${h}.${p}`).digest('base64url');
+  return `${h}.${p}.${sig}`;
+}
 
 // ── the fake world ──────────────────────────────────────────────────────────
 let world = {};
@@ -72,10 +85,16 @@ globalThis.fetch = async (url, opts = {}) => {
 };
 
 const { default: handler } = await import(new URL('..', import.meta.url).pathname + '/api/admin.js');
-async function addUser(body) {
+// `as` picks the PRINCIPAL. It matters more than it looks: the cron token is a
+// service principal with no email of its own, so every BCC and support-address
+// branch is dead under it — which is why the BCC went untested at first.
+// A signed-in admin is what the browser actually sends.
+const CRON = { authorization: 'Bearer admin' };
+const SIGNED_IN = { authorization: `Bearer ${sessionFor('boss@vodafone.com')}` };
+async function addUser(body, as = CRON) {
   let code, out;
   const res = { status: (c) => { code = c; return res; }, json: (b) => { out = b; return res; }, setHeader() {}, end() { } };
-  await handler({ method: 'POST', query: { resource: 'users' }, body, headers: { authorization: 'Bearer admin' } }, res);
+  await handler({ method: 'POST', query: { resource: 'users' }, body, headers: as }, res);
   return { code, out };
 }
 
@@ -204,5 +223,33 @@ assert.strictEqual(world.created[0].password, out.password, 'and it is the passw
 reset();
 ({ out } = await addUser({ email: 'mona.said@vodafone.com', role: 'viewer' }));
 assert.strictEqual(out.password, 'mona123', `derived from the address when no name is given (got ${out.password})`);
+
+/* ── 10. the ADMIN'S OWN COPY of the welcome email ────────────────────────── */
+// The response panel is gone the moment the page is closed, so the BCC is the
+// admin's only lasting record of who was told what. It rides the signed-in
+// session's address — which is exactly why the cron-token cases above could
+// never have caught it breaking.
+reset();
+({ out } = await addUser({ email: 'newbie@vodafone.com', name: 'Newbie', role: 'viewer' }, SIGNED_IN));
+assert.strictEqual(out.emailed, true, 'the welcome email sent');
+assert.strictEqual(out.bccd, true, 'and the panel is told the admin was BCC-copied');
+assert.deepStrictEqual(world.sent[0].to, ['newbie@vodafone.com'], 'the To is the new user alone');
+assert.deepStrictEqual(world.sent[0].bcc, ['boss@vodafone.com'],
+  `the signed-in admin is BCC'd (got ${JSON.stringify(world.sent[0].bcc)})`);
+// BCC, never Cc or a second To: the new user must not be shown who provisioned
+// them, and a group send would expose the password convention to a wider list.
+assert.ok(!world.sent[0].cc, 'copied by BCC, not Cc');
+assert.ok(/boss@vodafone\.com/.test(world.sent[0].html),
+  'and the "anything not working" line names that admin, not an unset env var');
+
+/* ── 11. an admin adding THEMSELVES gets no BCC, and is told so ───────────── */
+// They are already the To. A BCC would be a second copy of the same mail, and
+// the panel claiming "you are BCC'd" would be plainly wrong.
+reset();
+({ out } = await addUser({ email: 'boss@vodafone.com', name: 'Boss', role: 'admin' }, SIGNED_IN));
+assert.strictEqual(out.emailed, true, 'the email still sends');
+assert.strictEqual(out.bccd, false, 'but no BCC is claimed');
+assert.deepStrictEqual(world.sent[0].to, ['boss@vodafone.com'], 'addressed to them once');
+assert.ok(!world.sent[0].bcc, 'and not BCC-copied to themselves as well');
 
 console.log('USER-PROVISION OK — adding a user sets a first-name starter password, optionally subscribes them to the daily brief, and emails their own sign-in; an existing password is never reset or re-mailed, an existing subscriber row is never overwritten, the password never reaches the audit log, and a failed send is reported with its reason');
