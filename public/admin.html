@@ -105,6 +105,7 @@
   .cat{font-size:10px;font-family:var(--mono);background:var(--hair-2);color:var(--ink-2);padding:2px 7px;border-radius:6px}
   .cat.all{background:var(--pos-bg);color:var(--pos)}
   .cat.wa{background:#e9f7ef;color:#0c7a43;font-family:var(--sans);font-weight:700}
+  .cat.rst{background:#fff5e6;color:var(--amber);font-family:var(--sans);font-weight:700}
   /* margin-left:auto only bites once the cluster has wrapped onto its own line
      (on one line .who has already eaten the free space). It wraps INTERNALLY
      too: below ~330px the cluster alone is wider than the card, and a row that
@@ -204,7 +205,7 @@ async function afetch(path,opts={},_retried){
   return r;
 }
 
-let TAB='subs', SUBS=[], FB=[], USERS=[], AUDIT=[], REQ=[], HEALTH=null;
+let TAB='subs', SUBS=[], FB=[], USERS=[], AUDIT=[], REQ=[], RESETS=[], HEALTH=null;
 const api=(opts)=>afetch(`/api/admin${opts.q?opts.q.replace(/^&/,'?'):''}`,{method:opts.method||'GET',headers:opts.body?{'Content-Type':'application/json'}:undefined,body:opts.body?JSON.stringify(opts.body):undefined});
 // Recognisable, not a directory: country code + last four.
 const maskWa=(n)=>{ const d=String(n||'').replace(/[^\d]/g,''); return d.length<=6?d:`${d.slice(0,2)}${'•'.repeat(Math.max(2,d.length-6))}${d.slice(-4)}`; };
@@ -355,7 +356,7 @@ async function toggleFb(id,resolved,btn){
 function userRow(u){
   return `<div class="row" data-id="${u.id}">
     <div class="who">
-      <div class="em">${esc(u.email)} <span class="cat ${u.role==='admin'?'all':''}" style="margin-left:4px">${esc(u.role)}</span></div>
+      <div class="em">${esc(u.email)} <span class="cat ${u.role==='admin'?'all':''}" style="margin-left:4px">${esc(u.role)}</span>${u.reset_requested_at?` <span class="cat rst" title="They asked for a password reset — see the Requests tab">reset asked</span>`:''}</div>
       <div class="nm">${u.name?esc(u.name):'—'} · added ${when(u.created_at)}${u.last_seen_at?` · seen ${when(u.last_seen_at)}`:''}</div>
     </div>
     <div class="acts">
@@ -467,6 +468,11 @@ async function setUserPassword(id,email){
     const r=await api({method:'PATCH',q:'&resource=users',body:{id,email,password:pw}});
     if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; }
     prompt(`Password reset for ${email}. Copy it now — it won't be shown again:`, pw);
+    // The server clears any outstanding reset request when a password is set, so
+    // refresh both queues — otherwise the row the admin just actioned sits there
+    // looking unhandled and invites a second reset.
+    await loadReq();
+    await loadUsers();
   }catch(e){ alert('Network error.'); }
 }
 async function toggleRole(id,cur,email,btn){
@@ -496,11 +502,37 @@ function reqRow(r){
     </div>
   </div>`;
 }
-function renderReq(){
-  $('#content').innerHTML=`<div class="card">
-    <h2>Access requests · ${REQ.length} pending</h2>
-    ${REQ.length?REQ.map(reqRow).join(''):`<div class="empty">No pending requests.<br>People who ask for access on the login screen show up here to approve or reject.</div>`}
+// A password reset asked for from the sign-in screen. Setting a password clears
+// the flag server-side, so this queue empties itself — the only reason to
+// Dismiss is a request you decide not to action.
+function resetRow(r){
+  return `<div class="row" data-id="${r.id}">
+    <div class="who">
+      <div class="em">${esc(r.email)} <span class="cat ${r.role==='admin'?'all':''}">${esc(r.role||'')}</span></div>
+      <div class="nm">${r.name?esc(r.name)+' · ':''}asked ${when(r.reset_requested_at)}</div>
+    </div>
+    <div class="acts">
+      <button class="btn sm" type="button" title="Generate a new password for them" onclick="setUserPassword(${r.id},'${esc(r.email)}')">Reset password</button>
+      <button class="x" type="button" title="Dismiss without changing their password" onclick="dismissReset(${r.id},'${esc(r.email)}')">✕</button>
+    </div>
   </div>`;
+}
+function renderReq(){
+  $('#content').innerHTML=`
+    <div class="card">
+      <h2>Password resets · ${RESETS.length} waiting</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 10px">Someone tapped “Forgot password?” on the sign-in screen — you also get an email each time. There is no self-service reset link on purpose: you set a new password here and pass it on, and they change it themselves afterwards from <b>Account → Change password</b>. <b>Resetting clears the request automatically.</b></div>
+      ${RESETS.length?RESETS.map(resetRow).join(''):`<div class="empty">Nobody is waiting on a password.</div>`}
+    </div>
+    <div class="card">
+      <h2>Access requests · ${REQ.length} pending</h2>
+      ${REQ.length?REQ.map(reqRow).join(''):`<div class="empty">No pending requests.<br>People who ask for access on the login screen show up here to approve or reject.</div>`}
+    </div>`;
+}
+async function dismissReset(id,email){
+  if(!confirm(`Dismiss the password-reset request from ${email}?\n\nTheir password is unchanged — only the request goes away.`)) return;
+  try{ const r=await api({method:'DELETE',q:`&resource=resets&id=${id}&email=${encodeURIComponent(email)}`}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } }catch(e){ return; }
+  RESETS=RESETS.filter(x=>x.id!==id); renderReq(); loadUsers();
 }
 async function approveReq(id,email,role){
   try{ const r=await api({method:'PATCH',q:'&resource=requests',body:{id,email,role}}); if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.error||'Failed.'); return; } }catch(e){ return; }
@@ -961,7 +993,15 @@ async function loadSubs(){ const r=await api({q:'&view=subscribers'}); SUBS=awai
 async function loadFb(){ const r=await api({q:'&view=feedback'}); FB=await r.json(); if(!Array.isArray(FB)) FB=[]; $('#nFb').textContent=FB.length; if(TAB==='fb') renderFb(); }
 async function loadUsers(){ const r=await api({q:'&view=users'}); USERS=await r.json(); if(!Array.isArray(USERS)) USERS=[]; $('#nUsers').textContent=USERS.length; if(TAB==='users') renderUsers(); }
 async function loadAudit(){ const r=await api({q:'&view=audit'}); AUDIT=await r.json(); if(!Array.isArray(AUDIT)) AUDIT=[]; $('#nAudit').textContent=AUDIT.length; if(TAB==='audit') renderAudit(); }
-async function loadReq(){ const r=await api({q:'&view=requests'}); REQ=await r.json(); if(!Array.isArray(REQ)) REQ=[]; $('#nReq').textContent=REQ.length; if(TAB==='requests') renderReq(); }
+async function loadReq(){
+  // BOTH queues live on this tab, so both must be fetched here — a tab that
+  // renders without loading sits on stale or empty data for ever.
+  const [a,b]=await Promise.all([api({q:'&view=requests'}),api({q:'&view=resets'})]);
+  REQ=await a.json().catch(()=>[]); if(!Array.isArray(REQ)) REQ=[];
+  RESETS=await b.json().catch(()=>[]); if(!Array.isArray(RESETS)) RESETS=[];
+  $('#nReq').textContent=REQ.length+RESETS.length;
+  if(TAB==='requests') renderReq();
+}
 function selectTab(t){
   TAB=t; $('#tabs').querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===t)));
   if(t==='subs') renderSubs();

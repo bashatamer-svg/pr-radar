@@ -146,7 +146,25 @@
     b.setAttribute('aria-label',show?'Hide password':'Show password');
     inp.focus();
   });
-  $('#forgot').onclick=(e)=>{ e.preventDefault(); show('ok','<strong>Ask an admin to reset it.</strong><br>An admin can reset it from Admin → Users → “Reset password” and share the temporary password with you. For security we don’t email reset links.'); };
+  // No self-service reset link (no emailed token to get wrong): this TELLS the
+  // admin instead — an email to them now, plus a row in their Requests queue
+  // that stays until they act on it. It used to print advice and send nothing,
+  // so a locked-out person had to know who to chase, and the admin never learned
+  // they were waiting.
+  $('#forgot').onclick=async (e)=>{
+    e.preventDefault();
+    const email=$('#email').value.trim();
+    if(!email){ show('err','Type your work email above first, then tap “Forgot password?”.'); $('#email').focus(); return; }
+    const link=$('#forgot'), label=link.textContent;
+    link.textContent='Sending…';
+    try{
+      await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'reset_request',email})});
+      // Deliberately the SAME answer whether or not that address has an account
+      // — the sign-in screen must not reveal who does.
+      show('ok','<strong>Request sent.</strong><br>An admin has been notified and will set a new password for you, then pass it on. You can change it yourself afterwards from <b>Account → Change password</b>. For security we don’t email reset links.');
+    }catch(err){ show('err','Network error. Please try again.'); }
+    link.textContent=label;
+  };
 
   function saveSession(d){ try{ localStorage.setItem('pr_session', JSON.stringify({access_token:d.access_token, refresh_token:d.refresh_token||''})); }catch(e){} }
 

@@ -4,6 +4,7 @@
 //   GET  /api/auth?view=me                 → { email, role, kind }    (401 if not signed in)
 //   POST /api/auth { mode:'signup', email, password } → create the account (allowlisted only)
 //   POST /api/auth { mode:'signin', email, password } → return a session { access_token, ... }
+//   POST /api/auth { mode:'reset_request', email }    → ask an admin for a password reset
 //   POST /api/auth { mode:'magiclink', email }        → (optional) email a sign-in link
 //
 // Access is the closed allowlist (ADMIN_EMAILS + pr_users): only those emails can
@@ -11,8 +12,8 @@
 // API, so NO confirmation email is sent — password login needs no email at all.
 
 import { roleFor, requireRole, auditReq, adminSetPassword, adminCreateUser, adminFindUser, ipOf } from '../lib/auth.js';
-import { authFailuresSince, addAudit, requestAccess } from '../lib/db.js';
-import { sendBulletin } from '../lib/email.js';
+import { authFailuresSince, addAudit, requestAccess, requestPasswordReset, clearResetForEmail } from '../lib/db.js';
+import { sendBulletin, sendOpsAlert } from '../lib/email.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const MIN_PW = 8;
@@ -50,6 +51,9 @@ export default async function handler(req, res) {
       if (!tok) return res.status(401).json({ error: 'your current password is incorrect' });
       const okSet = await adminSetPassword(who.email, next);
       if (!okSet) return res.status(500).json({ error: 'could not update your password' });
+      // Answers any outstanding reset request: someone who got back in by
+      // themselves must not still be sitting in the admin's queue.
+      await clearResetForEmail(who.email);
       await auditReq(req, who, 'auth.password_change', who.email, null);
       return res.status(200).json({ ok: true });
     }
@@ -83,6 +87,7 @@ export default async function handler(req, res) {
           return res.status(409).json({ error: 'an account already exists for this email — sign in instead', exists: true, created_at });
         }
         await auditReq(req, { actor: email, role }, 'auth.signup', email, null);
+        await clearResetForEmail(email);   // they now have a password of their own
         const tok = await passwordGrant(email, password);           // auto sign-in
         if (tok) return res.status(200).json({ ok: true, ...tok, role });
         return res.status(200).json({ ok: true });
@@ -118,6 +123,48 @@ export default async function handler(req, res) {
         await requestAccess(email);
         await addAudit({ actor: email, action: 'access.requested', target: email, ip: ipOf(req) });
       } catch (e) { console.error('access request failed', e.message); }
+      return res.status(200).json({ ok: true });   // neutral either way
+    }
+
+    // ── request a PASSWORD RESET (from the login screen) ──
+    // There is no self-service reset link by design: that needs an emailed
+    // token, and expiry / single-use / Referer leakage are a security surface
+    // to get wrong for a team this size. The request instead reaches the admin
+    // TWO ways at once — an email now, and a row in Admin → Requests that stays
+    // until it is dealt with and clears itself when a password is set.
+    // Answers identically whether or not the address has an account, so the
+    // login screen cannot be used to enumerate who has access.
+    if (mode === 'reset_request') {
+      const ip = ipOf(req);
+      try {
+        const flagged = await requestPasswordReset(email);
+        await addAudit({ actor: email, action: 'auth.reset_requested', target: email, ip, detail: { known: flagged } });
+        // Only mail for a REAL, active account. Otherwise this form is a way to
+        // spray the ops inbox with arbitrary addresses.
+        if (flagged) {
+          const board = (process.env.BOARD_URL || '').replace(/\/+$/, '');
+          // OPS_ALERT_TO and RADAR_TO are both unset in production, so name the
+          // bootstrap admins explicitly — an alert recorded and delivered
+          // nowhere is how a locked-out colleague waits for a reply forever.
+          const adminTo = process.env.OPS_ALERT_TO || process.env.RADAR_TO || process.env.ADMIN_EMAILS || '';
+          await sendOpsAlert(
+            `Password reset requested — ${email}`,
+            [
+              `${email} asked for a password reset on PR Radar.`,
+              '',
+              'Set them a new one in Admin → Requests (or Admin → Users) →',
+              '"Reset password" — a strong temporary password is generated for',
+              'you — then pass it on. They can change it themselves afterwards',
+              'from Account → Change password on the board.',
+              board ? `Admin: ${board}/admin` : 'Admin: /admin',
+              '',
+              'The request also sits in Admin → Requests until it is handled, and',
+              'clears itself the moment a new password is set.',
+            ],
+            { kind: 'reset', severity: 'info', to: adminTo },
+          );
+        }
+      } catch (e) { console.error('reset request failed', e.message); }
       return res.status(200).json({ ok: true });   // neutral either way
     }
 

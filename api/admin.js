@@ -1,7 +1,7 @@
 // Admin endpoint — subscribers, feedback, users (RBAC allowlist) and the audit
 // log. Admin-only. Backs /admin.html.
 //
-//   GET    /api/admin?view=subscribers|feedback|users|audit
+//   GET    /api/admin?view=subscribers|feedback|users|requests|resets|audit
 //   POST   /api/admin                      {email,name,categories}  → add/reactivate subscriber
 //   POST   /api/admin?resource=users       {email,role,name,
 //                                           subscribe?,notify?}      → provision a user:
@@ -14,6 +14,7 @@
 //   PATCH  /api/admin?resource=users       {id,role?,active?,email?} → change a user
 //   DELETE /api/admin?id=N                                          → remove a subscriber
 //   DELETE /api/admin?resource=users&id=N&email=…                   → remove a user
+//   DELETE /api/admin?resource=resets&id=N&email=…                  → dismiss a reset request
 
 import {
   allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber, getSubscriberByEmail,
@@ -21,7 +22,8 @@ import {
   listUsers, setUserRole, setUserActive, removeUser,
   recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor, itemsForDupeScan, mergeDuplicateInto,
   parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber, whatsappSubscribers,
-  itemsByIds, activeSubscribers, getStateTime, touchState } from '../lib/db.js';
+  itemsByIds, activeSubscribers, getStateTime, touchState,
+  pendingResets, clearResetRequest, clearResetForEmail } from '../lib/db.js';
 import { requireRole, auditReq, adminSetPassword, provisionUser, presetPasswordFor } from '../lib/auth.js';
 import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
@@ -50,6 +52,9 @@ export default async function handler(req, res) {
       if (resource === 'feedback') return res.status(200).json(await allFeedback({ limit: Number(req.query.limit) || 200 }));
       if (resource === 'users') return res.status(200).json(await listUsers());
       if (resource === 'requests') return res.status(200).json(await pendingRequests());
+      // Forgot-password queue. Fails soft to [] until the migration is applied,
+      // so the Requests tab renders either way.
+      if (resource === 'resets') return res.status(200).json(await pendingResets());
       if (resource === 'audit') return res.status(200).json(await recentAudit({ limit: Number(req.query.limit) || 200 }));
       if (resource === 'author-gap') {   // backlog size for the Tools tab indicator
         const days = Math.max(1, Math.min(Number(req.query.days) || 7, 30));
@@ -646,6 +651,9 @@ export default async function handler(req, res) {
           if (!target) return res.status(400).json({ error: 'email is required to set a password' });
           const ok = await adminSetPassword(target, password);
           if (!ok) return res.status(500).json({ error: 'could not set the password' });
+          // Setting a password ANSWERS any outstanding request, so the queue
+          // empties itself rather than needing a second "mark done" click.
+          await clearResetForEmail(target);
           await auditReq(req, who, 'user.password', target, null);
           return res.status(204).end();
         }
@@ -704,6 +712,12 @@ export default async function handler(req, res) {
     if (req.method === 'DELETE') {
       const id = req.query.id;
       if (id == null) return res.status(400).json({ error: 'id required' });
+      if (resource === 'resets') {   // dismiss a reset request, password unchanged
+        const target = req.query.email && String(req.query.email).toLowerCase();
+        await clearResetRequest(id);
+        await auditReq(req, who, 'user.reset_dismissed', target || id, null);
+        return res.status(204).end();
+      }
       if (resource === 'requests') {   // reject an access request
         const target = req.query.email && String(req.query.email).toLowerCase();
         await removeUser(id);

@@ -116,6 +116,7 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
 | `pr_subscribers.whatsapp` | **Applied 3 Aug** via Supabase MCP with user approval, from `migrations/2026-08-03-pr-subscribers-whatsapp.sql` |
+| `pr_users.reset_requested_at` | Forgot-password queue: set when someone taps "Forgot password?", cleared by EVERY path that sets a password, so the queue empties itself. **Optional column — `migrations/2026-08-06-pr-users-reset-requested-at.sql` NOT yet applied**; until it is, the flow degrades to absent (see the Gotcha), never broken |
 
 RLS is ON with **no policies**: only the service-role key reads/writes; anon
 gets nothing. All queries live in `lib/db.js`.
@@ -360,6 +361,29 @@ gets nothing. All queries live in `lib/db.js`.
   it, which is exactly how the BCC shipped untested. Both defaults are ON in
   the UI — a checkbox the admin has to hunt for is one that stays unticked.
   Pinned by `verify-user-provision` + `render-user-create`.
+- **"Forgot password?" has no reset LINK, on purpose — it pages a human.** An
+  emailed token means expiry, single use and Referer leakage to get right, for a
+  team of this size; PR Radar instead flags `pr_users.reset_requested_at` and the
+  request reaches an admin TWO ways at once — `sendOpsAlert` now, and a row in
+  Admin → Requests that stays until it is handled. Four things a change must
+  keep: **(1) the answer to the browser is byte-identical** for a real account
+  and an unknown address, or the sign-in screen becomes a directory of who has
+  access (the audit records `known:true/false`; the reader never learns it).
+  **(2) Only a real, ACTIVE account mails anyone** — otherwise the form is a way
+  to spray the ops inbox with arbitrary addresses, and a deliberately blocked
+  user must not page anybody. **(3) The alert names `ADMIN_EMAILS`** when
+  `OPS_ALERT_TO`/`RADAR_TO` are unset (both are, in production) — that is what
+  `sendOpsAlert`'s new `opts.to` is for; recording an alert that reaches nobody
+  is how a locked-out colleague waits for a reply that was never sent.
+  **(4) Setting a password ANSWERS the request** from all three paths (admin
+  reset, self-service change, first signup), so the queue empties itself rather
+  than needing a "mark done" click; Dismiss is only for a request you decide not
+  to action, and says out loud that the password is unchanged.
+  The column is OPTIONAL: `listUsers` asks for it and falls back without it (a
+  select naming a missing column 400s the WHOLE Users tab), and every helper
+  returns false/[]/null on failure — so the un-migrated state is a feature that
+  is absent, not a 500 on the sign-in screen. Pinned by
+  `verify-password-reset` + `render-reset-ui`.
 - **A prompt cache is only worth ASKING for when a read can follow the write.**
   The classifier's ~5k-token system block is identical every call, so caching it
   looks obviously right — but a WRITE bills above normal input and only pays back
@@ -688,7 +712,11 @@ gets nothing. All queries live in `lib/db.js`.
   password in Supabase Auth and PUTS MAIL IN SOMEONE'S INBOX, so test it on an
   address you own, or untick **Email sign-in** and read the response panel. The
   panel is the only place the starter password is ever shown.
-6. **Admin → Health** — 12 live checks + 14-day alert history, computed on
+6. Password resets: tap **Forgot password?** on `/login` with your own address —
+  it should answer "Request sent", put a row in Admin → Requests and mail
+  `ADMIN_EMAILS`. Before the migration is applied it answers the same and
+  records nothing, which is the designed degradation, not a failure.
+7. **Admin → Health** — 12 live checks + 14-day alert history, computed on
   open. Five answer "did it run?" (brief freshness vs stories waiting, ingest
   volume, parked stories, recipients, dead feeds). Seven answer harder
   questions: **screening quality** (7d relevance rate vs the prior 3 weeks),
@@ -702,6 +730,6 @@ gets nothing. All queries live in `lib/db.js`.
   raises the bill with no other symptom; reads `ok — not used` when every run was
   a single batch, which is the normal shape). `GET /api/alerts?notify=1` is the push
   — emails only on warn/crit, deduped on the subject for 22h; fired daily 05:45.
-7. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
+8. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
   Supabase MCP read-only SQL (did rows change). `pr_state.daily_bulletin_sent`
   tells you when the brief last actually went out.
