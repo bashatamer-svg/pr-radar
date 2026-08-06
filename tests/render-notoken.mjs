@@ -8,7 +8,7 @@ process.env.RADAR_TOKEN = TOKEN;
 process.env.BOARD_URL = 'https://pr-radar.example.com/';
 process.env.URGENT_WEBHOOK_URL = 'https://hooks.example/x';
 
-const { renderBulletin, renderUrgent } = await import(new URL('..', import.meta.url).pathname + '/lib/email.js');
+const { renderBulletin, renderUrgent, renderWelcome } = await import(new URL('..', import.meta.url).pathname + '/lib/email.js');
 const { renderSurgeEmail } = await import(new URL('..', import.meta.url).pathname + '/lib/surge.js');
 const { renderReport } = await import(new URL('..', import.meta.url).pathname + '/lib/report.js');
 const { postUrgentWebhook, postSurgeWebhook } = await import(new URL('..', import.meta.url).pathname + '/lib/notify.js');
@@ -49,6 +49,14 @@ const reportData = {
 const report = renderReport(reportData, { period: 'week' });
 noToken(report, 'renderReport');
 assert.ok(report.includes('pr-radar.example.com'), 'report still links to the board');
+
+// 4b. The sign-in email (renderWelcome). It legitimately carries a PASSWORD, so
+// the temptation to "save the recipient a step" with a tokenised board link is
+// strongest here — and it is the one email guaranteed to be forwarded ("is this
+// real?"). Links stay plain: the board is sign-in gated.
+const welcome = renderWelcome({ name: 'Tamer Basha', email: 'tamer.basha@vodafone.com', password: 'tamer123', role: 'viewer', boardUrl: process.env.BOARD_URL, support: 'ops@vodafone.com', subscribed: true });
+noToken(welcome, 'renderWelcome');
+assert.ok(welcome.includes('pr-radar.example.com/login'), 'welcome links to the sign-in page');
 
 // 5 & 6. Webhooks (notify.js) — capture the POSTed body, assert token-free
 let bodies = [];

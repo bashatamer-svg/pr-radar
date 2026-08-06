@@ -6,7 +6,7 @@ import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
 
 process.env.BOARD_URL = 'https://pr-radar.example.com/';
-const { renderBulletin, renderUrgent, THEME } = await import(new URL('..', import.meta.url).pathname + '/lib/email.js');
+const { renderBulletin, renderUrgent, renderWelcome, THEME } = await import(new URL('..', import.meta.url).pathname + '/lib/email.js');
 
 // Pull the real values out of the board's :root so this can't rot silently.
 const board = readFileSync(new URL('../public/index.html', import.meta.url).pathname, 'utf8');
@@ -39,8 +39,11 @@ const win = { id: 2, brand: 'Vodafone', headline: 'Top employer', summary: 's', 
 const rival = { id: 3, brand: 'e&', headline: 'Rival revenue up', summary: 's', sentiment: 'negative', importance: 2, category: 'competitor', source: 'Capital', published_at: now, seen_at: now };
 const bulletin = renderBulletin({ items: [item, win, rival], broken: [], scanned: 5, greetingName: 'Team' });
 const urgent = renderUrgent(item, 'https://pr-radar.example.com/');
+// The sign-in email is a third surface on the same tokens — a person's first
+// sight of the product, so it must not be the one that drifts.
+const welcome = renderWelcome({ name: 'Tamer Basha', email: 'tamer.basha@vodafone.com', password: 'tamer123', role: 'viewer', boardUrl: 'https://pr-radar.example.com/', support: 'ops@vodafone.com', subscribed: true });
 
-for (const [name, html] of [['bulletin', bulletin], ['urgent', urgent]]) {
+for (const [name, html] of [['bulletin', bulletin], ['urgent', urgent], ['welcome', welcome]]) {
   // 2. The retired warm/taupe palette must not survive anywhere.
   for (const dead of ['#1a1214', '#3a2b28', '#6d605d', '#9a8d8a', '#a89b98', '#e7e2e0', '#faf8f7', '#e3d6d3', '#ead0cc', '#2a0606']) {
     assert.ok(!html.toLowerCase().includes(dead), `${name}: retired warm-palette colour ${dead} still present`);

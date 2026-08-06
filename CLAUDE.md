@@ -51,7 +51,7 @@ behaviour gets a regression test in the same commit.
 | Path | What lives here |
 |---|---|
 | `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `alerts.js` (pipeline health checks + the daily push); `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
-| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit), `email.js` (email-client-safe renderer + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
+| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`presetPasswordFor`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
 | `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
 | `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
 | `scripts/` | One-off generators run manually (OG images) |
@@ -108,9 +108,9 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 |---|---|
 | `pr_items` | One story card. `author` NULL (never '') = shown as newsroom; `is_relevant=false` = hidden everywhere; `team_share` tri-state (true pin / false hide / null algorithm); `importance` 1–5 |
 | `pr_instances` | Every outlet that ran the story (coverage spread), FK → items |
-| `pr_users` / `pr_audit` | Sign-in allowlist + roles; audit trail. **Live-only: missing from schema.sql** (see Drift) |
+| `pr_users` / `pr_audit` | Sign-in allowlist + roles; audit trail. **Live-only: missing from schema.sql** (see Drift). The row is only half an account — the PASSWORD lives in Supabase Auth, and Admin → Users writes both (see the provisioning Gotcha) |
 | `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency; `manual_alert_<id>` = the board's 🔔 already fired for that card) |
-| `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users). `whatsapp` NULL (never '') = not paged; `active` gates BOTH channels |
+| `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users). `whatsapp` NULL (never '') = not paged; `active` gates BOTH channels. `addSubscriber` UPSERTS every column, so ask `getSubscriberByEmail` first or you blank a live row's filter and crisis number |
 | `pr_context` | Admin-editable house knowledge injected into classification. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
 | `pr_feed_health` | Per-feed failure streaks (bulletin footer) |
 | `pr_feedback` | In-app feedback form |
@@ -139,6 +139,9 @@ gets nothing. All queries live in `lib/db.js`.
   `sendBulletin` throws on empty recipients).
 - **Never fabricate** — no invented authors (newsroom fallback), no invented
   events (a title-mention is not an appointment), no unsupported numbers.
+- **A generated credential goes to the requesting admin in the RESPONSE, and
+  nowhere else** — never into `pr_audit` (long-lived storage), never into a log
+  line, never into an email addressed to anyone but its owner.
 - One task = one commit, descriptive message + test note. No model ids in
   commits/PRs/code.
 
@@ -322,6 +325,35 @@ gets nothing. All queries live in `lib/db.js`.
   their identity and coverage) and reports `kept` separately, because a run that
   rescues a real story must not read like one that swept up wire noise. Pinned by
   `verify-reclassify-tool`.
+- **An allowlist row is only HALF an account.** Adding someone in Admin → Users
+  used to write `pr_users` and stop, which left them stuck: nothing told them
+  they could now "Create account" on the login screen, and an ADMIN could not
+  even do that (`/api/auth` signup refuses `role=admin`, deliberately). Adding a
+  user now provisions the person — `provisionUser` (`lib/auth.js`) writes the
+  allowlist row AND a starter password, `?resource=users` optionally adds them to
+  `pr_subscribers`, and `renderWelcome` mails them their own address + password.
+  Four rules the code holds and a change must keep:
+  **(1) Provision with `adminCreateUser`, NEVER `adminSetPassword`** — that one
+  falls back to a PUT when the account exists, so using it here would silently
+  reset the password of anyone re-added (reactivated, role fixed). Create-only
+  means the SERVER decides: 422 ⇒ `credentials:'existing'`, with no read-then-
+  write window where a failed lookup reads as "no account yet".
+  **(2) The welcome email is sent ONLY when we created the password.** Mailing a
+  password to someone who already has their own reads as "your password changed"
+  and sends them to a login that fails.
+  **(3) The subscriber add must ASK FIRST** (`getSubscriberByEmail`) — see that
+  Gotcha; an active row is left completely alone, a paused one gets a targeted
+  `active:true` PATCH.
+  **(4) The starter-password floor is 6, not the 8 `/api/auth` enforces.** That
+  8 governs a password a person CHOOSES; applying it to the generated one would
+  rename it for every four-letter first name (`mona123` → `mona1234`) and break
+  the only thing the convention is for — an admin saying it without looking it
+  up. Only a 1–2 letter first name is topped up (`Ed` → `ed1234`).
+  Each step is reported separately (`credentials` / `subscriber` / `emailed`)
+  because a provisioned account whose email bounced needs a human to pass the
+  password on, and that must not read like a clean run. Both defaults are ON in
+  the UI — a checkbox the admin has to hunt for is one that stays unticked.
+  Pinned by `verify-user-provision` + `render-user-create`.
 - **A prompt cache is only worth ASKING for when a read can follow the write.**
   The classifier's ~5k-token system block is identical every call, so caching it
   looks obviously right — but a WRITE bills above normal input and only pays back
@@ -434,9 +466,9 @@ gets nothing. All queries live in `lib/db.js`.
   reason. Email HTML is table-layout + inline styles only.
 - **One design system across surfaces.** `lib/email.js` carries the BOARD's
   tokens (`public/index.html` `:root`) and exports them as `THEME` for
-  `lib/report.js`, so bulletin + urgent + report + board match. Change a board
-  token → update the email constants in the same commit (`render-email-design`
-  reads `:root` and fails otherwise). Card vocabulary is shared too: Impact,
+  `lib/report.js`, so bulletin + urgent + welcome + report + board match. Change
+  a board token → update the email constants in the same commit
+  (`render-email-design` reads `:root` and asserts on all three templates). Card vocabulary is shared too: Impact,
   "What to do with this", and the lane names Needs a response / Wins to
   amplify / Market & noted.
 - **Inline styles sit inside `style="…"`** — never use double quotes within a
@@ -630,7 +662,11 @@ gets nothing. All queries live in `lib/db.js`.
   proves nothing about email. To send a REAL alert for a REAL card (a
   correction that missed its ingest-time alert), use the board card's **🔔** —
   that one DOES reach the full alert list; see the instant-alert Gotcha.
-5. **Admin → Health** — 12 live checks + 14-day alert history, computed on
+5. User work: Admin → Users → **Add a user** provisions for real — it sets a
+  password in Supabase Auth and PUTS MAIL IN SOMEONE'S INBOX, so test it on an
+  address you own, or untick **Email sign-in** and read the response panel. The
+  panel is the only place the starter password is ever shown.
+6. **Admin → Health** — 12 live checks + 14-day alert history, computed on
   open. Five answer "did it run?" (brief freshness vs stories waiting, ingest
   volume, parked stories, recipients, dead feeds). Seven answer harder
   questions: **screening quality** (7d relevance rate vs the prior 3 weeks),
@@ -644,6 +680,6 @@ gets nothing. All queries live in `lib/db.js`.
   raises the bill with no other symptom; reads `ok — not used` when every run was
   a single batch, which is the normal shape). `GET /api/alerts?notify=1` is the push
   — emails only on warn/crit, deduped on the subject for 22h; fired daily 05:45.
-6. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
+7. After deploy: Vercel MCP (runtime logs), Resend MCP (did mail send),
   Supabase MCP read-only SQL (did rows change). `pr_state.daily_bulletin_sent`
   tells you when the brief last actually went out.

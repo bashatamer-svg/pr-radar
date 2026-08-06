@@ -3,7 +3,12 @@
 //
 //   GET    /api/admin?view=subscribers|feedback|users|audit
 //   POST   /api/admin                      {email,name,categories}  → add/reactivate subscriber
-//   POST   /api/admin?resource=users       {email,role,name}        → add/reactivate a user
+//   POST   /api/admin?resource=users       {email,role,name,
+//                                           subscribe?,notify?}      → provision a user:
+//                                             allowlist row + starter password
+//                                             (first name + 123) + daily-brief
+//                                             subscription (default ON) + the
+//                                             welcome email (default ON)
 //   PATCH  /api/admin                      {id,active}              → toggle a subscriber
 //   PATCH  /api/admin?resource=feedback    {id,resolved}            → triage feedback
 //   PATCH  /api/admin?resource=users       {id,role?,active?,email?} → change a user
@@ -11,13 +16,13 @@
 //   DELETE /api/admin?resource=users&id=N&email=…                   → remove a user
 
 import {
-  allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber,
+  allSubscribers, addSubscriber, setSubscriberActive, removeSubscriber, getSubscriberByEmail,
   allFeedback, setFeedbackResolved,
-  listUsers, upsertUser, setUserRole, setUserActive, removeUser,
+  listUsers, setUserRole, setUserActive, removeUser,
   recentAudit, pendingRequests, countMissingAuthor, itemsMissingAuthor, itemsForDupeScan, mergeDuplicateInto,
   parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber, whatsappSubscribers,
   itemsByIds, activeSubscribers, getStateTime, touchState } from '../lib/db.js';
-import { requireRole, auditReq, adminSetPassword } from '../lib/auth.js';
+import { requireRole, auditReq, adminSetPassword, provisionUser, presetPasswordFor } from '../lib/auth.js';
 import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
 import { classify } from '../lib/classify.js';
@@ -26,7 +31,7 @@ import { isGoogleNews } from '../lib/resolve.js';
 import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
 import { XMLParser } from 'fast-xml-parser';
 import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipients, whatsappConfigured } from '../lib/whatsapp.js';
-import { renderUrgent, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
+import { renderUrgent, renderWelcome, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
 import { postUrgentWebhook } from '../lib/notify.js';
 
 // The author-backfill sweep does up to ~40 parallel article fetches, so give the
@@ -520,12 +525,86 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, to, impact, tier: tier.label, id: result?.id || null });
       }
       if (resource === 'users') {
-        const { email, role, name } = req.body || {};
+        // Adding a person does THREE things, because an allowlist row on its own
+        // left them stuck: they had to work out for themselves that they could
+        // now "Create account", and an admin could not even do that (self-signup
+        // refuses role=admin, by design).
+        //   1. the allowlist row + a STARTER password (first name + 123)
+        //   2. optionally the daily-brief list — `subscribe:false` to skip
+        //   3. the welcome email carrying their own address and password
+        // Each step is reported separately: an account that exists but whose
+        // email failed needs a human to pass the password on, and that must not
+        // read like a clean run.
+        const { email, role, name, subscribe, notify, categories } = req.body || {};
         if (!email || !EMAIL_RE.test(String(email))) return res.status(400).json({ error: 'a valid email is required' });
-        const rows = await upsertUser({ email, role: role === 'admin' ? 'admin' : 'viewer', name, invited_by: who.actor });
-        const user = Array.isArray(rows) ? rows[0] : rows;
-        await auditReq(req, who, 'user.add', String(email).toLowerCase(), { role: role === 'admin' ? 'admin' : 'viewer' });
-        return res.status(200).json({ ok: true, user });
+        const addr = String(email).trim().toLowerCase();
+        const person = name ? String(name).trim() : null;
+        const wantRole = role === 'admin' ? 'admin' : 'viewer';
+        const password = presetPasswordFor(person, addr);
+        const { user, credentials, error: credError } = await provisionUser({
+          email: addr, name: person, role: wantRole, invited_by: who.actor, password,
+        });
+
+        // Daily brief. Default ON: the reason to give someone the board is that
+        // they want the coverage, and a reader who has to ask twice is a reader
+        // who quietly gets nothing. `subscribe:false` opts out explicitly.
+        // NEVER a blind addSubscriber: that upserts on email with every column
+        // present, so it would wipe an existing subscriber's category filter and
+        // WhatsApp number — the crisis number included. Look first, then add or
+        // re-activate; leave a live row exactly as it is.
+        let subscriber = 'skipped';
+        if (subscribe !== false) {
+          const cats = Array.isArray(categories)
+            ? categories.map((c) => String(c).trim()).filter(Boolean)
+            : (typeof categories === 'string' ? categories.split(',').map((c) => c.trim()).filter(Boolean) : []);
+          try {
+            const existing = await getSubscriberByEmail(addr);
+            if (!existing) { await addSubscriber({ email: addr, name: person, categories: cats }); subscriber = 'added'; }
+            else if (!existing.active) { await setSubscriberActive(existing.id, true); subscriber = 'reactivated'; }
+            else subscriber = 'already';
+          } catch (e) {
+            // The ACCOUNT is already provisioned and usable; a mailing-list
+            // failure must not undo it or fail the whole call.
+            subscriber = 'failed';
+            console.error('subscribe on user create failed', addr, e.message);
+          }
+        }
+        const onBrief = ['added', 'reactivated', 'already'].includes(subscriber);
+
+        // Welcome email — ONLY when we actually set the password. Someone who
+        // already had one must never be sent a password they don't have: that
+        // reads as "your password changed" and sends them to a login that fails.
+        let emailed = null, emailError = null;
+        if (notify !== false && credentials === 'created') {
+          // BCC the admin so the send lands in their own inbox as the record of
+          // who was told what — this response is gone the moment the page is
+          // closed. forceBcc because RADAR_BCC_EXCLUDE is about the standing
+          // monitor copy, not one asked for at send time. Skipped when the admin
+          // IS the recipient.
+          const bcc = who.email && who.email !== addr ? who.email : null;
+          try {
+            await sendBulletin(
+              renderWelcome({ name: person, email: addr, password, role: wantRole, boardUrl: process.env.BOARD_URL, support: who.email || null, subscribed: onBrief }),
+              'Your PR Radar sign-in',
+              addr,
+              bcc ? { bcc, forceBcc: true } : {},
+            );
+            emailed = true;
+          } catch (e) {
+            emailed = false;
+            emailError = e.message.slice(0, 160);
+          }
+        }
+        // The password is deliberately NOT in the audit detail — an audit row is
+        // long-lived storage and a credential does not belong in it. It rides
+        // the response instead, to the admin who just asked for it.
+        await auditReq(req, who, 'user.add', addr, { role: wantRole, credentials, subscriber, emailed });
+        return res.status(200).json({
+          ok: true, user, role: wantRole,
+          credentials, credentialsError: credError || null,
+          password: credentials === 'created' ? password : null,
+          subscriber, emailed, emailError,
+        });
       }
       const { email, name, categories, whatsapp } = req.body || {};
       if (!email || !EMAIL_RE.test(String(email))) return res.status(400).json({ error: 'a valid email is required' });

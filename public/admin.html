@@ -70,6 +70,19 @@
   .btn.sm{padding:6px 11px;font-size:12px}
   .formmsg{width:100%;font-size:11.5px;font-weight:700;margin-top:2px}
   .formmsg.ok{color:var(--pos)} .formmsg.err{color:var(--red-deep)}
+  /* A checkbox inside .form must NOT inherit `.form input{flex:1 1 150px}` —
+     that stretches a 16px box across the row and pushes the button off it. */
+  .form .opt{flex:none;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+             color:var(--ink-2);white-space:nowrap;cursor:pointer;padding:0 2px}
+  .form .opt input[type=checkbox]{flex:none;width:16px;height:16px;min-width:0;padding:0;margin:0;accent-color:var(--red)}
+  /* Provisioning result: the starter password shows ONCE here, so it has to be
+     readable and copyable — this is what the admin reads out or pastes. */
+  .prov{width:100%;margin-top:9px;background:var(--raise);border:1px solid var(--hair);border-radius:11px;padding:11px 13px}
+  .prov .pline{font-size:12.5px;line-height:1.6;color:var(--ink-2)}
+  .prov .pw{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:7px 0 3px}
+  .prov code{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--ink);
+             background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:5px 9px;user-select:all}
+  .prov .bad{color:var(--red-deep);font-weight:700}
 
   /* A .row is identity + actions, and .acts is flex:none — so .who, the only
      FLEXIBLE child, absorbed every shortfall. The Users row's four controls
@@ -357,15 +370,19 @@ function renderUsers(){
   const admins=USERS.filter(u=>u.role==='admin').length;
   $('#content').innerHTML=`
     <div class="card">
-      <h2>Add a user (allowlist)</h2>
+      <h2>Add a user</h2>
+      <div class="nm" style="line-height:1.6;margin:0 0 10px">Adding someone sets them up completely: a <b>starter password</b> made from their first name plus <code>123</code> (Tamer Basha → <code>tamer123</code>), and an email with their sign-in and a link to the board. They change the password themselves from <b>Password</b> in the top bar. Give the <b>name</b> — the password and the greeting are built from it. Anyone who already has a password <b>keeps it</b>: nothing is reset and no password is emailed.</div>
       <div class="form">
         <input id="uEmail" type="email" placeholder="email@vodafone.com" autocomplete="off">
-        <input id="uName" type="text" placeholder="Name (optional)" autocomplete="off">
+        <input id="uName" type="text" placeholder="Name (used for the password)" autocomplete="off">
         <select id="uRole" class="btn ghost" style="flex:0 0 auto">
           <option value="viewer">Viewer</option><option value="admin">Admin</option>
         </select>
+        <label class="opt" for="uSub" title="Also add them to the daily brief mailing list"><input type="checkbox" id="uSub" checked> Daily brief</label>
+        <label class="opt" for="uNotify" title="Email them their sign-in details now"><input type="checkbox" id="uNotify" checked> Email sign-in</label>
         <button class="btn" id="uAddBtn" type="button">Add</button>
         <div class="formmsg" id="uMsg"></div>
+        <div class="prov" id="uOut" hidden></div>
       </div>
     </div>
     <div class="card">
@@ -374,16 +391,61 @@ function renderUsers(){
     </div>`;
   $('#uAddBtn').onclick=addUser;
   $('#uEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') addUser(); });
+  if(LAST_PROV) showProvision(LAST_PROV);
+}
+// The result of the last add, kept so a re-render (loadUsers) doesn't wipe the
+// one screen the starter password is ever shown on.
+let LAST_PROV=null;
+// What actually happened, step by step. A partial success must not read like a
+// clean run: if the email failed, the admin is the only route the password has
+// left, so it is spelled out rather than buried in a ✓.
+function showProvision(d){
+  const out=$('#uOut'); if(!out) return;
+  const L=[];
+  if(d.credentials==='created'){
+    L.push(`<div class="pline"><b>${esc(d.user&&d.user.email||'')}</b> added as ${esc(d.role||'viewer')}.</div>`);
+    L.push(`<div class="pw"><span class="pline">Starter password</span><code id="uPw">${esc(d.password||'')}</code>`
+      +`<button class="btn ghost sm" type="button" id="uCopy">Copy</button></div>`);
+  } else if(d.credentials==='existing'){
+    L.push(`<div class="pline"><b>${esc(d.user&&d.user.email||'')}</b> added as ${esc(d.role||'viewer')}. They already had a password, so it was <b>left alone</b> — and no email was sent, because mailing a password they no longer use would just send them to a login that fails.</div>`);
+  } else if(d.credentials==='failed'){
+    L.push(`<div class="pline bad">${esc(d.user&&d.user.email||'')} is allowlisted, but no password could be set${d.credentialsError?` (${esc(d.credentialsError)})`:''}. They cannot sign in until you use <b>Reset password</b> on their row.</div>`);
+  }
+  if(d.emailed===true) L.push(`<div class="pline">Sign-in details emailed to them ✓ — you are BCC&rsquo;d, so the copy is in your inbox too.</div>`);
+  else if(d.emailed===false) L.push(`<div class="pline bad">The email did NOT send${d.emailError?` — ${esc(d.emailError)}`:''}. Send them the password above yourself.</div>`);
+  else if(d.credentials==='created') L.push(`<div class="pline">No email sent (you unticked it) — pass the password on yourself.</div>`);
+  const SUBTEXT={added:'Added to the daily brief.',reactivated:'Their paused daily-brief subscription was switched back on.',
+    already:'Already on the daily brief — their categories and WhatsApp number were left untouched.',
+    skipped:'Not subscribed to the daily brief.',failed:'Could not add them to the daily brief — add them on the Subscribers tab.'};
+  L.push(`<div class="pline${d.subscriber==='failed'?' bad':''}">${esc(SUBTEXT[d.subscriber]||'')}</div>`);
+  out.innerHTML=L.join(''); out.hidden=false;
+  const c=$('#uCopy');
+  if(c) c.onclick=async()=>{ try{ await navigator.clipboard.writeText(d.password||''); c.textContent='Copied ✓'; }
+    catch(e){ const n=$('#uPw'); if(n){ const r=document.createRange(); r.selectNodeContents(n); const s=getSelection(); s.removeAllRanges(); s.addRange(r); } c.textContent='Select & copy'; } };
 }
 async function addUser(){
   const email=$('#uEmail').value.trim(), name=$('#uName').value.trim(), role=$('#uRole').value;
+  const subscribe=!!$('#uSub')?.checked, notify=!!$('#uNotify')?.checked;
   const msg=$('#uMsg'), btn=$('#uAddBtn');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent='Enter a valid email.'; msg.className='formmsg err'; return; }
-  btn.disabled=true;
+  btn.disabled=true; msg.textContent='Setting them up…'; msg.className='formmsg';
   try{
-    const r=await api({method:'POST',q:'&resource=users',body:{email,name,role}});
+    const r=await api({method:'POST',q:'&resource=users',body:{email,name,role,subscribe,notify}});
     if(!r.ok){ const e=await r.json().catch(()=>({})); msg.textContent=e.error||'Failed to add.'; msg.className='formmsg err'; btn.disabled=false; return; }
-    msg.textContent='Added ✓'; msg.className='formmsg ok'; await loadUsers();
+    const d=await r.json().catch(()=>({}));
+    msg.textContent=''; msg.className='formmsg';
+    // A response from an older deploy (or a mock) carries no provisioning
+    // fields — fall back to the plain confirmation rather than an empty panel.
+    LAST_PROV=d&&d.credentials?{...d,user:d.user||{email}}:null;
+    if(!LAST_PROV){ msg.textContent='Added ✓'; msg.className='formmsg ok'; }
+    // Clear the identity fields — leaving them filled invites a second click
+    // that re-runs the whole provision for the same person.
+    $('#uEmail').value=''; $('#uName').value='';
+    // The list refresh must never cost the panel: the starter password is shown
+    // exactly once, and a failed reload is no reason to lose it.
+    try{ await loadUsers(); }catch(err){}
+    if(LAST_PROV) showProvision(LAST_PROV);
+    const b=$('#uAddBtn'); if(b) b.disabled=false;
   }catch(e){ msg.textContent='Network error.'; msg.className='formmsg err'; btn.disabled=false; }
 }
 // RESET, not "change": a strong temporary password is GENERATED (the admin

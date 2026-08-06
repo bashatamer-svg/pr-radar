@@ -10,7 +10,7 @@
 // create an account or sign in. Accounts are created pre-confirmed via the admin
 // API, so NO confirmation email is sent — password login needs no email at all.
 
-import { roleFor, requireRole, auditReq, adminSetPassword, adminFindUser, ipOf } from '../lib/auth.js';
+import { roleFor, requireRole, auditReq, adminSetPassword, adminCreateUser, adminFindUser, ipOf } from '../lib/auth.js';
 import { authFailuresSince, addAudit, requestAccess } from '../lib/db.js';
 import { sendBulletin } from '../lib/email.js';
 
@@ -140,21 +140,9 @@ export default async function handler(req, res) {
   return res.status(405).json({ error: 'method not allowed' });
 }
 
-// Create a pre-confirmed Supabase user (no confirmation email). Returns 'created'
-// or 'exists'; throws on any other failure.
-async function adminCreateUser(email, password) {
-  const base = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!base || !key) throw new Error('supabase not configured');
-  const r = await fetch(`${base}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, email_confirm: true }),
-  });
-  if (r.ok) return 'created';
-  const txt = await r.text();
-  if (r.status === 422 || /already|registered|exists|duplicate/i.test(txt)) return 'exists';
-  throw new Error(`admin create ${r.status}: ${txt}`);
-}
+// Creating a pre-confirmed account lives in lib/auth.js (adminCreateUser) —
+// signup here and Admin → Users provisioning must create accounts the SAME way,
+// so there is one copy and its create-only guarantee holds for both.
 
 // Exchange email + password for a Supabase session. Returns tokens or null.
 async function passwordGrant(email, password) {

@@ -34,6 +34,7 @@ are **skipped**, the unit suite still runs.
 | Subscriber editing + WhatsApp number on a subscriber | `render-adminui`, `render-whatsapp` |
 | Admin duplicate-finder (scan + merge) | `verify-dupe-tool`, `dedup-jaccard` |
 | Auth / RBAC / audit / password flows | `render-auth` (backend), `render-authui`, `render-adminui` (browser) |
+| Adding a user provisions them (starter password, brief opt-in, welcome email) | `verify-user-provision` (backend), `render-user-create` (browser) |
 | Author capture (cascade, AI fallback, ingest-time, backfill, sweep) | `verify-authors`, `verify-ai-author`, `render-poll-author`, `render-author-backfill` |
 | Emails & webhooks (bulletin, urgent, report, no-token links) | `render-notoken`, `render-lanes-email-report`, `smoke-task2`, `render-whatsapp`, `send-guard` |
 | No `?t=` token in any URL — emails, webhooks **and** every static page | `render-notoken` |
