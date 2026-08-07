@@ -968,10 +968,12 @@ export default async function handler(req, res) {
       const subject = catLabel
         ? `PR Radar — ${filtered.length} in ${catLabel}${subAttn}`
         : `PR Radar — ${filtered.length} items${subAttn}`;
-      const greeting = sub.name
-        ? `Hi ${sub.name}, Greetings — this is your daily brand & reputation brief${catLabel ? ` — ${catLabel}` : ''}.`
-        : null;
-      const html = renderBulletin({ items: filtered, broken, scanned: raw.length, greeting });
+      // The greeting is just the name now ("Good morning, Sara.") — the brief's
+      // own header states the date and the tally, and the category filter is
+      // already named in the subject, so the old sentence repeated both.
+      // No `variant`, so this copy carries neither the private notice nor the
+      // footer diagnostics that name internal feed ids.
+      const html = renderBulletin({ items: filtered, broken, scanned: raw.length, greetingName: sub.name || null });
       try {
         await sendBulletin(html, subject, sub.email);
         watchlistSent++;

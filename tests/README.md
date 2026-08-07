@@ -46,6 +46,7 @@ are **skipped**, the unit suite still runs.
 | Scraped tag residue / URL slugs are never stored as the byline | `verify-author-markup` |
 | **Every byline mistake ever reported, replayed** (add new ones to `byline-cases.mjs` FIRST — see the playbook in CLAUDE.md) | `verify-byline-cases` |
 | Emails & webhooks (bulletin, urgent, report, no-token links) | `render-notoken`, `render-lanes-email-report`, `smoke-task2`, `render-whatsapp`, `send-guard` |
+| Email "morning digest" design (hero pick, lane counts reconcile, Impact dashes + word, action-first panel, `dir="auto"` single-run fencing, team vs subscriber copy, Gmail 102KB clip headroom) | `render-email-digest` |
 | No `?t=` token in any URL — emails, webhooks **and** every static page | `render-notoken` |
 | Custom date-range reports (exec summary, appendix, Word/PDF export) | `smoke-report-range` (backend), `render-reports-page` (browser) |
 | Surge detection (calendar + rolling windows) | `smoke-task7`, `render-surge-rolling` |
@@ -59,7 +60,7 @@ are **skipped**, the unit suite still runs.
 | No inline event handlers or javascript: URLs on any page; every data-act has a handler | `verify-no-inline-handlers` |
 | Trends narratives (token clustering, LLM grouping + fallbacks, real-data regression, deep-link integrity) | `render-narrative-cluster`, `narr-ai`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives`, `render-deeplink` |
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
-| Email/board design-token parity + inline-style quoting | `render-email-design` |
+| Email/board design-token parity (incl. the whole `BRAND_COLOR` map, all five chips rendered) + inline-style quoting | `render-email-design` |
 | Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
 | Whole app × 6 widths × 2 roles: no pan, no crush, no tiny target, no leak | `render-final-sweep` |
 | WhatsApp readiness ladder, the ops alert channel, house-knowledge staleness | `verify-readiness-checks` |

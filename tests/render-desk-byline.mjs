@@ -17,11 +17,20 @@ const bare = { id: 3, brand: 'Orange', headline: 'Story C', sentiment: 'neutral'
 
 const bulletin = renderBulletin({ items: [withAuthor, noAuthor, bare], broken: [], scanned: 10 });
 assert.ok(bulletin.includes('By Sara Fahmy'), 'email: person byline shown');
-assert.ok(bulletin.includes('Youm7 · newsroom'), 'email: authorless card falls back to outlet newsroom');
-assert.ok(bulletin.includes('Author —'), 'email: no author AND no outlet → honest dash survives');
-const urgent = renderUrgent(noAuthor, process.env.BOARD_URL);
-assert.ok(urgent.includes('Youm7 · newsroom'), 'urgent email: newsroom fallback');
+// The email and the board answer "who wrote this?" differently ON PURPOSE.
+// The board has a `.by` field of its own, so "Youm7 · newsroom" belongs there.
+// The email card puts the byline in a meta line that already opens with the
+// outlet, so the newsroom fallback printed it twice — "Youm7 · 2h ago · Youm7 ·
+// newsroom" — which reads as a rendering bug. Here an absent byline is simply
+// absent. Nothing is invented in either surface, which is the actual rule.
+assert.ok(!/Youm7 · newsroom/.test(bulletin), 'email: no redundant newsroom tail beside the outlet');
 assert.ok(!/By Youm7/.test(bulletin), 'never fakes the outlet as a person ("By Youm7")');
+assert.ok(!/Author —/.test(bulletin), 'email: an unknown byline is omitted, not spelled out');
+// ...and the outlet is still named once, so the card is not left anonymous.
+assert.ok(/>Youm7</.test(bulletin), 'email: the outlet still appears in the meta line');
+const urgent = renderUrgent(noAuthor, process.env.BOARD_URL);
+assert.ok(!/Youm7 · newsroom/.test(urgent) && /Youm7/.test(urgent), 'urgent email: same rule');
+assert.ok(/By Sara Fahmy/.test(renderUrgent(withAuthor, process.env.BOARD_URL)), 'urgent email: person byline shown');
 
 // ── board card (headless) ──
 const DIR = new URL('..', import.meta.url).pathname + '/public';

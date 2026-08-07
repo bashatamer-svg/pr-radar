@@ -154,17 +154,25 @@ const urgentOf = (sent) => sent.filter((m) => /^URGENT —/.test(m.subject || ''
 // ── the alert body must match its tier, not hardcode "severity-5" ──
 {
   const { renderUrgent } = await import(`${new URL('..', import.meta.url).pathname}/lib/email.js`);
+  // The badge is the bare tier word in its own pill — it lost the ● bullet in
+  // the 2026-08 redesign, so match the pill, not the old glyph.
+  const badge = (t) => new RegExp(`letter-spacing:\\.28em;[^"]*">${t}</span>`);
   const soft = renderUrgent({ id: 1, importance: 2, brand: 'Vodafone', sentiment: 'negative', headline: 'x', summary: 's' }, '');
-  assert.ok(/● ALERT/.test(soft), 'a low-Impact Vodafone negative is badged ALERT');
-  assert.ok(!/severity-5/.test(soft), 'and is never described as a severity-5 threat');
-  assert.ok(/a negative Vodafone story/.test(soft), 'the body says why it fired');
+  assert.ok(badge('ALERT').test(soft), 'a low-Impact Vodafone negative is badged ALERT');
+  assert.ok(!/Impact-5|severity-5/.test(soft), 'and is never described as a five-alarm story');
+  assert.ok(/A story we should look at is running about/.test(soft), 'the body says why it fired');
   const hard = renderUrgent({ id: 2, importance: 5, brand: 'Vodafone', sentiment: 'negative', headline: 'y', summary: 's' }, '');
-  assert.ok(/● URGENT/.test(hard) && /severity-5 reputational threat/.test(hard), 'a real crisis still reads URGENT');
+  assert.ok(badge('URGENT').test(hard) && /An Impact-5 story is running about/.test(hard), 'a real crisis still reads URGENT');
+  // The two tiers must stay visually distinct — labelling everything URGENT is
+  // how an alert channel earns being ignored. URGENT is a red header band with a
+  // white badge; ALERT is a white header with a slate badge.
+  assert.ok(/background:#e60000;padding:26px 22px 24px/.test(hard), 'URGENT carries the red header band');
+  assert.ok(/background:#ffffff;padding:26px 22px 24px/.test(soft), 'ALERT does not');
   // With rivals alerting too, the why-line must NAME the brand — otherwise the
   // reader cannot tell our crisis from a competitor's without reading on.
   const rival = renderUrgent({ id: 3, importance: 2, brand: 'Orange', sentiment: 'negative', headline: 'z', summary: 's' }, '');
-  assert.ok(/a negative Orange story/.test(rival), 'a rival alert names the rival, not Vodafone');
-  assert.ok(!/negative Vodafone/.test(rival), 'and never mislabels it as ours');
+  assert.ok(/running about <span[^>]*>Orange<\/span>/.test(rival), 'a rival alert names the rival, not Vodafone');
+  assert.ok(!/>Vodafone</.test(rival), 'and never mislabels it as ours');
 }
 
 console.log('URGENT-RECIPIENTS OK — Impact 4-5 and any negative story about a tracked operator alert instantly (market/unbranded do not), tiered URGENT vs ALERT in both subject and body, to every active subscriber when RADAR_TO is unset (category filters ignored) and to RADAR_TO alone when set');
