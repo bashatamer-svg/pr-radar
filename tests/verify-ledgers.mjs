@@ -75,7 +75,7 @@ const gone = () => ({ ok: false, status: 404, text: async () => 'relation "pr_sc
   const c = migrationCheck(st);
   assert.strictEqual(c.state, 'warn', 'missing migrations warn');
   assert.ok(!/crit/.test(c.state), 'never crit — none of them is required');
-  assert.match(c.detail, /2 of 6 applied/, 'the count is explicit');
+  assert.match(c.detail, new RegExp(`2 of ${MIGRATIONS.length} applied`), 'the count is explicit');
   assert.match(c.detail, /2026-08-06-pr-users-reset-requested-at/, 'and the missing ids are named');
   assert.match(c.hint, /forgot-password queue/, 'and the hint says what is actually lost');
 }

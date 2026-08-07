@@ -254,3 +254,21 @@ create index if not exists pr_runs_started_idx     on pr_runs (started_at desc);
 
 alter table pr_schema_migrations enable row level security;
 alter table pr_runs              enable row level security;
+
+-- Atomic increment for pr_feed_health.fail_streak. PostgREST cannot express
+-- `set x = x + 1`, and a read-then-write loses increments because the 15-minute
+-- poll and the daily run overlap on the ten brand feeds. INSERT..ON CONFLICT is
+-- one statement, so concurrent callers serialise. Never touches last_ok_at —
+-- "when did this feed last work" must survive a failure.
+-- NOT yet applied to production (2026-08-07); the code falls back without it.
+create or replace function pr_bump_feed_failure(p_feed_id text, p_error text)
+returns int
+language sql
+as $$
+  insert into pr_feed_health (feed_id, last_error, fail_streak)
+  values (p_feed_id, left(p_error, 300), 1)
+  on conflict (feed_id) do update
+    set fail_streak = pr_feed_health.fail_streak + 1,
+        last_error  = excluded.last_error
+  returning fail_streak;
+$$;
