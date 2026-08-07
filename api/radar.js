@@ -12,7 +12,7 @@ import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
 import { renderBulletin, renderUrgent, sendBulletin, isInstantAlert, urgentTier } from '../lib/email.js';
 import { authorFromEntry, fetchAuthor, cleanAuthor, resetAuthorAiBudget } from '../lib/author.js';
 import { resolveUrl, isGoogleNews, isNonArticlePage } from '../lib/resolve.js';
-import { safeEqual } from '../lib/auth.js';
+import { requireOperator, auditReq } from '../lib/auth.js';
 
 export const config = { maxDuration: 60 };
 
@@ -243,13 +243,24 @@ async function fetchFeed(feed) {
 }
 
 export default async function handler(req, res) {
-  // Bearer only (no ?t= query token), constant-time. Vercel Cron sends CRON_SECRET;
-  // RADAR_TOKEN is accepted for manual ops runs.
-  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  const ok =
-    (process.env.CRON_SECRET && safeEqual(bearer, process.env.CRON_SECRET)) ||
-    (process.env.RADAR_TOKEN && safeEqual(bearer, process.env.RADAR_TOKEN));
-  if (!ok) return res.status(401).json({ error: 'unauthorized' });
+  // Bearer only (no ?t= query token). This endpoint INGESTS, CLASSIFIES, WRITES
+  // stories, MAILS the subscriber list and PAGES the WhatsApp crisis numbers, so
+  // it is operator-gated: CRON_SECRET (what Vercel Cron sends) or a signed-in
+  // admin. It used to accept the shared read-only RADAR_TOKEN as well, via its
+  // own inline check that never heard about the central model in lib/auth.js —
+  // which meant anyone holding the READ token could fire the whole pipeline.
+  // ?dry=1 is gated identically: it stores nothing, but it still fetches thirty
+  // feeds and pays for a round of classifier calls.
+  const who = await requireOperator(req, res);
+  if (!who) return;   // 401/403 already sent
+  // A human-triggered run is worth a trail; the cron's own runs are not (they
+  // are every 15 minutes, and pr_state already records what they delivered).
+  if (who.kind === 'user') {
+    auditReq(req, who, 'radar.run', null, {
+      urgentOnly: req.query?.urgentOnly === '1', dry: req.query?.dry === '1',
+      debug: req.query?.debug === '1', backfillAuthors: req.query?.backfillAuthors === '1',
+    }).catch(() => {});
+  }
 
   resetAuthorAiBudget();   // fresh per-run AI byline budget (warm lambdas persist the counter)
 
@@ -818,9 +829,12 @@ export default async function handler(req, res) {
   }
 
   let bulletinSent = false;
-  // Idempotency for the REAL daily send: the Vercel cron (04:00 UTC) and the
-  // GitHub Actions backup (04:10 UTC) both hit this path — send the bulletin
-  // at most once per day. A preview (?to=) always sends to its one address and
+  // Idempotency for the REAL daily send: the daily cron, the 15-minute urgent
+  // poll and any manual admin run all hit this path — send the bulletin at most
+  // once per day. (This comment used to name a "GitHub Actions backup at 04:10
+  // UTC". No such workflow has ever existed in this repo; the guard is needed
+  // regardless, but the reason given for it was fiction.)
+  // A preview (?to=) always sends to its one address and
   // ignores the marker; a dry run never sends. Fail OPEN: a marker-read error
   // sends anyway (a double-send is harmless; a suppressed send is the exact
   // failure this whole change is guarding against).

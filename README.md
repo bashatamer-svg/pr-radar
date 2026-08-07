@@ -45,8 +45,12 @@ table is prefixed `pr_` (see `schema.sql`) and the code only ever reads/writes
 ## Endpoints
 - `GET /api/radar` — the pipeline (Vercel Cron, daily). `?dry=1` skips DB + email;
   `?to=<email>` sends the real brief to one address only; `?urgentOnly=1` fires
-  only severity-5 alerts. Auth: `Bearer $CRON_SECRET` or `$RADAR_TOKEN` (or `?t=`).
-- `GET /api/items?t=…` — board data; `PATCH` writes item feedback.
+  only the instant alerts. **Operator-gated**: `Bearer $CRON_SECRET`, or a
+  signed-in admin's session token. `$RADAR_TOKEN` is read-only and is refused
+  here — including for `?dry=1`, which spends on classifier calls even though it
+  stores nothing.
+- `GET /api/geo` — answer-engine check. Operator-gated, same rule.
+- `GET /api/items` — board data; `PATCH` writes item feedback (admin).
 - `GET /api/go?id=…` — share-redirect that decodes the stored Google-News wrapper
   to the real article (cached on first use).
 
@@ -55,19 +59,21 @@ table is prefixed `pr_` (see `schema.sql`) and the code only ever reads/writes
 2. Apply `schema.sql` to your Supabase project (adds pr_* tables only).
 3. Deploy to Vercel — the daily cron is declared in `vercel.json`.
 
-## Smoke-test (no side effects)
+## Smoke-test (no stored rows)
 ```
-curl -H "Authorization: Bearer $RADAR_TOKEN" "https://YOUR.vercel.app/api/radar?dry=1"
+curl -H "Authorization: Bearer $CRON_SECRET" "https://YOUR.vercel.app/api/radar?dry=1"
 ```
 Response includes `scanned`, `candidates`, `emailed`, `brokenFeeds`. If `scanned`
 is near zero, the feeds are the problem, not the code.
 
 Prove the email end-to-end to a single address:
 ```
-curl -H "Authorization: Bearer $RADAR_TOKEN" "https://YOUR.vercel.app/api/radar?to=you@example.com"
+curl -H "Authorization: Bearer $CRON_SECRET" "https://YOUR.vercel.app/api/radar?to=you@example.com"
 ```
 
-View the board: `https://YOUR.vercel.app/?t=$RADAR_TOKEN`
+View the board: sign in at `https://YOUR.vercel.app/login`. There is no token
+query parameter — `$RADAR_TOKEN` is a read-only *service* bearer for the JSON
+APIs, not a way into the UI.
 
 ## Model & cost
 The classifier and semantic-dedup passes use `CLASSIFIER_MODEL` (default Haiku) —

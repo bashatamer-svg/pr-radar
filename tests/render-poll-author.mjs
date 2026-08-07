@@ -5,6 +5,11 @@
 import assert from 'node:assert';
 
 process.env.RADAR_TOKEN = 'tok';
+// /api/radar is OPERATOR-gated (lib/auth.js): the read-only RADAR_TOKEN cannot
+// drive the pipeline any more, so these drive it as the cron principal — which
+// is what Vercel Cron actually sends. The refusal is pinned by
+// verify-token-privilege.
+process.env.CRON_SECRET = 'cron';
 process.env.SUPABASE_URL = 'https://fake.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'k';
 process.env.ANTHROPIC_API_KEY = 'ak';
@@ -44,7 +49,7 @@ globalThis.fetch = async (url, opts) => {
 const { default: handler } = await import(new URL('..', import.meta.url).pathname + '/api/radar.js');
 let code, body;
 const res = { status: (c) => { code = c; return res; }, json: (b) => { body = b; return res; }, setHeader() {}, end() {}, send() {} };
-await handler({ query: { urgentOnly: '1' }, headers: { authorization: 'Bearer tok' } }, res);
+await handler({ query: { urgentOnly: '1' }, headers: { authorization: 'Bearer cron' } }, res);
 
 assert.strictEqual(code, 200, 'urgent poll returns 200');
 assert.ok(Array.isArray(insertedRows) && insertedRows.length === 1, 'the fresh story was inserted');

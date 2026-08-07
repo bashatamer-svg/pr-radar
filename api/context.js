@@ -1,7 +1,7 @@
 // Living-knowledge editor endpoint. Token-gated exactly like api/items.js.
 //
-//   GET  /api/context?t=<RADAR_TOKEN>   → { content, updated_at }
-//   PUT  /api/context?t=<RADAR_TOKEN>    (body {content}) → save, returns meta
+//   GET  /api/context   → { content, updated_at }        (viewer+, Bearer only)
+//   PUT  /api/context    (body {content}) → save, returns meta   (admin only)
 //
 // Backs /context.html. The doc is pr_context.house_knowledge — the admin-
 // maintained "living PR knowledge" (current campaigns, a live issue, a

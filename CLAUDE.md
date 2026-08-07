@@ -134,7 +134,22 @@ gets nothing. All queries live in `lib/db.js`.
   judge. Change a dependency ⇒ commit the lockfile in the same commit.
 - **Tokens in the Authorization header ONLY** — never `?t=` (deliberately
   purged; don't reintroduce). `RADAR_TOKEN`=viewer, `CRON_SECRET`=admin,
-  humans = Supabase JWT. The server has enforced this since Task 18, but four
+  humans = Supabase JWT.
+  **And the viewer token cannot OPERATE.** `/api/radar` and `/api/geo` each
+  carried their OWN inline `safeEqual` pair accepting either token, so the
+  SHARED read-only `RADAR_TOKEN` could fire a full ingest — thirty feed fetches,
+  a round of paid classifier calls, the daily brief to every subscriber, the
+  WhatsApp crisis numbers. Both now call **`requireOperator`** (`lib/auth.js`),
+  which is `requireRole(…, 'admin')` under a name that states the policy at the
+  call site. Read-only is judged by EFFECT: `?dry=1` stores nothing but still
+  spends, so it is gated too. **A manual radar/geo run therefore needs
+  `CRON_SECRET` or a signed-in admin session — `RADAR_TOKEN` answers 403.**
+  Human-triggered runs are audited as `radar.run`; the cron's are not (every 15
+  minutes, and `pr_state` already records what they delivered). Pinned by
+  `verify-token-privilege`, which asserts every principal × endpoint cell
+  INCLUDING the must-nots, that a refusal happens before any feed is fetched or
+  mail sent, that `RADAR_TOKEN` still READS `/api/stats` and `/api/items`, and
+  that no file in `api/` reads `process.env.RADAR_TOKEN` again. The server has enforced this since Task 18, but four
   pages kept a client-side `authURL()` appending `?t=` alongside a `const
   token=''` that made every branch dead — removed 3 Aug. `render-notoken` now
   reads every `public/*.html` and fails on `authURL(`, `const token =`, or a

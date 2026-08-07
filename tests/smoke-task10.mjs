@@ -15,13 +15,17 @@ const call = async (query, headers = {}) => {
   return { code, body };
 };
 
-// auth
-assert.strictEqual((await call({ t: 'nope' })).code, 401);
+// auth — /api/geo is OPERATOR-gated: it calls out to paid answer engines and can
+// email the findings, so the read-only RADAR_TOKEN is refused (see the model in
+// lib/auth.js; the whole table is pinned by verify-token-privilege).
+assert.strictEqual((await call({ t: 'nope' })).code, 401, 'no bearer is challenged');
+assert.strictEqual((await call({}, { authorization: 'Bearer tok' })).code, 403,
+  'the read-only RADAR_TOKEN cannot run the geo check');
 
 // GEO_ENABLED unset → feature off, zero external calls
 let calls = 0;
 globalThis.fetch = async () => { calls++; throw new Error('should not be called'); };
-let r = await call({}, { authorization: 'Bearer tok' });
+let r = await call({}, { authorization: 'Bearer cron' });
 assert.strictEqual(r.code, 200);
 assert.strictEqual(r.body.enabled, false, 'disabled by default');
 assert.strictEqual(calls, 0, 'no external calls when disabled');
@@ -29,7 +33,7 @@ assert.strictEqual(calls, 0, 'no external calls when disabled');
 // enabled but NO engine keys → idle, still no calls
 process.env.GEO_ENABLED = '1';
 calls = 0;
-r = await call({}, { authorization: 'Bearer tok' });
+r = await call({}, { authorization: 'Bearer cron' });
 assert.strictEqual(r.body.enabled, true);
 assert.strictEqual(r.body.checked, 0);
 assert.ok(/no engine API keys/.test(r.body.note || ''), 'idle note');
@@ -61,7 +65,7 @@ globalThis.fetch = async (url, opts) => {
   throw new Error('unexpected ' + u);
 };
 
-r = await call({}, { authorization: 'Bearer tok' });
+r = await call({}, { authorization: 'Bearer cron' });
 assert.strictEqual(r.body.enabled, true);
 assert.deepStrictEqual(r.body.engines, ['Perplexity', 'ChatGPT (OpenAI)']);
 assert.strictEqual(r.body.checked, 4, '2 engines × 2 probes');
@@ -76,7 +80,7 @@ assert.ok(/Orange/.test(drift.verdict.factual_issues.join(' ')), 'factual drift 
 
 // email gate: send=1 but GEO_ALERTS_ENABLED unset → no email
 globalThis.__sent = 0;
-r = await call({ send: '1' }, { authorization: 'Bearer tok' });
+r = await call({ send: '1' }, { authorization: 'Bearer cron' });
 assert.strictEqual(r.body.sent, false);
 assert.ok(/GEO_ALERTS_ENABLED/.test(r.body.note || ''));
 assert.strictEqual(globalThis.__sent, 0);

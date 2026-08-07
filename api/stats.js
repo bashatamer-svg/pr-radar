@@ -1,6 +1,6 @@
 // Server-aggregated trends for the /stats screen. Token-gated like api/items.js.
 //
-// GET /api/stats?t=<RADAR_TOKEN>&days=N  (N clamped 1..90, default 30)
+// GET /api/stats?days=N  (N clamped 1..90, default 30). Viewer+ (Bearer only).
 //
 // Aggregation happens HERE, not in the browser: the board ships raw rows because
 // it renders cards, but a 90-day trend over items × instances would be a heavy,
