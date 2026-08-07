@@ -203,7 +203,12 @@
 
   /* ── filter bar ── */
   .bar2[hidden]{display:none}
-  .bar2{position:sticky;top:var(--mh);z-index:30;background:var(--barbg);backdrop-filter:blur(12px);
+  /* NOT sticky. It stacks four rows (status + Show + Since), which pinned under
+     the 92px header left ~250px of permanent chrome on a 390px phone — a third
+     of the viewport spent on controls while reading cards. The one control that
+     has to stay reachable while scrolling is Sort, and that now lives in .sortbar
+     below; everything here is a filter you set once and scroll past. */
+  .bar2{background:var(--barbg);backdrop-filter:blur(12px);
         border-bottom:1px solid var(--hair);padding:11px 16px 10px;margin-top:12px}
   .status{font-size:12px;color:var(--muted);margin-bottom:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .status b{color:var(--ink);font-weight:700} .status .neg{color:var(--neg);font-weight:700} .status .sep{color:var(--faint)}
@@ -252,6 +257,35 @@
   .list{padding:10px 16px 76px}
   .empty,.gate{text-align:center;color:var(--muted);padding:64px 26px;font-size:14px;line-height:1.7}
   .gate code{background:var(--card);border:1px solid var(--hair);padding:2px 8px;border-radius:6px;color:var(--ink);font-family:var(--mono)}
+  /* THE SLIM STICKY BAR — lane context on the left, sort on the right.
+     Sort used to sit in .bar2, which meant that once you scrolled into the
+     cards you had to scroll all the way back up to re-order them. It is the one
+     control that has to survive scrolling, so it gets its own bar and .bar2
+     stops pinning.
+     The lane label MIRRORS the .sechead you are currently reading (updated on
+     scroll) — deliberately, because pinning a bar over the list otherwise hides
+     the very heading that says which lane a card belongs to. It is
+     aria-hidden: the real headings are still in the list, and a label that
+     re-announced itself on every scroll tick is how a screen reader user turns
+     announcements off. */
+  .sortbar[hidden]{display:none}
+  .sortbar{position:sticky;top:var(--mh);z-index:32;display:flex;align-items:center;gap:10px;
+           background:var(--barbg);backdrop-filter:blur(12px);border-bottom:1px solid var(--hair);
+           padding:8px 16px}
+  /* flex BASIS, not flex:1 — the lane label is the only shrinkable child here,
+     and a bare flex:1 among flex:none siblings absorbs every shortfall (the
+     fault this file has now hit four times). It truncates rather than crushing
+     the chips, and its content is never lost: the same label is in the list. */
+  .sbl{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;
+       font-size:12.5px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+  .sbl .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sbl .tick{width:9px;height:9px;border-radius:4px;flex:none}
+  .sbl .n{font-size:10.5px;font-weight:700;color:#fff;border-radius:20px;padding:1px 7px;flex:none}
+  .sortbar #sortRow{flex:none;gap:6px}
+  /* Below 380px the label goes rather than the controls: its function is fully
+     reachable — the same heading is inline in the list two lines away — while a
+     shrunken chip is a control you cannot reliably tap. */
+  @media (max-width:379px){ .sbl{display:none} .sortbar #sortRow{flex:1 1 auto} }
   .sechead{display:flex;align-items:center;gap:9px;padding:20px 2px 9px}
   .sechead .tick{width:10px;height:10px;border-radius:4px;flex:none}
   .sechead .lab{font-size:13px;font-weight:800;letter-spacing:-.01em}
@@ -466,7 +500,11 @@
     <div class="status" id="status" role="status" aria-live="polite"></div>
     <div class="frow scrollhint" id="sentRow"></div>
     <div class="frow scrollhint" id="winRow"></div>
-    <div class="frow scrollhint" id="sortRow"></div>
+  </div>
+
+  <div class="sortbar" id="sortbar" hidden>
+    <span class="sbl" id="sbLane" aria-hidden="true"></span>
+    <div class="frow scrollhint" id="sortRow" role="group" aria-label="Sort order"></div>
   </div>
 
   <div class="dfilter" id="dfilter" hidden></div>
@@ -968,7 +1006,7 @@ function render(){
     dfEl.innerHTML=`<span><span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}${note}</span><button class="dfx" type="button" onclick="clearDeepFilter()">✕ Clear filter</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
   else { dfEl.classList.remove('on'); dfEl.hidden=true; }
   const list=$('#list');
-  if(!shown.length){ list.innerHTML=`<div class="empty">${df?`No cards for this ${esc(df.kind.toLowerCase())} in the current window.<br>Try a wider window, or clear the filter above.`:'Nothing matches this filter.<br>Clear the brand or widen the time window.'}</div>`; return; }
+  if(!shown.length){ list.innerHTML=`<div class="empty">${df?`No cards for this ${esc(df.kind.toLowerCase())} in the current window.<br>Try a wider window, or clear the filter above.`:'Nothing matches this filter.<br>Clear the brand or widen the time window.'}</div>`; updateLaneLabel(); return; }
   const SEC=[['negative','Needs a response','#e60000'],['positive','Wins to amplify','#0f9d58'],['neutral','Market & noted','#5b6675']];
   let html='';
   if(fSort==='newest'){
@@ -983,8 +1021,49 @@ function render(){
       html+=`<div class="sechead"><span class="tick" style="background:${color}"></span><span class="lab">${label}</span><span class="n" style="background:${color}">${rows.length}</span></div>`;
       html+=rows.map(cardHtml).join(''); }
   }
-  list.innerHTML=html; stagger(list); animateBars(list);
+  list.innerHTML=html; stagger(list); animateBars(list); updateLaneLabel();
   if(location.hash){ const el=document.getElementById(location.hash.slice(1)); if(el) el.scrollIntoView(); }
+}
+
+/* THE PINNED BAR'S LANE LABEL.
+   Pinning a bar over the list hides the .sechead that says which lane you are
+   reading, so the bar has to carry that context itself or the fix costs more
+   than it gains. It MIRRORS the headings already in the list rather than
+   inventing anything: whichever .sechead has scrolled under the bar is the one
+   shown, which is the same answer the reader would get by scrolling up. */
+function stickyOffset(){
+  const b=$('#sortbar');
+  return b && !b.hidden ? b.getBoundingClientRect().bottom : 0;
+}
+function updateLaneLabel(){
+  const bar=$('#sortbar'), lane=$('#sbLane');
+  if(!bar||bar.hidden||!lane) return;
+  const heads=[...document.querySelectorAll('#list .sechead')];
+  if(!heads.length){ lane.innerHTML=''; return; }
+  // The last heading whose top has passed under the bar; before any has, the
+  // first one — you are above the list, and it is what you are about to read.
+  const edge=stickyOffset()+1;
+  let cur=heads[0];
+  for(const h of heads){ if(h.getBoundingClientRect().top<=edge) cur=h; }
+  const tick=cur.querySelector('.tick'), lab=cur.querySelector('.lab'), n=cur.querySelector('.n');
+  const col=tick?tick.style.background:'var(--faint)';
+  lane.innerHTML=`<span class="tick" style="background:${col}"></span>`
+    +`<span class="lab">${esc(lab?lab.textContent:'')}</span>`
+    +(n?`<span class="n" style="background:${col}">${esc(n.textContent)}</span>`:'');
+}
+let laneRaf=null;
+function onScrollLane(){ if(laneRaf) return; laneRaf=requestAnimationFrame(()=>{ laneRaf=null; updateLaneLabel(); }); }
+addEventListener('scroll',onScrollLane,{passive:true});
+addEventListener('resize',onScrollLane,{passive:true});
+
+/** Put the top of the list just under the pinned bars. Used after a re-order,
+    which otherwise leaves you mid-list looking at cards you did not ask for. */
+function scrollListToTop(){
+  const l=$('#list'); if(!l) return;
+  if(l.getBoundingClientRect().top>=stickyOffset()) return;   // already in view
+  const y=window.scrollY+l.getBoundingClientRect().top-stickyOffset();
+  window.scrollTo({top:Math.max(0,y)});
+  updateLaneLabel();
 }
 
 function syncControls(){
@@ -1015,9 +1094,21 @@ function buildFilters(){
   const srt=$('#sortRow');
   const sopts=[['impact','◉ Impact','Biggest first — Impact, then how many outlets ran it. Grouped into the three lanes.'],
                ['newest','↓ Newest','Most recent first, as one flat list. The lane sections are set aside so the freshest story is always at the top.']];
-  srt.innerHTML=`<span class="flabel">Sort</span>`+sopts.map(([v,l,t])=>`<button class="chip" type="button" data-sort="${v}" aria-pressed="${fSort===v}" title="${t}">${l}</button>`).join('');
-  srt.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ fSort=c.dataset.sort; syncControls(); render(); });
+  // No visible "Sort" label here, unlike the rows above: this bar is pinned, so
+  // every pixel it takes is taken from the cards for the whole scroll. The row
+  // carries aria-label="Sort order" instead, so the group is still named for a
+  // screen reader while costing nothing on screen.
+  srt.innerHTML=sopts.map(([v,l,t])=>`<button class="chip" type="button" data-sort="${v}" aria-pressed="${fSort===v}" title="${t}">${l}</button>`).join('');
+  srt.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{
+    fSort=c.dataset.sort; syncControls(); render();
+    // Re-order under a pinned bar leaves you mid-list looking at different
+    // cards; go back to the top of the list so you see what you just asked for.
+    // Only when you are actually scrolled past it — otherwise this yanks the
+    // page on every click from the top, where nothing needed to move.
+    scrollListToTop();
+  });
   $('#bar2').hidden=false;
+  $('#sortbar').hidden=false;
 }
 
 // Pull any pinned items that fall OUTSIDE the current window (older than the

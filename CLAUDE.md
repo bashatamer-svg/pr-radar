@@ -260,6 +260,31 @@ gets nothing. All queries live in `lib/db.js`.
   filter bug for cards behaving as designed. Pinned by `render-guide`.
   **Only 5 alerts in real time**; a 4 waits for the
   05:00 brief.
+- **Sort lives in its own PINNED bar; `.bar2` does not pin.** `#sortRow` used to
+  sit in `.bar2` alongside Show and Since. `.bar2` *was* sticky, but it stacks
+  four rows (status + Show + Since + Sort), so pinned under the 92px `.top` it
+  held ~250px of a 390px phone — a third of the viewport spent on controls while
+  reading cards, with the one control you want mid-scroll at the bottom of the
+  stack. Show and Since are set-once filters you scroll past; Sort is not, so it
+  moved to `.sortbar` (`position:sticky; top:var(--mh)`) and `.bar2` went static.
+  The bar also carries the **lane you are currently reading**, because pinning a
+  bar over the list hides the `.sechead` that says which lane a card is in — a
+  fix that costs you the lane heading is not one. `updateLaneLabel()` MIRRORS the
+  headings already in the list (last `.sechead` to pass under the bar, rAF-
+  throttled on scroll) and invents nothing; it is `aria-hidden` because the real
+  headings are still in the DOM and a label re-announcing on every scroll tick is
+  how a reader turns announcements off. Putting Sort **inside** a `.sechead` was
+  the rejected design and the reason is worth keeping: there are three lane
+  headers, `if(!rows.length) continue` deletes one on a quiet day, and choosing
+  Newest collapses the lanes — so the control would have repeated 3×, vanished
+  when its lane emptied, and deleted its own container the moment you used it.
+  Below **380px** the lane label is the child that goes, not the chips: the same
+  label is inline in the list two lines away, while a shrunken chip cannot be
+  tapped (the `flex:none`-on-controls rule from the card footer). Re-ordering
+  from deep in the list scrolls back to the list top — new consequence of a
+  pinned control, and without it you are left staring at unrelated cards in a
+  new order, which reads as the control having done nothing. Pinned by
+  `render-sticky-sort`.
 - **The board's Sort chip re-orders; it never filters.** `◉ Impact` is the
   original order (lane → Impact → spread → recency) and is what LOADS. It is
   deliberately NOT persisted the way `pr_win` is: a Newest sort set once and
