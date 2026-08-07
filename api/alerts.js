@@ -22,7 +22,7 @@ import {
   activeSubscribers, monthToDateUsage, databaseSizeBytes,
 } from '../lib/db.js';
 import { totalCostUsd, cacheEfficiency } from '../lib/usage.js';
-import { sendOpsAlert } from '../lib/email.js';
+import { sendOpsAlert, opsChannelCheck } from '../lib/email.js';
 import { recentDeliveryStatus } from '../lib/deliverability.js';
 import { requireRole } from '../lib/auth.js';
 import { buildInfo, buildCheck } from '../lib/build.js';
@@ -115,6 +115,13 @@ export default async function handler(req, res) {
   // page" for a channel that would page five people.
   const waReach = await whatsappRecipientCount().catch(() => null);
   add(whatsappCheck(waReach == null ? {} : { recipients: waReach }));
+
+  // CAN THIS PAGE REACH YOU? Every check above and below reports on the
+  // pipeline; this one reports on the channel that DELIVERS those reports.
+  // Nothing covered it — `recipients` further down counts the daily BRIEF's
+  // audience, which is a different list for a different purpose. Synchronous
+  // and dependency-free: it reads environment variables, so it cannot fail.
+  add(opsChannelCheck());
 
   // The living-knowledge doc is injected into EVERY classification and marked
   // authoritative, so a line whose story has ended keeps steering unrelated

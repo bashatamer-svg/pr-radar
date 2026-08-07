@@ -13,6 +13,7 @@
 // badly: a line naming a live story is correct for a fortnight and then quietly
 // starts steering unrelated news. Nothing ever prompted anyone to prune it.
 import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
 
 process.env.SUPABASE_URL = 'https://fake.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'k';
@@ -167,6 +168,91 @@ const rungOf = (r, id) => r.rungs.find((x) => x.id === id);
   assert.notStrictEqual(c.state, 'crit');
   const bad = whatsappCheck({ displayNumber: '+15554285748', nameStatus: 'PENDING', templateStatus: 'REJECTED' });
   assert.notStrictEqual(bad.state, 'crit', 'even everything failing is not critical for a secondary channel');
+}
+
+/* ═══ The alert channel — can this page reach you at all? ══════════════════ */
+//
+// Every other check on Health reports on the pipeline. This one reports on the
+// thing that DELIVERS those reports, and nothing did: the `recipients` check
+// counts the daily BRIEF's audience, which is a different list for a different
+// purpose. The failure is silent by construction — sendOpsAlert calls
+// recordAlert() BEFORE it attempts delivery, so with no recipients every
+// warning was still written to pr_alerts and still shown in the 14-day history
+// while reaching no inbox. It never looked broken; it looked quiet.
+{
+  const { opsChannelCheck, opsAlertRecipients } = await import('../lib/email.js');
+  const ops = (env = {}) => {
+    for (const k of ['OPS_ALERT_TO', 'RADAR_TO', 'RADAR_FROM', 'RESEND_API_KEY']) delete process.env[k];
+    Object.assign(process.env, env);
+    return opsChannelCheck();
+  };
+
+  // THE BUG, as it stood in production until 7 Aug: credentials fine, nobody
+  // to send to, and nothing anywhere saying so.
+  {
+    const c = ops({ RADAR_FROM: 'a@b.com', RESEND_API_KEY: 'k' });
+    assert.strictEqual(c.state, 'crit',
+      'a health push that reaches nobody is critical — every other check on the page is then page-only');
+    assert.match(c.detail, /reaches nobody/, 'and says so plainly');
+    assert.match(c.detail, /OPS_ALERT_TO/, 'naming the variable that fixes it');
+    assert.match(c.hint, /redeploy/i, 'and that an env var needs a redeploy, not just a save');
+    // The trap this check exists to close: resets DO still arrive, via
+    // ADMIN_EMAILS on the one caller that passes opts.to — so "my reset email
+    // came through" is not evidence the alert channel works.
+    assert.match(c.hint, /reset arriving is NOT evidence/i,
+      'and warns that a working password-reset email does not prove this channel works');
+  }
+
+  // Configured — the state production reached on 7 Aug.
+  {
+    const c = ops({ OPS_ALERT_TO: 'ops@x.com', RADAR_FROM: 'a@b.com', RESEND_API_KEY: 'k' });
+    assert.strictEqual(c.state, 'ok', 'one operator address is a working channel');
+    assert.match(c.detail, /1 operator via OPS_ALERT_TO/, 'reporting the count and the source');
+    // The COUNT, never the addresses — same call the WhatsApp check makes by
+    // masking numbers. A health page answers "is it configured", not "who".
+    assert.ok(!/ops@x\.com/.test(`${c.detail} ${c.hint}`),
+      'and never prints the operator addresses themselves');
+  }
+
+  // Falling back to the brief list works, but is worth saying out loud: those
+  // are the people who read the news, not the person who runs the radar.
+  {
+    const c = ops({ RADAR_TO: 'a@x.com, b@x.com', RADAR_FROM: 'a@b.com', RESEND_API_KEY: 'k' });
+    assert.strictEqual(c.state, 'ok');
+    assert.match(c.detail, /2 operators via RADAR_TO/, 'the fallback is reported as the fallback');
+    assert.match(c.hint, /read the news, not the person who runs the radar/, 'and why that is not ideal');
+  }
+
+  // No provider at all. The brief's `recipients` check counts addresses and
+  // would say nothing about this — a list of recipients is not a channel.
+  {
+    const c = ops({ OPS_ALERT_TO: 'ops@x.com' });
+    assert.strictEqual(c.state, 'crit', 'recipients with no provider is still a dead channel');
+    assert.match(c.detail, /RESEND_API_KEY and RADAR_FROM/, 'naming both missing pieces');
+  }
+  {
+    const c = ops({ OPS_ALERT_TO: 'ops@x.com', RESEND_API_KEY: 'k' });
+    assert.match(c.detail, /RADAR_FROM/, 'or just the one that is missing');
+    assert.ok(!/RESEND_API_KEY/.test(c.detail), 'and not the one that is present');
+  }
+
+  // THE ANTI-DRIFT PROPERTY, which is the whole reason this lives in
+  // lib/email.js beside the sender: the check and sendOpsAlert read ONE
+  // expression. Two copies of a fallback chain is how a check comes to reassure
+  // you about a channel the sender no longer uses.
+  {
+    const src = readFileSync(new URL('../lib/email.js', import.meta.url), 'utf8');
+    const fn = src.slice(src.indexOf('export async function sendOpsAlert'),
+      src.indexOf('export function opsAlertRecipients'));
+    assert.ok(/opsAlertRecipients\(\)/.test(fn),
+      'sendOpsAlert resolves its recipients through the shared helper');
+    assert.ok(!/process\.env\.OPS_ALERT_TO/.test(fn),
+      'and does NOT re-read the env chain itself, or the check could drift from the sender');
+    process.env.OPS_ALERT_TO = 'x@y.com';
+    assert.deepStrictEqual(opsAlertRecipients().map((a) => String(a)), ['x@y.com'],
+      'and the helper is what both of them call');
+    delete process.env.OPS_ALERT_TO;
+  }
 }
 
 /* ═══ House knowledge ══════════════════════════════════════════════════════ */

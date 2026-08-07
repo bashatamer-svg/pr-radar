@@ -1051,6 +1051,27 @@ gets nothing. All queries live in `lib/db.js`.
   because ~42% of relevant cards have no author and never will — Egyptian wire
   and desk copy is unsigned, so a raw count is meaningless.
   Pinned by `verify-health-checks` + `render-health-tab`.
+- **Nothing was checking the channel that delivers the checks** (`opsChannelCheck`,
+  `lib/email.js`). Admin → Health has a `recipients` check, and it counts the
+  daily BRIEF's audience — `RADAR_TO` + subscribers. The ops alert channel is a
+  DIFFERENT list for a different purpose, and until 7 Aug nothing looked at it
+  at all, so the page that reports every other fault could not report its own
+  inability to reach anyone. The failure is silent by construction:
+  `sendOpsAlert` calls `recordAlert()` BEFORE it attempts delivery, so with no
+  recipients every warning was still written to `pr_alerts` and still shown in
+  the 14-day history while reaching no inbox — it never looked broken, it looked
+  quiet. **CRIT** when the push can reach nobody, matching the brief's
+  `recipients` check, which grades "nobody would receive it" the same way; it
+  cannot cry wolf, because all three conditions are plain configuration and a
+  configured deployment is green. Two things a change must keep: the sender and
+  the check share **one** expression (`opsAlertRecipients()` — two copies of a
+  fallback chain is how a check comes to reassure you about a channel the sender
+  no longer uses; `verify-readiness-checks` fails if `sendOpsAlert` reads the env
+  chain itself), and the check reports the **count, never the addresses**, the
+  same call the WhatsApp check makes by masking numbers. The hint says out loud
+  that a forgot-password email arriving is NOT evidence this works — that path is
+  the one caller passing `opts.to`, so it reaches `ADMIN_EMAILS` even when this
+  channel is dead. Pinned by `verify-readiness-checks` + `verify-health-checks`.
 - **A ledger must never be able to fail the job it watches** (`lib/runs.js`).
   A monitoring table that can take down the ingest it monitors is a worse bug
   than the blindness it was added to fix — so every function there swallows
@@ -1152,7 +1173,7 @@ never once been sufficient.
   it should answer "Request sent", put a row in Admin → Requests and mail
   `ADMIN_EMAILS`. Before the migration is applied it answers the same and
   records nothing, which is the designed degradation, not a failure.
-7. **Admin → Health** — up to 18 live checks + 14-day alert history, computed
+7. **Admin → Health** — up to 19 live checks + 14-day alert history, computed
   on open. The first three answer "what am I even looking at": the **deployed
   build** (running commit vs `origin/main`), the **schema migrations** this
   database has, and whether the **scheduled jobs actually ran** (recorded, not
