@@ -928,7 +928,6 @@ function printDoc(sections){
 <h1>PR Radar — Trends</h1>
 <div class="sub">Vodafone Egypt · last ${fDays} days · generated ${esc(when)} (Cairo)</div>
 ${body}
-<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),250));<\/script>
 </body></html>`;
 }
 
@@ -952,6 +951,13 @@ function exportPdf(id){
   // page rather than leaving the button looking broken.
   const w=window.open(url,'_blank');
   if(!w) saveBlob(expName('html',id&&secs[0].title),'text/html',html);
+  // The print used to be an inline <script> INSIDE the generated document. A
+  // blob: document inherits the opener's CSP, so that script is exactly what
+  // `script-src 'unsafe-inline'` was still being kept for. The blob is
+  // same-origin, so the opener can drive it instead — no inline script at all.
+  // Fail-soft: a browser that blocks the reach-in still shows the page, and
+  // the reader can print it themselves.
+  else try{ w.addEventListener('load',()=>{ try{ w.focus(); w.print(); }catch(e){} }); }catch(e){}
   setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 

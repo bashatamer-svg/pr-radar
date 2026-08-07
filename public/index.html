@@ -772,7 +772,7 @@ function buildPulse(){
   }).join('');
 
   $('#pulse').innerHTML=
-    `<div class="ph"><span class="dt"></span>Today’s reputation pulse<span class="nxt" id="nextScan" title="The urgent scan runs every 15 minutes, on the quarter hour. New stories reach the board a minute or two after it finishes."></span><button class="shbtn" type="button" onclick="snapshotPulse()" title="Share a branded snapshot">📸 Share</button></div>
+    `<div class="ph"><span class="dt"></span>Today’s reputation pulse<span class="nxt" id="nextScan" title="The urgent scan runs every 15 minutes, on the quarter hour. New stories reach the board a minute or two after it finishes."></span><button class="shbtn" type="button" data-act="snappulse" title="Share a branded snapshot">📸 Share</button></div>
      <div class="hero ${alert?'alert':''}" role="button" tabindex="0" data-b="${V}" aria-pressed="${fBrand===V}">
        <div class="hlogo">V</div>
        <div class="hbody">
@@ -852,18 +852,18 @@ function cardHtml(it){
     ${angleHtml(it.pr_angle)}
     ${coverageHtml(it.instances)}
     <div class="foot">
-      <button class="btn copy" type="button" onclick="copyBrief(${it.id},this)">⧉ Copy brief</button>
-      <button class="fb share" type="button" aria-label="Share a branded snapshot of this story" title="Share a branded snapshot" onclick="snapshotCard(${it.id})">📸</button>
-      <button class="fb alert" type="button" aria-label="Send this story as an instant alert to the full alert list" title="Send this card as an instant alert — email (and WhatsApp when live) to the full alert list. For cards corrected after ingest; the rule still applies." onclick="sendAlert(${it.id},this)">🔔</button>
+      <button class="btn copy" type="button" data-act="copy" data-id="${it.id}">⧉ Copy brief</button>
+      <button class="fb share" type="button" aria-label="Share a branded snapshot of this story" title="Share a branded snapshot" data-act="snap" data-id="${it.id}">📸</button>
+      <button class="fb alert" type="button" aria-label="Send this story as an instant alert to the full alert list" title="Send this card as an instant alert — email (and WhatsApp when live) to the full alert list. For cards corrected after ingest; the rule still applies." data-act="alert" data-id="${it.id}">🔔</button>
       <div class="more" data-open="false">
         <button class="fb morebtn" type="button" aria-haspopup="true" aria-expanded="false"
-                aria-label="More actions for this story" title="More actions" onclick="toggleMore(this,event)">•••</button>
+                aria-label="More actions for this story" title="More actions" data-act="more">•••</button>
         <div class="moremenu" role="menu" aria-label="More actions">
-          <button class="mitem pin" type="button" role="menuitem" aria-pressed="${pinned}" onclick="togglePin(${it.id},'pin',this)"><span aria-hidden="true">📌</span> ${pinned?'Unpin':'Pin for the team'}</button>
-          <button class="mitem hide" type="button" role="menuitem" aria-pressed="${hidden}" onclick="togglePin(${it.id},'hide',this)"><span aria-hidden="true">🙈</span> ${hidden?'Unhide':'Hide from the team'}</button>
+          <button class="mitem pin" type="button" role="menuitem" aria-pressed="${pinned}" data-act="pin" data-id="${it.id}"><span aria-hidden="true">📌</span> ${pinned?'Unpin':'Pin for the team'}</button>
+          <button class="mitem hide" type="button" role="menuitem" aria-pressed="${hidden}" data-act="hide" data-id="${it.id}"><span aria-hidden="true">🙈</span> ${hidden?'Unhide':'Hide from the team'}</button>
           <div class="msep" role="separator"></div>
-          <button class="mitem up" type="button" role="menuitem" aria-pressed="${fb===1}" onclick="vote(${it.id},1,this)"><span aria-hidden="true">▲</span> Useful</button>
-          <button class="mitem down" type="button" role="menuitem" aria-pressed="${fb===-1}" onclick="vote(${it.id},-1,this)"><span aria-hidden="true">▼</span> Not useful</button>
+          <button class="mitem up" type="button" role="menuitem" aria-pressed="${fb===1}" data-act="up" data-id="${it.id}"><span aria-hidden="true">▲</span> Useful</button>
+          <button class="mitem down" type="button" role="menuitem" aria-pressed="${fb===-1}" data-act="down" data-id="${it.id}"><span aria-hidden="true">▼</span> Not useful</button>
         </div>
       </div>
       <a class="btn open" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>
@@ -1010,7 +1010,7 @@ function render(){
   // Deep-link filter banner (arrived from Trends) with a one-click clear.
   const df=deepFilter(); const dfEl=$('#dfilter');
   if(df){ const note=(fIds.length&&fIdsTotal>fIds.length)?` <span class="dfsub">top ${fIds.length} of ${fIdsTotal} by reach</span>`:'';
-    dfEl.innerHTML=`<span><span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}${note}</span><button class="dfx" type="button" onclick="clearDeepFilter()">✕ Clear filter</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
+    dfEl.innerHTML=`<span><span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}${note}</span><button class="dfx" type="button" data-act="clearfilter">✕ Clear filter</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
   else { dfEl.classList.remove('on'); dfEl.hidden=true; }
   const list=$('#list');
   if(!shown.length){ list.innerHTML=`<div class="empty">${df?`No cards for this ${esc(df.kind.toLowerCase())} in the current window.<br>Try a wider window, or clear the filter above.`:'Nothing matches this filter.<br>Clear the brand or widen the time window.'}</div>`; updateLaneLabel(); return; }
@@ -1297,6 +1297,37 @@ renderAccount();
 if(session) loadMe();
 load();
 // Live auto-refresh: poll while the tab is open, and refresh promptly on return.
+/* ONE delegated listener for every generated control.
+   These were `onclick="copyBrief(${it.id},this)"` attributes, which are the
+   half of `script-src 'unsafe-inline'` that cannot be hashed away — an inline
+   <script> block has a stable SHA, an event-handler attribute does not. They
+   also carried their arguments as JS source inside an HTML attribute, which is
+   a quoting bug waiting to happen (admin's `esc()` does not escape an
+   apostrophe, so one in an email produced a syntax error and a dead button).
+   Data now travels in `data-` attributes, where escaping `"` IS sufficient.
+   Delegated from the document because cards are re-rendered constantly —
+   binding per element would mean re-binding on every render() and leaking a
+   listener each time. */
+const ACTS = {
+  copy: (id, b) => copyBrief(id, b),
+  snap: (id) => snapshotCard(id),
+  alert: (id, b) => sendAlert(id, b),
+  pin: (id, b) => togglePin(id, 'pin', b),
+  hide: (id, b) => togglePin(id, 'hide', b),
+  up: (id, b) => vote(id, 1, b),
+  down: (id, b) => vote(id, -1, b),
+  more: (id, b, e) => toggleMore(b, e),
+  snappulse: () => snapshotPulse(),
+  clearfilter: () => clearDeepFilter(),
+};
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const fn = ACTS[b.dataset.act];
+  if (!fn) return;
+  fn(Number(b.dataset.id), b, e);
+});
+
 $('#newPill').onclick=applyStaged;
 setInterval(checkNew, AUTO_REFRESH_MS);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkNew(); });

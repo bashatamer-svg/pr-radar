@@ -695,12 +695,30 @@ gets nothing. All queries live in `lib/db.js`.
   every page's `refreshSession()` POSTs to `${supabaseUrl}/auth/v1/token`, so
   dropping it signs every user out the moment their access token expires. The
   wildcard is the PROVIDER, never the project ref (tracked-file rule).
-  **`script-src`/`style-src` keep `'unsafe-inline'` ON PURPOSE, and that is the
-  remaining weakness**: pages are self-contained by design, the board and admin
-  carry ~55 inline `onclick` attributes, and the PDF export opens a `blob:`
-  document that INHERITS this policy and prints from an inline handler.
-  Removing it means de-inlining all of that FIRST — declaring it before then
-  ships a blank board. `'unsafe-eval'` is refused outright.
+  **`script-src`/`style-src` still carry `'unsafe-inline'`, and that is the
+  remaining weakness** — but the OBSTACLE to removing it from `script-src` is
+  now gone. There were 25 event-handler attributes (10 board, 15 admin) and one
+  inline `<script>` inside the PDF export's `blob:` document, which inherits
+  this policy; all 26 are converted. Handlers are `data-act` + one delegated
+  listener per page (`ACTS` / `ADMIN_ACTS`), and the print is driven from the
+  OPENER against the same-origin blob rather than from a script inside it.
+  `verify-no-inline-handlers` holds the line at zero, in both directions — an
+  emitted `data-act` with no handler, or a handler nothing emits, is a dead
+  button and fails the build.
+  That refactor also killed a live bug: the handlers embedded arguments as JS
+  SOURCE inside an HTML attribute, and admin's `esc()` escapes `< > & "` but
+  NOT an apostrophe — so `o'brien@example.com` rendered
+  `removeUser(7,'o'brien@example.com')`, a syntax error and a silently dead
+  button, on six admin controls. `data-` attributes need only `"` escaped.
+  What REMAINS before `'unsafe-inline'` can actually be dropped from
+  `script-src` is the eight pages' own inline `<script>` blocks — either hash
+  them (SHA-256 per block in the header, needing a generator and a test so a
+  forgotten regeneration fails CI instead of shipping a blank page) or move
+  them to `/assets/*.js` so plain `script-src 'self'` suffices, at the cost of
+  the self-contained-page principle. Not yet decided. **`style-src` is a
+  separate and much larger job** — the board sets `style="…"` on generated
+  elements throughout, and those attributes need `'unsafe-inline'` no matter
+  what happens to scripts. `'unsafe-eval'` is refused outright.
   **`upgrade-insecure-requests` is deliberately absent**: it rewrites outgoing
   navigations, and the http-only Egyptian outlet links `safe-url.js` keeps on
   purpose would break. **HSTS** is a year + includeSubDomains, **without
