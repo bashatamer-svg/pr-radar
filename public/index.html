@@ -271,7 +271,14 @@
   .sortbar[hidden]{display:none}
   .sortbar{position:sticky;top:var(--mh);z-index:32;display:flex;align-items:center;gap:10px;
            background:var(--barbg);backdrop-filter:blur(12px);border-bottom:1px solid var(--hair);
-           padding:8px 16px}
+           padding:5px 16px}
+  /* Slimmer than the filter chips above, and deliberately so: this bar is
+     PINNED, so every pixel of its height is taken from the cards for the whole
+     scroll. The bar goes from ~48px to ~39px, and most of that comes from its
+     OWN padding rather than the chips — `render-board-sort` floors a sort chip
+     at 28px tall, citing the card-footer Gotcha, and a control whose size is
+     part of its usability does not get shrunk to buy layout. ~29px here. */
+  .sortbar .chip{padding:6px 12px;font-size:12px;border-radius:9px}
   /* flex BASIS, not flex:1 — the lane label is the only shrinkable child here,
      and a bare flex:1 among flex:none siblings absorbs every shortfall (the
      fault this file has now hit four times). It truncates rather than crushing
@@ -1040,11 +1047,15 @@ function updateLaneLabel(){
   if(!bar||bar.hidden||!lane) return;
   const heads=[...document.querySelectorAll('#list .sechead')];
   if(!heads.length){ lane.innerHTML=''; return; }
-  // The last heading whose top has passed under the bar; before any has, the
-  // first one — you are above the list, and it is what you are about to read.
+  // ONLY when the real heading is hidden. The bar exists to replace a heading
+  // the pinning covered up — while that heading is still on screen the label is
+  // a second copy of it, one line apart, which is what shipped and looked like a
+  // rendering bug. So: the last heading whose top has passed UNDER the bar, and
+  // nothing at all before any has.
   const edge=stickyOffset()+1;
-  let cur=heads[0];
+  let cur=null;
   for(const h of heads){ if(h.getBoundingClientRect().top<=edge) cur=h; }
+  if(!cur){ lane.innerHTML=''; return; }
   const tick=cur.querySelector('.tick'), lab=cur.querySelector('.lab'), n=cur.querySelector('.n');
   const col=tick?tick.style.background:'var(--faint)';
   lane.innerHTML=`<span class="tick" style="background:${col}"></span>`

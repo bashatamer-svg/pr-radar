@@ -117,9 +117,27 @@ const open = async (w = 900, h = 900) => {
   const { page } = await open();
   const laneText = () => page.$eval('#sbLane', (e) => e.textContent.replace(/\s+/g, ' ').trim());
 
-  // At the top, before any heading has passed under the bar, it names the first
-  // lane — the one you are about to read.
-  assert.match(await laneText(), /Needs a response/, 'at the top it names the first lane');
+  // NOT DUPLICATED. The bar exists to replace a heading the pinning covered up,
+  // so while the real heading is still on screen the bar must say nothing —
+  // otherwise "Needs a response 1" appears twice, one line apart, which is what
+  // shipped first and read as a rendering bug.
+  assert.strictEqual(await laneText(), '',
+    'at the top the bar is silent — the real heading is right there below it');
+  // The invariant, checked at every scroll position below: whatever the bar
+  // says must NOT also be legible in the list at that moment.
+  const dupes = () => page.evaluate(() => {
+    const lane = document.querySelector('#sbLane').textContent.replace(/\s+/g, ' ').trim();
+    if (!lane) return [];
+    const barBottom = document.querySelector('#sortbar').getBoundingClientRect().bottom;
+    return [...document.querySelectorAll('#list .sechead')]
+      // Visible means below the pinned bar, not merely inside the viewport — a
+      // heading tucked under the bar is covered up, which is the whole reason
+      // the label exists.
+      .filter((h) => { const r = h.getBoundingClientRect(); return r.top >= barBottom - 1 && r.top < innerHeight; })
+      .map((h) => h.textContent.replace(/\s+/g, ' ').trim())
+      .filter((t) => t === lane);
+  });
+  assert.deepStrictEqual(await dupes(), [], 'and never repeats a heading that is visible in the list');
 
   // Scroll so the Wins heading is under the bar.
   await page.evaluate(() => {
@@ -129,6 +147,7 @@ const open = async (w = 900, h = 900) => {
   await page.waitForTimeout(150);
   assert.match(await laneText(), /Wins to amplify/,
     'scrolling into the Wins lane updates the pinned label — otherwise the bar hides the only thing that says which lane a card is in');
+  assert.deepStrictEqual(await dupes(), [], 'and the heading it names is the one now hidden under the bar');
 
   await page.evaluate(() => {
     const h = [...document.querySelectorAll('#list .sechead')].find((x) => /Market/.test(x.textContent));
@@ -136,6 +155,7 @@ const open = async (w = 900, h = 900) => {
   });
   await page.waitForTimeout(150);
   assert.match(await laneText(), /Market & noted/, 'and again for the third lane');
+  assert.deepStrictEqual(await dupes(), [], 'still no visible duplicate');
 
   // It MIRRORS, never invents: every label it can show is a heading in the list.
   const inList = await page.$$eval('#list .sechead .lab', (els) => els.map((e) => e.textContent.trim()));
@@ -161,8 +181,16 @@ const open = async (w = 900, h = 900) => {
     'Newest collapses the three lanes to one heading');
   assert.ok(await page.$('#sortbar #sortRow .chip[data-sort="impact"]'),
     'and the sort control is still there to switch back with');
+  // Same rule as the lanes: silent while the real heading is on screen, and it
+  // takes over once that heading scrolls under the bar.
+  assert.strictEqual(await page.$eval('#sbLane', (e) => e.textContent.trim()), '',
+    'silent at the top, where the flat heading is visible');
+  await page.evaluate(() => window.scrollTo(0, 900));
+  await page.waitForTimeout(150);
   assert.match(await page.$eval('#sbLane', (e) => e.textContent), /Newest first/,
-    'the pinned label follows into the flat mode');
+    'and the pinned label follows into the flat mode once the heading is covered');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
   await page.click('#sortRow .chip[data-sort="impact"]');
   await page.waitForTimeout(150);
   assert.strictEqual(await page.$$eval('#list .sechead', (e) => e.length), 3, 'and back again');
@@ -222,7 +250,11 @@ for (const w of [320, 360, 390]) {
   for (const c of m.chips) {
     // The rule from the card-footer and leaderboard fixes: a control whose size
     // is part of its usability does not shrink. The label yields instead.
-    assert.ok(c.h >= 30, `${w}px: chip "${c.text}" keeps a tappable height (${c.h}px)`);
+    // 28px, matching the floor render-board-sort already set for these exact
+    // chips. The bar was slimmed by taking height out of its OWN padding, not
+    // out of the controls — a control whose size is part of its usability does
+    // not get shrunk to buy layout (the card-footer Gotcha).
+    assert.ok(c.h >= 28, `${w}px: chip "${c.text}" keeps a tappable height (${c.h}px)`);
     assert.ok(c.w >= 60, `${w}px: chip "${c.text}" is not squeezed (${c.w}px)`);
   }
   // Below 380 the label is the child that goes — its function is reachable,
