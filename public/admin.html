@@ -372,10 +372,10 @@ function renderUsers(){
   $('#content').innerHTML=`
     <div class="card">
       <h2>Add a user</h2>
-      <div class="nm" style="line-height:1.6;margin:0 0 10px">Adding someone sets them up completely: a <b>starter password</b> made from their first name plus <code>123</code> (Tamer Basha → <code>tamer123</code>), and an email with their sign-in and a link to the board. They change the password themselves from <b>Account → Change password</b> in the top bar of the board. Give the <b>name</b> — the password and the greeting are built from it. Anyone who already has a password <b>keeps it</b>: nothing is reset and no password is emailed.</div>
+      <div class="nm" style="line-height:1.6;margin:0 0 10px">Adding someone sets them up completely: a <b>random temporary password</b> (nothing in it comes from their name or address — it is shown below once, and in their welcome email), and an email with their sign-in and a link to the board. They change it themselves from <b>Account → Change password</b> in the top bar of the board. Give the <b>name</b> for the greeting and the user list. Anyone who already has a password <b>keeps it</b>: nothing is reset and no password is emailed.</div>
       <div class="form">
         <input id="uEmail" type="email" placeholder="email@vodafone.com" autocomplete="off">
-        <input id="uName" type="text" placeholder="Name (used for the password)" autocomplete="off">
+        <input id="uName" type="text" placeholder="Name (used for the greeting)" autocomplete="off">
         <select id="uRole" class="btn ghost" style="flex:0 0 auto">
           <option value="viewer">Viewer</option><option value="admin">Admin</option>
         </select>
@@ -453,11 +453,15 @@ async function addUser(){
 // never has to invent one) and pre-filled — accept it as-is, or type your own.
 // Shown once after applying so it can be copied and shared; the user changes
 // it themselves after signing in (Account → Change password on the board).
+// Same shape and same strength as generateTempPassword() in lib/auth.js — 150
+// bits in six groups of five. The alphabet is 32 characters so masking the low
+// 5 bits is UNIFORM; the old version did `v % 54` on a 54-character set, which
+// is biased, and was 12 characters (~69 bits) rather than 150.
 function genTempPassword(){
-  // unambiguous set (no 0/O, 1/l/I) — this gets read out over the phone
-  const chars='abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const buf=new Uint32Array(12); crypto.getRandomValues(buf);
-  return Array.from(buf,(v)=>chars[v%chars.length]).join('');
+  // unambiguous set: no 0/1, and i/l omitted because they read as 1
+  const chars='23456789abcdefghjkmnopqrstuvwxyz';
+  const buf=new Uint8Array(30); crypto.getRandomValues(buf);
+  return Array.from(buf,(v,i)=>chars[v&31]+((i+1)%5===0&&i<29?'-':'')).join('');
 }
 async function setUserPassword(id,email){
   const gen=genTempPassword();

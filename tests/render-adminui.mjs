@@ -88,6 +88,22 @@ await page.waitForTimeout(300);
 assert.strictEqual(dialogs.length, 2, `reset flow shows 2 prompts, got ${dialogs.length}`);
 assert.ok(dialogs[0].def.length >= 12, 'a temp password is pre-generated');
 assert.ok(!/[01OIl]/.test(dialogs[0].def), 'temp password avoids ambiguous characters');
+// The reset generator must be as strong as the server's provisioning one
+// (lib/auth.js generateTempPassword): 30 characters from a 32-symbol alphabet
+// is 150 bits. It used to be 12 characters over a 54-symbol set (~69 bits),
+// picked with `v % 54` on a Uint32 — biased as well as short.
+assert.strictEqual(dialogs[0].def.replace(/-/g, '').length, 30,
+  `30 random characters = 150 bits (got "${dialogs[0].def}")`);
+assert.ok(/^[2-9a-hjkmn-z]{5}(-[2-9a-hjkmn-z]{5}){5}$/.test(dialogs[0].def),
+  `six unambiguous groups of five, same shape as the server's (got "${dialogs[0].def}")`);
+{
+  // Random, not a sequence: 40 draws must be 40 distinct values.
+  const many = await page.evaluate(() => Array.from({ length: 40 }, () => genTempPassword()));
+  assert.strictEqual(new Set(many).size, 40, 'every generated reset password is different');
+  // Uniform: 1200 characters over a 32-symbol alphabet should touch every
+  // symbol. A modulo-biased or truncated alphabet shows up here immediately.
+  assert.strictEqual(new Set(many.join('').replace(/-/g, '')).size, 32, 'the whole alphabet is reachable');
+}
 const pwPatch = patched.find(p => p.resource === 'users' && p.body.password);
 assert.ok(pwPatch, 'reset PATCHed a password to the API');
 assert.strictEqual(pwPatch.body.password, dialogs[0].def, 'the generated password is what was applied');

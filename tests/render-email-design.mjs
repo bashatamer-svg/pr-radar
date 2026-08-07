@@ -41,7 +41,7 @@ const bulletin = renderBulletin({ items: [item, win, rival], broken: [], scanned
 const urgent = renderUrgent(item, 'https://pr-radar.example.com/');
 // The sign-in email is a third surface on the same tokens — a person's first
 // sight of the product, so it must not be the one that drifts.
-const welcome = renderWelcome({ name: 'Tamer Basha', email: 'tamer.basha@vodafone.com', password: 'tamer123', role: 'viewer', boardUrl: 'https://pr-radar.example.com/', support: 'ops@vodafone.com', subscribed: true });
+const welcome = renderWelcome({ name: 'Tamer Basha', email: 'tamer.basha@vodafone.com', password: 'k7mpq-9xnrt-3tbwj-5hzvd-8fcgs-4ynkm', role: 'viewer', boardUrl: 'https://pr-radar.example.com/', support: 'ops@vodafone.com', subscribed: true });
 
 for (const [name, html] of [['bulletin', bulletin], ['urgent', urgent], ['welcome', welcome]]) {
   // 2. The retired warm/taupe palette must not survive anywhere.

@@ -52,7 +52,7 @@ behaviour gets a regression test in the same commit.
 | Path | What lives here |
 |---|---|
 | `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `alerts.js` (pipeline health checks + the daily push); `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
-| `lib/*.js` | ALL shared logic. `xml.js` (the ONLY place `fast-xml-parser` is constructed — hostile-feed guards), `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`presetPasswordFor`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
+| `lib/*.js` | ALL shared logic. `xml.js` (the ONLY place `fast-xml-parser` is constructed — hostile-feed guards), `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`generateTempPassword`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
 | `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
 | `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
 | `scripts/` | One-off generators run manually (OG images) |
@@ -363,11 +363,22 @@ gets nothing. All queries live in `lib/db.js`.
   **(3) The subscriber add must ASK FIRST** (`getSubscriberByEmail`) — see that
   Gotcha; an active row is left completely alone, a paused one gets a targeted
   `active:true` PATCH.
-  **(4) The starter-password floor is 6, not the 8 `/api/auth` enforces.** That
-  8 governs a password a person CHOOSES; applying it to the generated one would
-  rename it for every four-letter first name (`mona123` → `mona1234`) and break
-  the only thing the convention is for — an admin saying it without looking it
-  up. Only a 1–2 letter first name is topped up (`Ed` → `ed1234`).
+  **(4) The temporary password is RANDOM and derived from nothing.**
+  `generateTempPassword()` (`lib/auth.js`) — `crypto.randomBytes`, 30 characters
+  over a 32-symbol unambiguous alphabet in six hyphenated groups = **150 bits**.
+  It used to be a CONVENTION, `firstName + 123` (`Tamer Basha` → `tamer123`),
+  chosen so an admin could say it over the phone; the price was that a corporate
+  mailing list plus a public sign-in page made every colleague's account
+  guessable until they got round to changing it. Nothing in the value may come
+  from the name, email, role, id or the time of issue — a timestamped seed is
+  guessable by anyone who knows roughly when the account was made. The
+  readability lives in the FORMAT now (recovery-code shape), not the content.
+  The alphabet is 32 symbols so masking 5 bits per byte is UNIFORM; the admin
+  reset generator in `public/admin.html` was `v % 54` over 12 characters (~69
+  bits, and biased) and now matches the server exactly. Pinned by
+  `verify-user-provision` (25 provisions of the same person ⇒ 25 different
+  passwords; no `mona`/`said`/`admin`/`123` substring) + `render-adminui` (the
+  browser generator's shape, uniqueness and full-alphabet reach).
   Each step is reported separately (`credentials` / `subscriber` / `emailed` /
   `bccd`) because a provisioned account whose email bounced needs a human to pass
   the password on, and that must not read like a clean run. The admin's own BCC

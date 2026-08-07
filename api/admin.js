@@ -24,7 +24,7 @@ import {
   parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber, whatsappSubscribers,
   itemsByIds, activeSubscribers, getStateTime, touchState,
   pendingResets, clearResetRequest, clearResetForEmail } from '../lib/db.js';
-import { requireRole, auditReq, adminSetPassword, provisionUser, presetPasswordFor } from '../lib/auth.js';
+import { requireRole, auditReq, adminSetPassword, provisionUser, generateTempPassword } from '../lib/auth.js';
 import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
 import { classify } from '../lib/classify.js';
@@ -535,7 +535,7 @@ export default async function handler(req, res) {
         // left them stuck: they had to work out for themselves that they could
         // now "Create account", and an admin could not even do that (self-signup
         // refuses role=admin, by design).
-        //   1. the allowlist row + a STARTER password (first name + 123)
+        //   1. the allowlist row + a RANDOM temporary password
         //   2. optionally the daily-brief list — `subscribe:false` to skip
         //   3. the welcome email carrying their own address and password
         // Each step is reported separately: an account that exists but whose
@@ -546,7 +546,10 @@ export default async function handler(req, res) {
         const addr = String(email).trim().toLowerCase();
         const person = name ? String(name).trim() : null;
         const wantRole = role === 'admin' ? 'admin' : 'viewer';
-        const password = presetPasswordFor(person, addr);
+        // Random, and derived from NOTHING about the person — see the note on
+        // generateTempPassword. `person` is still read, but only for the
+        // greeting and the allowlist row's display name.
+        const password = generateTempPassword();
         const { user, credentials, error: credError } = await provisionUser({
           email: addr, name: person, role: wantRole, invited_by: who.actor, password,
         });
