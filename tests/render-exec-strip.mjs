@@ -188,6 +188,42 @@ const load = async (data) => {
   await page.close();
 }
 
+/* ── 3b. THE TWO HALVES ARE THE SAME LENGTH ─────────────────────────────── */
+{
+  // The window the team actually uses most is the 7-day "Week" chip, and 7 is
+  // ODD. Comparing [half, days) against [0, half) gives the CURRENT half four
+  // days and the previous one three, while the sentence labels both "3 days" —
+  // so a steady week reads as a rise, purely because this side had an extra day
+  // in it. The unmatched middle day is dropped instead.
+  const D7 = Array.from({ length: 7 }, (_, i) => day(6 - i));
+  const z7 = () => D7.map(() => 0);
+  const odd = base();
+  odd.days = D7; odd.meta.days = 7;
+  odd.categories = odd.categories.map((c) => ({ ...c, series: z7() }));
+  odd.sov = {
+    // Steady 1/day either side, with a 100-story spike parked on the MIDDLE day
+    // — the day that belongs to neither half. If it leaks into "now", every
+    // assertion below fails loudly rather than by a rounding error.
+    Vodafone: { mentions: [1, 1, 1, 100, 1, 1, 1], negatives: [1, 1, 1, 100, 1, 1, 1] },
+    Orange: { mentions: [2, 2, 2, 100, 2, 2, 2], negatives: [0, 0, 0, 0, 0, 0, 0] },
+    WE: { mentions: [1, 1, 1, 1, 1, 1, 1], negatives: [0, 0, 0, 0, 0, 0, 0] },
+    'e&': { mentions: [1, 1, 1, 1, 1, 1, 1], negatives: [0, 0, 0, 0, 0, 0, 0] },
+    Market: { mentions: [0, 0, 0, 0, 0, 0, 0], negatives: [0, 0, 0, 0, 0, 0, 0] },
+  };
+  const { page, rows } = await load(odd);
+  const line = rows.find((r) => /Vodafone negatives/.test(r.text));
+  assert.ok(line, 'a 7-day window still makes the comparison');
+  assert.match(line.text, /3 in the last 3d, 3 vs the previous 3 days/,
+    `both halves are three days long, and the numbers say so (got "${line.text}")`);
+  assert.match(line.text, /level/, 'a steady week reads as level, not as a rise');
+  assert.strictEqual(line.tone, 'flat', 'and is not marked as bad news');
+  // The rival comparison reads the same slices, so it must drop the middle day
+  // too — otherwise Orange "gains" 1567% on a week where nothing changed.
+  assert.ok(!rows.some((r) => /Orange is louder/.test(r.text)),
+    'and a rival flat across both halves is not reported as gaining');
+  await page.close();
+}
+
 /* ── 4. it names WHO and WHERE, and only on a pattern ───────────────────── */
 {
   const { page, rows } = await load(base({

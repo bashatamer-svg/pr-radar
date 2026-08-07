@@ -644,12 +644,19 @@ function execInsights(){
   const sum=(a,from,to)=>(a||[]).slice(from,to).reduce((x,y)=>x+(y||0),0);
   const comparable=half>=2;
   const label=`vs the previous ${half} day${half===1?'':'s'}`;
+  // EQUAL-LENGTH halves. An odd window (the 7-day "Week" chip) leaves
+  // days-half one longer than half, so slicing [half,days) against [0,half)
+  // puts an extra day on the CURRENT side while labelling both the same — which
+  // inflates every "now" figure and can print "up" purely because this half had
+  // one more day in it. The unmatched middle day is dropped instead: comparing
+  // 3 days with 3 days and saying so beats comparing 4 with 3 and not.
+  const nowFrom=days-half;
 
   // 1. Vodafone negatives, this half against the last. The number the team
   //    actually reports upwards.
   if(comparable){
     const neg=D.sov?.Vodafone?.negatives||[];
-    const now=sum(neg,half,days), before=sum(neg,0,half);
+    const now=sum(neg,nowFrom,days), before=sum(neg,0,half);
     if(now||before){
       const diff=now-before;
       const tone=diff>0?'bad':diff<0?'good':'flat';
@@ -668,7 +675,7 @@ function execInsights(){
     let best=null;
     for(const b of ['Orange','WE','e&']){
       const m=D.sov?.[b]?.mentions||[];
-      const now=sum(m,half,days), before=sum(m,0,half);
+      const now=sum(m,nowFrom,days), before=sum(m,0,half);
       if(before<2||now<=before) continue;
       const gain=Math.round(((now-before)/before)*100);
       if(gain>=25&&(!best||gain>best.gain)) best={brand:b,gain,now,before};
@@ -1011,9 +1018,15 @@ async function load(){
     if(r.status===403){ $('#content').innerHTML=`<div class="gate">Your account isn't authorised for this page.<br>Ask an admin to add you.</div>`; return; }
     DATA=await r.json();
     render();
+    // Bump the sequence on EVERY load, not only when a replacement request is
+    // about to be sent. Otherwise a slow 30-day refinement still in flight,
+    // followed by a switch to a window with no narratives to refine, leaves the
+    // sequence unchanged — and the stale answer passes the guard in
+    // loadNarratives() and paints 30-day narratives onto the new window.
+    const seq=++narrSeq;
     // Not awaited: the page is complete without it, and blocking here would
     // put the 12-second ceiling straight back on the load.
-    if(DATA.narrativesPending) loadNarratives(fDays,++narrSeq);
+    if(DATA.narrativesPending) loadNarratives(fDays,seq);
   }catch(e){
     $('#content').innerHTML=`<div class="empty">Couldn't load trends.<br>${esc(e.message||e)}</div>`;
   }finally{ loading=false; prev.style.opacity=''; }
@@ -1041,7 +1054,12 @@ async function loadNarratives(days,seq){
     // A window change (or a reload) started a newer request: drop this answer
     // rather than painting 30-day narratives over a 7-day board.
     if(seq!==narrSeq||!DATA) return;
-    if(Array.isArray(d.narratives)&&d.narratives.length) {
+    // An EMPTY array is a valid answer, not a failure: it means the model looked
+    // at the deterministic clusters and judged that none of them is one real
+    // story. Refusing it would leave exactly the false-positive grouping the
+    // refinement exists to reject. A failed request throws and is caught below,
+    // which is the case that keeps what is already on screen.
+    if(Array.isArray(d.narratives)) {
       DATA.narratives=d.narratives;
       const narr=narrativeRows(DATA.narratives);
       $('#c-narr .cbody').innerHTML=`<div class="rows">${narr.rows}</div>`;

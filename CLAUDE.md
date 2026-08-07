@@ -852,9 +852,15 @@ gets nothing. All queries live in `lib/db.js`.
   card "refining…" meanwhile. `narrativesPending` is false with no
   `ANTHROPIC_API_KEY`, so a deployment without one never fires a request that
   can only return what it already has. A stale answer is dropped by sequence
-  number (`narrSeq`) so a 30-day result never paints over a 7-day board, and a
-  FAILED upgrade renders **no error state at all** — nothing is missing, only
-  un-upgraded. Pinned by `render-narratives-async`, which asserts zero Anthropic
+  number (`narrSeq`), which is bumped on **every** load and not only where a
+  replacement request is sent — gating the bump on `narrativesPending` left it
+  untouched when the reader switched to a window with nothing to refine, so the
+  30-day answer still in flight matched, passed the guard and painted 30-day
+  narratives onto a 7-day board. A FAILED upgrade renders **no error state at
+  all** — nothing is missing, only un-upgraded — while an **EMPTY** one is
+  applied: `[]` is the model's verdict that none of the clusters is really one
+  story, and keeping stage 1 there would leave on screen exactly the false
+  grouping stage 2 exists to reject. Pinned by `render-narratives-async`, which asserts zero Anthropic
   calls from `/api/stats` with the key CONFIGURED (so it cannot pass for the
   wrong reason on a keyless machine) and that ids/idsTotal/`NARR_IDS_MAX`
   survive the split. Stage 2 is fail-soft and optional — no
@@ -890,9 +896,13 @@ gets nothing. All queries live in `lib/db.js`.
   gaining share, the category carrying the most criticism, the outlet and
   byline driving it, and how many narratives are still rising. **No request and
   no model**: a second aggregation could disagree with the card underneath, and
-  an LLM headline is exactly the thing that must not be guessed here. Three
+  an LLM headline is exactly the thing that must not be guessed here. Four
   honesty bars, all asserted: a comparison needs **two days a side** (or there
-  is no previous period), a percentage needs a **non-zero baseline** (a rise
+  is no previous period), the two halves must be **the same length** (an odd
+  window — the 7-day "Week" chip is the one the team lives in — otherwise gives
+  the current half four days against three and labels both "3 days", so a steady
+  week prints as a rise; the unmatched middle day is dropped instead), a
+  percentage needs a **non-zero baseline** (a rise
   from nothing prints counts and no `%`), and an outlet or byline needs
   **≥2 Vodafone-negatives** (one negative is an article, not a stance). When
   nothing clears the bars it SAYS SO — a strip that always finds five things is

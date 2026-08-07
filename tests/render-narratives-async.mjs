@@ -152,6 +152,12 @@ const call = async (query) => {
   _resetNarrativeCache();
   const upgraded = await call({ days: '30', view: 'narratives' });
 
+  // A DIFFERENT window, with nothing left to refine — the shape that exposed
+  // the stale-answer bug in 5e.
+  const week = { ...core.body, meta: { ...core.body.meta, days: 7 }, narrativesPending: false,
+    narratives: [{ name: 'Week-only cluster', brand: 'Vodafone', total: 3, negative: 3, neutral: 0, positive: 0,
+      rising: false, ids: [1, 2, 3], idsTotal: 3, series: core.body.narratives[0].series }] };
+
   const server = createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
     const j = (d) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(d)); };
@@ -163,10 +169,17 @@ const call = async (query) => {
       if (u.searchParams.get('view') === 'narratives') {
         narrHits++;
         if (narrMode === 'fail') { res.writeHead(500); return res.end('{}'); }
+        // The model looked at the clusters and judged that none of them is one
+        // real story. An empty array is an ANSWER, not a failure.
+        if (narrMode === 'empty') return setTimeout(() => j({ narratives: [] }), 200);
+        // Slow enough that the reader can change the window while it is in
+        // flight — which is exactly how a stale answer reaches the page.
+        if (narrMode === 'slow') return setTimeout(() => j(upgraded.body), 900);
         // Slow enough that the first paint provably happened without it.
         return setTimeout(() => j(upgraded.body), 400);
       }
       statsHits++;
+      if (u.searchParams.get('days') === '7') return j(week);
       return j(core.body);
     }
     const f = u.pathname === '/stats' ? '/stats.html' : u.pathname;
@@ -228,9 +241,64 @@ const call = async (query) => {
     await page.close();
   }
 
+  // 5d. An EMPTY refinement is a RESULT, not a failure. Stage 1 errs toward
+  //     splitting and toward grouping on shared vocabulary, so "none of these
+  //     is really one story" is a verdict the model is entitled to reach — and
+  //     keeping the clustering then leaves on screen exactly the false grouping
+  //     the second pass exists to reject. It must clear to the card's own empty
+  //     state, which reads as "no narratives yet", not as an error.
+  {
+    narrMode = 'empty';
+    const page = await browser.newPage({ viewport: { width: 1100, height: 1200 } });
+    const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+    await page.addInitScript(() => localStorage.setItem('pr_session', JSON.stringify({ access_token: 't', refresh_token: 'r' })));
+    await page.goto('http://localhost:8941/stats', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#c-narr .lrow', { timeout: 5000 });
+    await page.waitForFunction(() => !document.querySelector('#c-narr .lrow'), null, { timeout: 6000 });
+    assert.ok(await page.$('#c-narr .cbody .empty'),
+      'an empty refinement replaces the rows with the card\'s own empty state');
+    assert.match(await page.textContent('#c-narr .cbody'), /No multi-story narratives/i,
+      'which says there are none, rather than showing a grouping the model rejected');
+    const cs = await page.textContent('#c-narr .cs');
+    assert.ok(!/refining|error|failed/i.test(cs), `and the refining note clears (got "${cs}")`);
+    assert.deepStrictEqual(errs, [], 'no page errors');
+    await page.close();
+  }
+
+  // 5e. A stale answer must NEVER paint over a newer window — including when
+  //     the new window has nothing to refine. The sequence number used to be
+  //     bumped only where a replacement request was about to be sent, so
+  //     switching to a window with narrativesPending:false left it untouched:
+  //     the 30-day answer still in flight then matched, passed the guard, and
+  //     painted 30-day narratives onto a 7-day board. The guard has to move
+  //     with the DATA, not with the request.
+  {
+    narrMode = 'slow';
+    const page = await browser.newPage({ viewport: { width: 1100, height: 1200 } });
+    const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+    await page.addInitScript(() => localStorage.setItem('pr_session', JSON.stringify({ access_token: 't', refresh_token: 'r' })));
+    await page.goto('http://localhost:8941/stats', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#c-narr .lrow', { timeout: 5000 });
+    const before = narrHits;
+    // Switch windows while the 30-day refinement is still in flight.
+    await page.click('#winRow .chip[data-v="7"]');
+    await page.waitForFunction(() => /Week-only cluster/.test(document.querySelector('#c-narr')?.textContent || ''),
+      null, { timeout: 5000 });
+    assert.strictEqual(narrHits, before, 'the new window asks for no refinement — there is nothing pending');
+    // Outlast the in-flight 30-day answer.
+    await page.waitForTimeout(1200);
+    const txt = await page.textContent('#c-narr');
+    assert.ok(!/Vodafone Cash outages/.test(txt),
+      'the stale 30-day refinement never lands on the 7-day board');
+    assert.match(txt, /Week-only cluster/, 'and the window the reader chose is still what they see');
+    assert.deepStrictEqual(errs, [], 'no page errors');
+    await page.close();
+    narrMode = 'ok';
+  }
+
   assert.ok(statsHits >= 2 && narrHits >= 2, 'both requests fired on both loads');
   await browser.close();
   server.close();
 }
 
-console.log('NARRATIVES-ASYNC OK — /api/stats makes zero Anthropic calls with the key CONFIGURED, ships the deterministic clustering so the card is populated on first paint, and ?view=narratives upgrades it afterwards; ids/idsTotal/the cap survive the split, and a failed upgrade leaves the page unchanged with no error state');
+console.log('NARRATIVES-ASYNC OK — /api/stats makes zero Anthropic calls with the key CONFIGURED, ships the deterministic clustering so the card is populated on first paint, and ?view=narratives upgrades it afterwards; ids/idsTotal/the cap survive the split; a failed upgrade leaves the page unchanged with no error state, an EMPTY one clears to the card\'s empty state, and a stale answer never paints over a newer window');
