@@ -735,9 +735,26 @@ gets nothing. All queries live in `lib/db.js`.
 - **Inline styles sit inside `style="…"`** — never use double quotes within a
   declaration (a `"Segoe UI"` in the font stack truncated every property after
   it and silently killed colours). Single quotes only; the test guards it.
-- **Narratives are two-stage** (`lib/narratives.js`): a deterministic token
-  pre-pass, then an LLM pass (Haiku, `NARRATIVE_MODEL`) that re-groups and
-  writes the English title. Stage 2 is fail-soft and optional — no
+- **Narratives are two-stage AND two REQUESTS** (`lib/narratives.js`): a
+  deterministic token pre-pass, then an LLM pass (Haiku, `NARRATIVE_MODEL`) that
+  re-groups and writes the English title.
+  **The LLM pass is OFF the Trends load path.** `/api/stats` used to `await
+  buildNarratives()` inline, so on a cold request every chart on the screen —
+  share of voice, sentiment, categories, both leaderboards, the KPI row — waited
+  on a 12-second ceiling for ONE card: the whole screen was as slow as its
+  slowest optional part. Now `/api/stats` returns the deterministic clustering
+  (`{ ai: false }` — stage 1 runs either way, so it is free) and the card is
+  populated on FIRST PAINT; `stats.html` then fetches
+  **`/api/stats?view=narratives`** and swaps in the better grouping, marking the
+  card "refining…" meanwhile. `narrativesPending` is false with no
+  `ANTHROPIC_API_KEY`, so a deployment without one never fires a request that
+  can only return what it already has. A stale answer is dropped by sequence
+  number (`narrSeq`) so a 30-day result never paints over a 7-day board, and a
+  FAILED upgrade renders **no error state at all** — nothing is missing, only
+  un-upgraded. Pinned by `render-narratives-async`, which asserts zero Anthropic
+  calls from `/api/stats` with the key CONFIGURED (so it cannot pass for the
+  wrong reason on a keyless machine) and that ids/idsTotal/`NARR_IDS_MAX`
+  survive the split. Stage 2 is fail-soft and optional — no
   `ANTHROPIC_API_KEY`, a timeout (12s), a malformed reply or an id it invented
   and stage 1's answer stands, so the section always renders. Model output is
   untrusted: ids are validated against the input, duplicates and <2-story groups

@@ -830,6 +830,10 @@ function render(){
     +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Narratives group distinct stories that share a theme (same category + overlapping wording); outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. Journalist counts are lower than story counts because much Egyptian wire and desk copy carries no individual byline${DATA.totals.itemsWithByline!=null?` — ${DATA.totals.itemsWithByline} of ${DATA.totals.items} stories in this window are signed`:''}; the rest are shown as newsroom. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
   renderCharts();
   $('#c-narr .cbody').innerHTML=`<div class="rows">${narr.rows}</div>`; $('#c-narr .tbl').innerHTML=narr.table();
+  // The grouping on screen right now is the deterministic token clustering,
+  // which /api/stats produces for free. The LLM regrouping is a SEPARATE
+  // request so the charts never wait 12 seconds on one card — see loadNarratives.
+  if(DATA.narrativesPending) markNarr('refining…');
   $('#c-cat .cbody').innerHTML=`<div class="rows">${cats.rows}</div>`; $('#c-cat .tbl').innerHTML=cats.table();
   paintLeaderboard('outlet'); paintLeaderboard('author');
   c.querySelectorAll('.xp').forEach(b=>b.onclick=()=>{
@@ -869,9 +873,44 @@ async function load(){
     if(r.status===403){ $('#content').innerHTML=`<div class="gate">Your account isn't authorised for this page.<br>Ask an admin to add you.</div>`; return; }
     DATA=await r.json();
     render();
+    // Not awaited: the page is complete without it, and blocking here would
+    // put the 12-second ceiling straight back on the load.
+    if(DATA.narrativesPending) loadNarratives(fDays,++narrSeq);
   }catch(e){
     $('#content').innerHTML=`<div class="empty">Couldn't load trends.<br>${esc(e.message||e)}</div>`;
   }finally{ loading=false; prev.style.opacity=''; }
+}
+
+/* NARRATIVES, off the critical path.
+   /api/stats used to await the LLM grouping inline, so on a cold request every
+   chart on this screen waited on a 12-second ceiling for ONE card. The main
+   call now returns the deterministic clustering (free, already useful) and this
+   asks for the better grouping afterwards.
+   Fail-soft in the strongest sense: on any error, timeout or 403 the page KEEPS
+   the grouping it already drew. There is no failure state to render, because
+   nothing is missing — only un-upgraded. */
+let narrSeq=0;
+function markNarr(text){
+  const el=$('#c-narr .cs'); if(!el) return;
+  el.dataset.base=el.dataset.base||el.textContent;
+  el.textContent=text?`${el.dataset.base} · ${text}`:el.dataset.base;
+}
+async function loadNarratives(days,seq){
+  try{
+    const r=await afetch(`/api/stats?view=narratives&days=${days}`);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    // A window change (or a reload) started a newer request: drop this answer
+    // rather than painting 30-day narratives over a 7-day board.
+    if(seq!==narrSeq||!DATA) return;
+    if(Array.isArray(d.narratives)&&d.narratives.length) {
+      DATA.narratives=d.narratives;
+      const narr=narrativeRows(DATA.narratives);
+      $('#c-narr .cbody').innerHTML=`<div class="rows">${narr.rows}</div>`;
+      $('#c-narr .tbl').innerHTML=narr.table();
+    }
+  }catch(e){ /* keep the clustering already on screen */ }
+  finally{ if(seq===narrSeq) markNarr(''); }
 }
 
 let rzT=null;

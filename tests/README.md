@@ -59,6 +59,7 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
+| Trends never waits on the LLM — first paint clusters, then upgrades | `render-narratives-async` |
 | Feed failure streaks increment atomically, never reset to 1 | `verify-feed-streak` |
 | Migration + run ledgers: read-only, fail-soft, unavailable ≠ alarm | `verify-ledgers` |
 | schema.sql defines every table/column lib/db.js queries | `verify-schema-baseline` |
