@@ -7,10 +7,14 @@ test touches the network or a real database, so the suite is safe anywhere.
 ## Run
 
 ```
-npm install          # dev-only: playwright-core for the browser tests
+npm ci               # exact install from package-lock.json (what CI runs)
 npm test             # everything
 npm test -- lanes    # only tests whose filename contains "lanes"
 ```
+
+`package-lock.json` **is tracked**. Use `npm ci`, not `npm install`, so the
+version of `fast-xml-parser` that parses hostile feed XML is the one that was
+tested rather than whatever npm resolves today.
 
 Browser tests drive headless Chromium. Set `CHROMIUM_PATH` to your Chromium
 binary if the default sandbox path doesn't exist; without a browser those tests
@@ -54,6 +58,7 @@ are **skipped**, the unit suite still runs.
 | Trends narratives (token clustering, LLM grouping + fallbacks, real-data regression, deep-link integrity) | `render-narrative-cluster`, `narr-ai`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives`, `render-deeplink` |
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
+| Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |
 | Feed probe — a 200 with no feed says WHY, not just its status | `verify-feed-probe` |
 | Trends leaderboard paging (all outlets/journalists reachable) | `render-leaderboard-pages` |

@@ -37,6 +37,7 @@ sends email + WhatsApp alerts. Pure ESM Node on Vercel serverless + Supabase
 
 | Command | Purpose |
 |---|---|
+| `npm ci` | Exact install from the tracked `package-lock.json`. What CI runs — prefer it over `npm install`. |
 | `npm test` | Full suite (tests/run.mjs, one process per file). **Must be green before every commit.** |
 | `npm test -- <substr>` | Only tests whose filename matches |
 | `node --check <file>` | Syntax-check every changed file before commit |
@@ -51,7 +52,7 @@ behaviour gets a regression test in the same commit.
 | Path | What lives here |
 |---|---|
 | `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `alerts.js` (pipeline health checks + the daily push); `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
-| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`presetPasswordFor`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
+| `lib/*.js` | ALL shared logic. `xml.js` (the ONLY place `fast-xml-parser` is constructed — hostile-feed guards), `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`presetPasswordFor`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
 | `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
 | `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
 | `scripts/` | One-off generators run manually (OG images) |
@@ -128,6 +129,9 @@ gets nothing. All queries live in `lib/db.js`.
   on explicit user request; **ask before any schema/DDL change**.
 - **Zero build step, zero heavy runtime deps** (only `fast-xml-parser`;
   `playwright-core` is dev-only). Solve without adding libraries.
+  **`package-lock.json` is tracked** — it used to be gitignored, so every
+  install resolved the XML parser afresh and `npm audit` had nothing stable to
+  judge. Change a dependency ⇒ commit the lockfile in the same commit.
 - **Tokens in the Authorization header ONLY** — never `?t=` (deliberately
   purged; don't reintroduce). `RADAR_TOKEN`=viewer, `CRON_SECRET`=admin,
   humans = Supabase JWT. The server has enforced this since Task 18, but four
@@ -496,6 +500,22 @@ gets nothing. All queries live in `lib/db.js`.
   arbitrary hosts) and has no production secrets. Verify via Supabase/Vercel/
   Resend MCPs, or ship an admin diagnostic (pattern: Tools → "Verify
   verdicts") and let production prove it.
+- **Feed XML is hostile input, and there is ONE parser** (`lib/xml.js`).
+  `api/radar.js` and `api/admin.js` each built their own `XMLParser` with
+  duplicated options, so hardening one left the other reading third-party XML
+  under the old rules; `verify-xml-hardening` now fails any file outside
+  `lib/xml.js` that imports `fast-xml-parser`. Three guards, each for a real
+  way a feed can hurt a 60s function: **size** — `readCapped` streams and
+  cancels past 4 MB, because `await res.text()` buffers whatever the server
+  sends and 30 feeds are fetched in parallel, so one unbounded body is an OOM
+  for the whole run; **entity declarations** — a DOCTYPE containing `<!ENTITY`
+  is refused unparsed (billion-laughs / XXE), scanning ONLY the doctype so an
+  article about XML with `<!ENTITY` in its CDATA is not killed; **one option
+  set**. A refusal throws, and `fetchFeed`'s existing catch records it as a
+  failed feed exactly like an http 500 — a hostile feed goes dark, not the run.
+  `processEntities` stays ON deliberately: named/numeric entities are what real
+  feeds carry, and `decodeEntities` in `api/radar.js` only ever handled Google
+  News' *second* layer of encoding on top.
 - **Never add a feed URL unprobed.** A 404 fails silently and the radar looks
   calm while blind. Candidates live in `lib/feed-candidates.js`; Admin → Tools
   → "Probe feeds" verifies them FROM PRODUCTION (the sandbox has no egress to

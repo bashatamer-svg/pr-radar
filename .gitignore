@@ -1,9 +1,9 @@
 node_modules/
-# `npm install` (documented in tests/README.md for the browser tests) writes a
-# lockfile. This repo has never tracked one — there is no build step and one
-# dev-only dependency — so ignore it rather than leave every session with a
-# stray untracked file after running the tests.
-package-lock.json
+# package-lock.json IS tracked (it used to be ignored). Two dependencies is
+# still two supply chains: without a lockfile every install resolved
+# `fast-xml-parser` afresh, so what production parsed hostile feed XML with was
+# whatever npm picked that day, and `npm audit` had nothing stable to judge.
+# CI runs `npm ci`, which requires the lockfile and installs it exactly.
 .env
 .env.local
 .env.*.local

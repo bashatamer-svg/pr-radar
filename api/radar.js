@@ -1,4 +1,4 @@
-import { XMLParser } from 'fast-xml-parser';
+import { readFeedXml } from '../lib/xml.js';
 import crypto from 'node:crypto';
 import { ALL_FEEDS, BRAND_FEEDS, isWorthClassifying } from '../lib/sources.js';
 import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState, itemsByHashes, itemsMissingAuthor } from '../lib/db.js';
@@ -16,7 +16,6 @@ import { safeEqual } from '../lib/auth.js';
 
 export const config = { maxDuration: 60 };
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 const arr = (x) => (Array.isArray(x) ? x : x ? [x] : []);
 
 // Pull a short plain-text snippet out of an RSS/Atom entry. Feeds already ship
@@ -206,7 +205,11 @@ async function fetchFeed(feed) {
   try {
     const res = await fetch(feed.url, { signal: ctrl.signal, headers: BROWSER_HEADERS });
     if (!res.ok) throw new Error(`http ${res.status}`);
-    const xml = parser.parse(await res.text());
+    // Size-capped read + hardened parse (lib/xml.js). A feed that answers with
+    // an unbounded body or a DTD full of entities is recorded as a FAILED feed
+    // rather than allowed to consume the run — the catch below is what turns
+    // the throw into feed health, exactly like an http 500.
+    const xml = await readFeedXml(res);
     const entries = arr(xml?.rss?.channel?.item).concat(arr(xml?.feed?.entry));
 
     const items = entries.slice(0, 80).map((e) => {

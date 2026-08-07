@@ -31,7 +31,7 @@ import { classify } from '../lib/classify.js';
 import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
 import { isGoogleNews } from '../lib/resolve.js';
 import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
-import { XMLParser } from 'fast-xml-parser';
+import { parseFeedXml, readCapped } from '../lib/xml.js';
 import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipients, whatsappConfigured } from '../lib/whatsapp.js';
 import { renderUrgent, renderWelcome, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
 import { postUrgentWebhook } from '../lib/notify.js';
@@ -220,7 +220,6 @@ export default async function handler(req, res) {
         // to lib/sources.js.
         const only = String(req.query.only || '').trim();
         const list = only ? FEED_CANDIDATES.filter((c) => c.id === only || c.kind === only) : FEED_CANDIDATES;
-        const px = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
         const arrOf = (v) => (Array.isArray(v) ? v : v ? [v] : []);
         const UAS = [
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -263,10 +262,12 @@ export default async function handler(req, res) {
           try {
             if (!r) return { url, ok: false, status: 'timeout' };
             if (!r.ok) return { url, ok: false, status: r.status };
-            const body = await r.text();
+            // Size-capped: a probe points at a URL nobody has verified, so it is
+            // the likeliest place to meet a body that never ends.
+            const body = await readCapped(r);
             const type = String(r.headers.get('content-type') || '').split(';')[0].trim();
             let xml = null;
-            try { xml = px.parse(body); } catch { xml = null; }
+            try { xml = parseFeedXml(body); } catch { xml = null; }
             const entries = arrOf(xml?.rss?.channel?.item).concat(arrOf(xml?.feed?.entry));
             if (!entries.length) {
               // A 200 with no items is the ONLY informative failure here: the
