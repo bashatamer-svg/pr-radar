@@ -117,7 +117,7 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
 | `pr_subscribers.whatsapp` | **Applied 3 Aug** via Supabase MCP with user approval, from `migrations/2026-08-03-pr-subscribers-whatsapp.sql` |
-| `pr_users.reset_requested_at` | Forgot-password queue: set when someone taps "Forgot password?", cleared by EVERY path that sets a password, so the queue empties itself. **Optional column — `migrations/2026-08-06-pr-users-reset-requested-at.sql` NOT yet applied**; until it is, the flow degrades to absent (see the Gotcha), never broken |
+| `pr_users.reset_requested_at` | Forgot-password queue: set when someone taps "Forgot password?", cleared by EVERY path that sets a password, so the queue empties itself. **APPLIED — live-verified 7 Aug** (this file previously said "NOT yet applied"; the column and its partial index are both present). The code still degrades gracefully without it, and that fallback is still tested |
 
 RLS is ON with **no policies**: only the service-role key reads/writes; anon
 gets nothing. All queries live in `lib/db.js`.
@@ -216,7 +216,7 @@ gets nothing. All queries live in `lib/db.js`.
 
 | Where | Fact |
 |---|---|
-| `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
+| `schema.sql` | **RESOLVED 7 Aug.** Was missing `pr_users`, `pr_audit`, `pr_alerts`, `pr_usage`, `pr_subscribers.whatsapp` and `pr_users.reset_requested_at` — a file that looked authoritative and could not rebuild a working database. Reconstructed from the LIVE catalogue (read-only `information_schema`/`pg_indexes`/`pg_constraint`), so it matches production exactly: note `pr_users.id`/`pr_audit.id` are IDENTITY columns, not bigserial, and `pr_users.role` carries a CHECK. All 11 `pr_*` tables now present, all RLS-on/no-policies. Pinned by `verify-schema-baseline`, which derives what must exist from what `lib/db.js` actually queries rather than a hand-kept list — so a new column used in code fails the commit that adds it |
 | Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (6 active subscribers, 5 Aug). Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy. Set **`OPS_ALERT_TO`** too, or the daily health push records its alert and reaches nobody (it falls back to `RADAR_TO`) |
 | `pr_state.daily_bulletin_sent` | RESOLVED — advancing daily since the 3 Aug run; read **05 Aug 05:00** on 5 Aug (live-verified). The ten-day freeze was the marker-stamping bug fixed 2 Aug (see the two-recipient-lists Gotcha). **A stale marker is not a missed send** — check Resend, not `pr_state` |
 | `pr_items` | **Cause found and fixed 2 Aug** — the bursts (100 parked in the 7 days to 2 Aug) were the classifier omitting items from an otherwise-valid reply, which parsed cleanly and so never retried; see the omission Gotcha. **73** burst-era rows still sit parked in the rolling 7d window (5 Aug; 0 parked in the last 24h — the fix holds) and keep the Health check red until they age out ~6 Aug or are cleared with Admin → Tools → "Re-classify parked stories" |
@@ -449,10 +449,11 @@ gets nothing. All queries live in `lib/db.js`.
   reset, self-service change, first signup), so the queue empties itself rather
   than needing a "mark done" click; Dismiss is only for a request you decide not
   to action, and says out loud that the password is unchanged.
-  The column is OPTIONAL: `listUsers` asks for it and falls back without it (a
-  select naming a missing column 400s the WHOLE Users tab), and every helper
-  returns false/[]/null on failure — so the un-migrated state is a feature that
-  is absent, not a 500 on the sign-in screen. Pinned by
+  The column is now APPLIED in production (live-verified 7 Aug), but the
+  degradation stays and stays TESTED: `listUsers` asks for it and falls back
+  without it (a select naming a missing column 400s the WHOLE Users tab), and
+  every helper returns false/[]/null on failure — so a rebuilt or rolled-back
+  database is a feature that is absent, not a 500 on the sign-in screen. Pinned by
   `verify-password-reset` + `render-reset-ui`.
 - **A prompt cache is only worth ASKING for when a read can follow the write.**
   The classifier's ~5k-token system block is identical every call, so caching it
