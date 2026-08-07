@@ -49,7 +49,10 @@ const server = createServer((req, res) => {
     }
   }
   const f = u.pathname === '/admin' ? '/admin.html' : (u.pathname === '/' ? '/index.html' : u.pathname);
-  try { const b = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(b); }
+  try { const b = readFileSync(DIR + f);
+    // /assets/session.js is a real script now — serve it as one. A page whose
+    // shared session module arrives as text/html has no afetch at all.
+    res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' }); res.end(b); }
   catch { res.writeHead(404); res.end('nf'); }
 });
 await new Promise((r) => server.listen(8911, r));
@@ -66,8 +69,11 @@ await page.waitForSelector('#uAddBtn', { timeout: 4000 });
 // 1. The form SAYS what adding someone does. An admin who doesn't know a
 //    password is being generated and mailed will not think to check either.
 const help = await page.$eval('#content', (el) => el.textContent);
-assert.ok(/starter password/i.test(help), 'the form says a starter password is set');
-assert.ok(/tamer123/.test(help), 'and states the convention with a worked example');
+assert.ok(/random temporary password/i.test(help), 'the form says a random temporary password is set');
+// The help text must NOT teach a convention any more — there isn't one, and a
+// worked example like "tamer123" is exactly the guessability being removed.
+assert.ok(!/\b\w+123\b/.test(help), `no first-name+123 example survives in the copy (got "${help.slice(0, 400)}")`);
+assert.ok(/name or address/i.test(help), 'and says the password is not derived from their details');
 assert.ok(/keeps it/i.test(help), 'and that an existing password is never reset');
 
 // 2. Both options are present and ON by default.
@@ -78,7 +84,8 @@ assert.strictEqual(await page.$eval('#uNotify', (e) => e.checked), true, 'emaili
 
 // 3. Add someone with the defaults — the request carries both flags true, and
 //    the panel shows the password with a way to copy it.
-reply = { credentials: 'created', password: 'tamer123', subscriber: 'added', emailed: true, emailError: null };
+const TEMP_PW = 'k7mpq-9xnrt-3tbwj-5hzvd-8fcgs-4ynkm';   // shape the server now returns
+reply = { credentials: 'created', password: TEMP_PW, subscriber: 'added', emailed: true, emailError: null };
 await page.fill('#uEmail', 'tamer.basha@vodafone.com');
 await page.fill('#uName', 'Tamer Basha');
 await page.click('#uAddBtn');
@@ -86,10 +93,10 @@ await page.waitForSelector('#uOut:not([hidden])', { timeout: 4000 });
 assert.deepStrictEqual(
   { subscribe: posts[0].subscribe, notify: posts[0].notify, name: posts[0].name },
   { subscribe: true, notify: true, name: 'Tamer Basha' },
-  'the defaults reach the server as true, with the name the password is built from',
+  'the defaults reach the server as true, with the name used for the greeting',
 );
 let out = await page.$eval('#uOut', (el) => el.textContent);
-assert.ok(/tamer123/.test(out), `the starter password is displayed (got "${out}")`);
+assert.ok(out.includes(TEMP_PW), `the temporary password is displayed in full (got "${out}")`);
 assert.ok(/emailed/i.test(out), 'and the send is confirmed');
 assert.ok(/Added to the daily brief/i.test(out), 'and the subscription is confirmed');
 assert.ok(await page.$('#uCopy'), 'with a copy button for the password');
@@ -101,7 +108,7 @@ assert.ok(await page.$('#uPw'), 'and the password is still on screen after the r
 assert.strictEqual(await page.$eval('#uEmail', (e) => e.value), '', 'the email field is cleared');
 
 // 4. Untick the daily brief — it must reach the server as false, not be dropped.
-reply = { credentials: 'created', password: 'quiet123', subscriber: 'skipped', emailed: true, emailError: null };
+reply = { credentials: 'created', password: 'p4rst-9xnrt-3tbwj-5hzvd-8fcgs-4ynkm', subscriber: 'skipped', emailed: true, emailError: null };
 await page.fill('#uEmail', 'quiet.person@vodafone.com');
 await page.fill('#uName', 'Quiet Person');
 await page.uncheck('#uSub');
@@ -113,7 +120,8 @@ out = await page.$eval('#uOut', (el) => el.textContent);
 assert.ok(/Not subscribed/i.test(out), `the panel says they are not on the brief (got "${out}")`);
 
 // 5. A failed send must not read as success — the admin is now the only route.
-reply = { credentials: 'created', password: 'bounce123', subscriber: 'added', emailed: false, emailError: 'resend 422: suppressed address' };
+const BOUNCE_PW = 'b2nce-9xnrt-3tbwj-5hzvd-8fcgs-4ynkm';
+reply = { credentials: 'created', password: BOUNCE_PW, subscriber: 'added', emailed: false, emailError: 'resend 422: suppressed address' };
 await page.fill('#uEmail', 'bounce@vodafone.com');
 await page.fill('#uName', 'Bounce');
 await page.check('#uSub');
@@ -121,7 +129,7 @@ await page.click('#uAddBtn');
 await page.waitForFunction(() => /did NOT send/i.test(document.querySelector('#uOut')?.textContent || ''), null, { timeout: 4000 });
 out = await page.$eval('#uOut', (el) => el.textContent);
 assert.ok(/suppressed address/.test(out), 'the failure reason is shown');
-assert.ok(/bounce123/.test(out), 'the password is still shown, since it now has to be passed on by hand');
+assert.ok(out.includes(BOUNCE_PW), 'the password is still shown, since it now has to be passed on by hand');
 const redText = await page.$eval('#uOut .bad', (el) => el.textContent);
 assert.ok(/did NOT send/i.test(redText), 'and the failure is styled as a problem, not a tick');
 

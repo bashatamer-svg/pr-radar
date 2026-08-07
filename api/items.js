@@ -2,7 +2,7 @@ import { recentItems, itemsByIds, instancesForItems } from '../lib/db.js';
 import { requireRole, auditReq } from '../lib/auth.js';
 
 // Auth: viewers (and above) may read the board; only admins may mutate an item
-// (pin/hide/vote). A legacy ?t=<RADAR_TOKEN> or a cron secret resolves to a
+// (pin/hide/vote). A Bearer RADAR_TOKEN (viewer) or CRON_SECRET resolves to a
 // service-admin principal, so existing links and jobs keep working.
 export default async function handler(req, res) {
   if (req.method === 'PATCH') {

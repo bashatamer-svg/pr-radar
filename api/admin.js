@@ -24,14 +24,14 @@ import {
   parkedItems, parkedItemCount, updateItemVerdict, updateSubscriber, whatsappSubscribers,
   itemsByIds, activeSubscribers, getStateTime, touchState,
   pendingResets, clearResetRequest, clearResetForEmail } from '../lib/db.js';
-import { requireRole, auditReq, adminSetPassword, provisionUser, presetPasswordFor } from '../lib/auth.js';
+import { requireRole, auditReq, adminSetPassword, provisionUser, generateTempPassword } from '../lib/auth.js';
 import { findDuplicateCandidates } from '../lib/dedupe.js';
 import { sweepAuthors } from '../lib/author-backfill.js';
 import { classify } from '../lib/classify.js';
 import { inspectAuthorPage, resetAuthorAiBudget } from '../lib/author.js';
 import { isGoogleNews } from '../lib/resolve.js';
 import { FEED_CANDIDATES } from '../lib/feed-candidates.js';
-import { XMLParser } from 'fast-xml-parser';
+import { parseFeedXml, readCapped } from '../lib/xml.js';
 import { sendWhatsAppUrgent, whatsappStatus, whatsappRecipients, whatsappConfigured } from '../lib/whatsapp.js';
 import { renderUrgent, renderWelcome, sendBulletin, urgentTier, isInstantAlert } from '../lib/email.js';
 import { postUrgentWebhook } from '../lib/notify.js';
@@ -220,7 +220,6 @@ export default async function handler(req, res) {
         // to lib/sources.js.
         const only = String(req.query.only || '').trim();
         const list = only ? FEED_CANDIDATES.filter((c) => c.id === only || c.kind === only) : FEED_CANDIDATES;
-        const px = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
         const arrOf = (v) => (Array.isArray(v) ? v : v ? [v] : []);
         const UAS = [
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -263,10 +262,12 @@ export default async function handler(req, res) {
           try {
             if (!r) return { url, ok: false, status: 'timeout' };
             if (!r.ok) return { url, ok: false, status: r.status };
-            const body = await r.text();
+            // Size-capped: a probe points at a URL nobody has verified, so it is
+            // the likeliest place to meet a body that never ends.
+            const body = await readCapped(r);
             const type = String(r.headers.get('content-type') || '').split(';')[0].trim();
             let xml = null;
-            try { xml = px.parse(body); } catch { xml = null; }
+            try { xml = parseFeedXml(body); } catch { xml = null; }
             const entries = arrOf(xml?.rss?.channel?.item).concat(arrOf(xml?.feed?.entry));
             if (!entries.length) {
               // A 200 with no items is the ONLY informative failure here: the
@@ -534,7 +535,7 @@ export default async function handler(req, res) {
         // left them stuck: they had to work out for themselves that they could
         // now "Create account", and an admin could not even do that (self-signup
         // refuses role=admin, by design).
-        //   1. the allowlist row + a STARTER password (first name + 123)
+        //   1. the allowlist row + a RANDOM temporary password
         //   2. optionally the daily-brief list — `subscribe:false` to skip
         //   3. the welcome email carrying their own address and password
         // Each step is reported separately: an account that exists but whose
@@ -545,7 +546,10 @@ export default async function handler(req, res) {
         const addr = String(email).trim().toLowerCase();
         const person = name ? String(name).trim() : null;
         const wantRole = role === 'admin' ? 'admin' : 'viewer';
-        const password = presetPasswordFor(person, addr);
+        // Random, and derived from NOTHING about the person — see the note on
+        // generateTempPassword. `person` is still read, but only for the
+        // greeting and the allowlist row's display name.
+        const password = generateTempPassword();
         const { user, credentials, error: credError } = await provisionUser({
           email: addr, name: person, role: wantRole, invited_by: who.actor, password,
         });

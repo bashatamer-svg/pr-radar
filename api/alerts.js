@@ -16,7 +16,8 @@
 // only — it exposes operational internals, not team content.
 
 import {
-  recentAlerts, parkedItemCount, lastItemSeenAt, ingestSummary, brokenFeeds,
+  recentAlerts, recentRuns, latestRuns, parkedItemCount, lastItemSeenAt, ingestSummary, brokenFeeds,
+  getHouseKnowledge, houseKnowledgeUpdatedAt,
   getStateTime, relevanceBaseline, authorBacklog, digestEligibleCount,
   activeSubscribers, monthToDateUsage, databaseSizeBytes,
 } from '../lib/db.js';
@@ -24,6 +25,11 @@ import { totalCostUsd, cacheEfficiency } from '../lib/usage.js';
 import { sendOpsAlert } from '../lib/email.js';
 import { recentDeliveryStatus } from '../lib/deliverability.js';
 import { requireRole } from '../lib/auth.js';
+import { buildInfo, buildCheck } from '../lib/build.js';
+import { migrationStatus, migrationCheck } from '../lib/migrations.js';
+import { startRun, JOBS, runChecks, runJob } from '../lib/runs.js';
+import { whatsappCheck, whatsappRecipientCount } from '../lib/whatsapp.js';
+import { houseContextCheck, CONTEXT_UNAVAILABLE } from '../lib/house-context.js';
 
 export const config = { maxDuration: 20 };
 
@@ -65,8 +71,62 @@ export default async function handler(req, res) {
   if (!who) return;   // 401/403 already sent
   if (req.method !== 'GET') return res.status(405).json({ error: 'method not allowed' });
 
+  // Only the SCHEDULED push is a job. Opening the page is not a run, and
+  // recording every admin page-load would bury the daily fire it exists to
+  // confirm.
+  const run = req.query?.notify === '1' ? await startRun(runJob(JOBS.health, who)) : null;
+
   const checks = [];
   const add = (c) => checks.push(c);
+
+  // WHICH BUILD IS ANSWERING. First, because every other number below describes
+  // whatever code is running, and reading a preview deployment while believing
+  // it is production makes the whole page describe the wrong thing. Synchronous
+  // and dependency-free — it reads environment variables, so it cannot fail.
+  const build = buildInfo();
+  add(buildCheck(build));
+
+  // WHICH SCHEMA IT IS RUNNING AGAINST. Second, for the same reason: a check
+  // below reporting "usage tracking not available" is a missing migration, not
+  // a fault, and until now the only way to tell them apart was to go and look.
+  const migrations = await migrationStatus().catch(() => ({ available: false, applied: [], missing: [], unknown: [] }));
+  add(migrationCheck(migrations));
+
+  // DID THE JOB RUN? Recorded, not inferred. Every other "did it run" check on
+  // this page reads an OUTCOME — and "no new stories in 20h" is equally
+  // consistent with a quiet night, with every story being a duplicate, and with
+  // the cron never firing. Null when the ledger is absent, which reads as
+  // 'unknown' rather than as "nothing ran".
+  // Two reads, two questions. The short window carries failures, stalls and
+  // durations; the per-job latest carries "when did this last run?" with NO
+  // horizon, because a job dead longer than the window used to fall out of the
+  // query and stop being reported at all.
+  const [recent, latest] = await Promise.all([
+    recentRuns({ days: 9 }).catch(() => null),
+    latestRuns(Object.values(JOBS)).catch(() => null),
+  ]);
+  for (const c of runChecks(recent, Date.now(), latest)) add(c);
+
+  // The crisis SIDE channel, as a ladder rather than a boolean. Credentials
+  // present is rung one of five, and reading it as "ready" is how a channel
+  // with an approved template and a test-number sender looked healthy while
+  // every send failed. The recipient count is RESOLVED (env ∪ subscribers) —
+  // the list lives in Admin, so counting WHATSAPP_TO alone reports "nobody to
+  // page" for a channel that would page five people.
+  const waReach = await whatsappRecipientCount().catch(() => null);
+  add(whatsappCheck(waReach == null ? {} : { recipients: waReach }));
+
+  // The living-knowledge doc is injected into EVERY classification and marked
+  // authoritative, so a line whose story has ended keeps steering unrelated
+  // news. Nothing ever prompted anyone to prune it.
+  const [ctxText, ctxAt] = await Promise.all([
+    // NOT '' — that is a real, healthy state ("no living-knowledge row"), and
+    // reporting a failed read as an empty document hides the failure behind an
+    // `ok`. The sentinel keeps the two apart.
+    getHouseKnowledge().catch(() => CONTEXT_UNAVAILABLE),
+    houseKnowledgeUpdatedAt().catch(() => undefined),
+  ]);
+  add(houseContextCheck({ content: ctxText, updatedAt: ctxAt }));
 
   // Run every probe in parallel; each settles independently so one missing
   // table can't blank the page.
@@ -435,10 +495,20 @@ export default async function handler(req, res) {
     }
   }
 
+  // alert_count is what the push actually SENT, not how many checks are red —
+  // "3 checks failing, 0 alerts sent" is the dedupe working, and conflating the
+  // two would hide it.
+  await run?.ok({ alerts: notified?.sent ? 1 : 0 });
+
   res.setHeader('Cache-Control', 'no-store');
   return res.status(200).json({
     ...(notified ? { notified } : {}),
     generatedAt: new Date().toISOString(),
+    // Surfaced beside the checks as well as inside them, so a caller comparing
+    // production against `git rev-parse origin/main` reads one field instead of
+    // parsing a human sentence. Never fabricated: absent values are null.
+    build,
+    migrations,
     status,
     checks,
     logAvailable: Array.isArray(log),

@@ -118,3 +118,157 @@ alter table pr_context     enable row level security;
 alter table pr_feed_health enable row level security;
 alter table pr_subscribers enable row level security;
 alter table pr_feedback    enable row level security;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Everything below was created ad-hoc in production and was MISSING from this
+-- file — a documented drift that meant `schema.sql` could not rebuild a working
+-- database. Reconstructed 2026-08-07 from the live catalogue (read-only
+-- information_schema / pg_indexes / pg_constraint query), not from memory, so
+-- the definitions match production exactly rather than approximately.
+--
+-- Two details are easy to get wrong by writing what "looks right": pr_users.id
+-- and pr_audit.id are IDENTITY columns in production, not bigserial, and
+-- pr_users carries a CHECK on role. Both are reproduced as they actually are.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Sign-in allowlist + roles. An allowlist row is only HALF an account: the
+-- PASSWORD lives in Supabase Auth (auth.users), and Admin → Users writes both.
+-- A row here is what GRANTS access; deactivating it revokes access without
+-- deleting the person's auth account or their audit history.
+create table if not exists pr_users (
+  id                 bigint generated always as identity primary key,
+  email              text not null unique,
+  role               text not null default 'viewer' check (role in ('admin', 'viewer')),
+  name               text,
+  active             boolean not null default true,
+  invited_by         text,
+  last_seen_at       timestamptz,
+  created_at         timestamptz not null default now(),
+  -- Forgot-password queue. Set when someone taps "Forgot password?" on the
+  -- sign-in screen; cleared automatically by EVERY path that sets a password,
+  -- so the queue empties itself. NULL = nothing outstanding.
+  -- (Was migrations/2026-08-06-pr-users-reset-requested-at.sql; applied.)
+  reset_requested_at timestamptz
+);
+-- Partial: the queue only ever asks for the handful of non-null rows, so
+-- indexing just those keeps it at roughly zero pages.
+create index if not exists pr_users_reset_requested_idx
+  on pr_users (reset_requested_at) where reset_requested_at is not null;
+
+-- Who did what. Every privileged action writes one row: sign-ins, role changes,
+-- pins/hides, manual alerts, password resets. `detail` is jsonb for the shape
+-- of the action; a CREDENTIAL NEVER GOES IN IT — an audit row is long-lived
+-- storage, and a generated password belongs only in the response to the admin
+-- who asked for it.
+create table if not exists pr_audit (
+  id          bigint generated always as identity primary key,
+  actor       text,          -- email, or 'service:cron' / 'service:token'
+  actor_role  text,          -- admin | viewer
+  action      text not null, -- user.add | item.pin | alert.manual | radar.run | …
+  target      text,
+  detail      jsonb,
+  ip          text,
+  created_at  timestamptz not null default now()
+);
+create index if not exists pr_audit_created_idx on pr_audit (created_at desc);
+
+-- Persisted alert history (Admin → Health, "Recent alerts").
+-- From migrations/2026-08-02-pr-alerts.sql; applied.
+create table if not exists pr_alerts (
+  id          bigserial primary key,
+  kind        text        not null default 'ops',   -- ops | classify | budget | …
+  severity    text        not null default 'warn',  -- info | warn | critical
+  title       text        not null,
+  detail      text,
+  created_at  timestamptz not null default now()
+);
+create index if not exists pr_alerts_created_idx on pr_alerts (created_at desc);
+
+-- Per-call Anthropic token accounting (the "API spend" and "Prompt cache"
+-- health checks). Input and output are separate because they bill at very
+-- different rates, and cached input is split again because cache WRITES cost
+-- more than fresh input while cache READS cost far less — collapsing them
+-- would misstate the total and hide a broken cache entirely.
+-- From migrations/2026-08-02-pr-usage.sql; applied.
+create table if not exists pr_usage (
+  id                  bigserial primary key,
+  stage               text        not null,   -- classify | dedupe | narrative | author | geo
+  model               text,
+  input_tokens        int         not null default 0,
+  output_tokens       int         not null default 0,
+  cache_create_tokens int         not null default 0,   -- billed ABOVE normal input
+  cache_read_tokens   int         not null default 0,   -- billed far BELOW normal input
+  created_at          timestamptz not null default now()
+);
+create index if not exists pr_usage_created_idx on pr_usage (created_at desc);
+
+-- The WhatsApp crisis number, on the subscriber rather than in an env var —
+-- WHATSAPP_TO needed a dashboard edit AND a redeploy, so in practice it never
+-- changed. NULL (never '') = this person gets no WhatsApp alerts, the same
+-- convention pr_items.author uses for "no byline". `active` gates BOTH channels.
+-- From migrations/2026-08-03-pr-subscribers-whatsapp.sql; applied.
+alter table pr_subscribers add column if not exists whatsapp text;
+
+alter table pr_users   enable row level security;
+alter table pr_audit   enable row level security;
+alter table pr_alerts  enable row level security;
+alter table pr_usage   enable row level security;
+
+-- ── The two operational ledgers ────────────────────────────────────────────
+-- NOT yet applied to production (2026-08-07). They are here because this file
+-- is what a FRESH database is built from, and a rebuild should get the whole
+-- intended schema; migrations/2026-08-07-*.sql are the incremental path for the
+-- existing one. Both are optional by design — the code degrades to "feature
+-- absent" without either, and Admin → Health reports which are missing.
+
+-- Which migrations this database has. Nothing recorded it before, which is how
+-- the repo spent a week believing pr_users.reset_requested_at was un-applied
+-- when it was live. Written by HAND (the SQL file), read by the app.
+create table if not exists pr_schema_migrations (
+  id          text primary key,      -- the migrations/*.sql filename, without .sql
+  applied_at  timestamptz not null default now(),
+  note        text
+);
+
+-- Did the scheduled job actually RUN? Every "did it run?" answer on Health was
+-- an inference from an outcome, and "no new stories in 20h" is equally
+-- consistent with a quiet night, with every story being a duplicate, and with
+-- the cron never firing. A row left `running` with a null completed_at is a run
+-- the function timeout KILLED — the one failure no outcome-based check can see.
+create table if not exists pr_runs (
+  id             bigint generated always as identity primary key,
+  job            text        not null,           -- radar | radar-urgent | health | report | geo
+  started_at     timestamptz not null default now(),
+  completed_at   timestamptz,
+  status         text        not null default 'running'
+                             check (status in ('running', 'ok', 'error')),
+  duration_ms    int,
+  stored_count   int,
+  relevant_count int,
+  alert_count    int,
+  error_summary  text,       -- first line only; never a payload
+  git_sha        text        -- which build ran it
+);
+create index if not exists pr_runs_job_started_idx on pr_runs (job, started_at desc);
+create index if not exists pr_runs_started_idx     on pr_runs (started_at desc);
+
+alter table pr_schema_migrations enable row level security;
+alter table pr_runs              enable row level security;
+
+-- Atomic increment for pr_feed_health.fail_streak. PostgREST cannot express
+-- `set x = x + 1`, and a read-then-write loses increments because the 15-minute
+-- poll and the daily run overlap on the ten brand feeds. INSERT..ON CONFLICT is
+-- one statement, so concurrent callers serialise. Never touches last_ok_at —
+-- "when did this feed last work" must survive a failure.
+-- NOT yet applied to production (2026-08-07); the code falls back without it.
+create or replace function pr_bump_feed_failure(p_feed_id text, p_error text)
+returns int
+language sql
+as $$
+  insert into pr_feed_health (feed_id, last_error, fail_streak)
+  values (p_feed_id, left(p_error, 300), 1)
+  on conflict (feed_id) do update
+    set fail_streak = pr_feed_health.fail_streak + 1,
+        last_error  = excluded.last_error
+  returning fail_streak;
+$$;

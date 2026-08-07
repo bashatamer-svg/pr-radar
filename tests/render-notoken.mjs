@@ -54,7 +54,7 @@ assert.ok(report.includes('pr-radar.example.com'), 'report still links to the bo
 // the temptation to "save the recipient a step" with a tokenised board link is
 // strongest here — and it is the one email guaranteed to be forwarded ("is this
 // real?"). Links stay plain: the board is sign-in gated.
-const welcome = renderWelcome({ name: 'Tamer Basha', email: 'tamer.basha@vodafone.com', password: 'tamer123', role: 'viewer', boardUrl: process.env.BOARD_URL, support: 'ops@vodafone.com', subscribed: true });
+const welcome = renderWelcome({ name: 'Tamer Basha', email: 'tamer.basha@vodafone.com', password: 'k7mpq-9xnrt-3tbwj-5hzvd-8fcgs-4ynkm', role: 'viewer', boardUrl: process.env.BOARD_URL, support: 'ops@vodafone.com', subscribed: true });
 noToken(welcome, 'renderWelcome');
 assert.ok(welcome.includes('pr-radar.example.com/login'), 'welcome links to the sign-in page');
 

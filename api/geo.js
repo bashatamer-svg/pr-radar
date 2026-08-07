@@ -1,8 +1,11 @@
-// AI answer-engine (GEO) monitoring endpoint. Token-gated like api/items.js,
-// plus CRON_SECRET for the optional scheduled check.
+// AI answer-engine (GEO) monitoring endpoint.
 //
-//   GET /api/geo?t=<RADAR_TOKEN>          → run the check, return JSON findings
-//   GET /api/geo?...&send=1               → also email the flagged findings,
+// OPERATOR-gated (CRON_SECRET or a signed-in admin) — running the check calls
+// out to paid answer engines and can email the findings, so the shared
+// read-only RADAR_TOKEN is refused here. See the model in lib/auth.js.
+//
+//   GET /api/geo                          → run the check, return JSON findings
+//   GET /api/geo?send=1                   → also email the flagged findings,
 //        but ONLY when GEO_ALERTS_ENABLED=1 (the cron passes send=1).
 //
 // The whole feature is OFF until GEO_ENABLED=1 (runGeoCheck returns enabled:false
@@ -11,23 +14,27 @@
 
 import { runGeoCheck, renderGeoEmail } from '../lib/geo.js';
 import { sendBulletin } from '../lib/email.js';
-import { safeEqual } from '../lib/auth.js';
+import { requireOperator } from '../lib/auth.js';
+import { startRun, JOBS, runJob } from '../lib/runs.js';
 
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
-  // Bearer only (no ?t= query token), constant-time.
-  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  const ok =
-    (process.env.CRON_SECRET && safeEqual(bearer, process.env.CRON_SECRET)) ||
-    (process.env.RADAR_TOKEN && safeEqual(bearer, process.env.RADAR_TOKEN));
-  if (!ok) return res.status(401).json({ error: 'unauthorized' });
+  // Bearer only (no ?t= query token). CRON_SECRET or a signed-in admin.
+  const who = await requireOperator(req, res);
+  if (!who) return;   // 401/403 already sent
 
+  // A MANUAL run gets its own ledger key. requireOperator admits signed-in
+  // admins, so an interactive diagnostic hit would otherwise write the same
+  // `geo` key Health reads as "the Monday cron fired" — one click resetting an
+  // eight-day overdue clock and hiding a dead job for another week.
+  const run = await startRun(runJob(JOBS.geo, who));
   let result;
   try {
     result = await runGeoCheck();
   } catch (e) {
     console.error('geo check failed', e.message);
+    await run?.fail(e);
     return res.status(500).json({ error: 'geo check failed', detail: e.message });
   }
 
@@ -49,6 +56,8 @@ export default async function handler(req, res) {
   } else if (wantSend && result.flagged === 0) {
     note = 'nothing flagged — no email';
   }
+
+  await run?.ok({ stored: result.checked, relevant: result.flagged, alerts: sent ? 1 : 0 });
 
   // Summary for the cron/JSON caller; full findings for an interactive check.
   return res.status(200).json({

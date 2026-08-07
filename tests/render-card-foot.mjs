@@ -40,7 +40,10 @@ const server = createServer((req, res) => {
     ? { email: 'someone@vodafone.com', role, kind: 'user' } : { supabaseUrl: '', anonKey: '' });
   if (u.pathname.startsWith('/api/')) return j({});
   const f = u.pathname === '/' ? '/index.html' : u.pathname;
-  try { const b = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(b); }
+  try { const b = readFileSync(DIR + f);
+    // /assets/session.js is a real script now — serve it as one. A page whose
+    // shared session module arrives as text/html has no afetch at all.
+    res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' }); res.end(b); }
   catch { res.writeHead(404); res.end('nf'); }
 });
 await new Promise((r) => server.listen(8939, r));
@@ -91,7 +94,12 @@ const footGeom = () => page.evaluate(() => {
 {
   const g = await footGeom();
   assert.strictEqual(g.wrap, 'wrap', 'the footer can wrap — that is what stops it shrinking its controls');
-  assert.strictEqual(g.controls, 8, 'an admin really does get eight controls — the guard is exercising the real case');
+  // FIVE now, not eight: Copy · 📸 · 🔔 · ••• · Open source. The wrap fix made
+  // eight FIT; it could not make eight equally-weighted icons easy to scan, so
+  // pin / hide / useful / not-useful moved into the ••• menu. Both facts still
+  // matter — the row must still be able to break, because five controls plus a
+  // 100-character headline is still over-subscribed at 320px.
+  assert.strictEqual(g.controls, 5, `an admin gets five PRIMARY controls (got ${g.controls})`);
   assert.deepStrictEqual(await crushedInCards(), [], 'nothing in the card is squeezed below its content width at 390px');
   for (const i of g.icons) {
     assert.strictEqual(i.w, 38, `each icon button keeps its designed 38px touch target (got ${i.w}px)`);
@@ -127,6 +135,86 @@ await page.waitForTimeout(150);
   assert.deepStrictEqual(await crushedInCards(), [], 'nothing crushed at desktop width');
 }
 
+/* ── the ••• More menu ────────────────────────────────────────────────────
+   Moving four controls into a menu is only an improvement if the menu is
+   genuinely usable: reachable by keyboard, dismissable without choosing, and
+   never clipped by the card it hangs off. */
+{
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('.card .foot', { timeout: 5000 });
+
+  const menuBox = async () => page.evaluate(() => {
+    const m = document.querySelector('.card .moremenu');
+    const card = document.querySelector('.card');
+    const r = m.getBoundingClientRect(), c = card.getBoundingClientRect();
+    return { open: getComputedStyle(m).display !== 'none', w: Math.round(r.width),
+             left: Math.round(r.left), right: Math.round(r.right),
+             cardLeft: Math.round(c.left), cardRight: Math.round(c.right),
+             items: [...m.querySelectorAll('.mitem')].map((i) => i.textContent.trim()) };
+  });
+
+  assert.strictEqual((await menuBox()).open, false, 'the menu starts closed');
+  assert.strictEqual(await page.getAttribute('.card .morebtn', 'aria-expanded'), 'false',
+    'and says so');
+
+  await page.click('.card .morebtn');
+  let m = await menuBox();
+  assert.strictEqual(m.open, true, 'clicking ••• opens it');
+  assert.strictEqual(await page.getAttribute('.card .morebtn', 'aria-expanded'), 'true',
+    'and aria-expanded moves WITH the panel');
+
+  // No behaviour loss: all four moved actions are here, and named in words
+  // rather than as the bare icons they used to be.
+  assert.strictEqual(m.items.length, 4, 'all four moved actions are present');
+  for (const want of [/Pin for the team/, /Hide from the team/, /Useful/, /Not useful/]) {
+    assert.ok(m.items.some((t) => want.test(t)), `the menu offers ${want}`);
+  }
+
+  // NOT CLIPPED. Anchored to the footer's right edge rather than to the •••
+  // button, so it stays inside the card whichever line the button wraps onto —
+  // button-anchored, it overflows left when ••• lands at the start of a row.
+  assert.ok(m.left >= m.cardLeft - 1, `the menu does not overflow the card's left edge (${m.left} vs ${m.cardLeft})`);
+  assert.ok(m.right <= m.cardRight + 1, `nor its right edge (${m.right} vs ${m.cardRight})`);
+  const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.ok(over <= 1, `and the open menu does not pan the page at 390px (overflow ${over}px)`);
+
+  // Keyboard: opening focuses the first item, arrows walk the list, Escape
+  // closes AND returns focus — an Escape that strands you at the top of the
+  // document is a menu a keyboard user cannot leave.
+  assert.ok(await page.evaluate(() => document.activeElement.classList.contains('mitem')),
+    'opening the menu focuses its first item');
+  await page.keyboard.press('ArrowDown');
+  assert.ok(await page.evaluate(() => document.activeElement.classList.contains('hide')),
+    'ArrowDown walks to the next item');
+  await page.keyboard.press('ArrowUp');
+  assert.ok(await page.evaluate(() => document.activeElement.classList.contains('pin')),
+    'ArrowUp walks back');
+  await page.keyboard.press('Escape');
+  assert.strictEqual((await menuBox()).open, false, 'Escape closes it');
+  assert.ok(await page.evaluate(() => document.activeElement.classList.contains('morebtn')),
+    'and returns focus to the button that opened it');
+
+  // An outside click closes it too. A menu you can only dismiss by picking
+  // something is a menu that traps you.
+  await page.click('.card .morebtn');
+  assert.strictEqual((await menuBox()).open, true);
+  await page.click('.card .headline');
+  assert.strictEqual((await menuBox()).open, false, 'clicking away closes it');
+
+  // Choosing an item acts AND closes, and the label follows the new state.
+  await page.click('.card .morebtn');
+  await page.click('.card .mitem.pin');
+  await page.waitForTimeout(200);
+  assert.strictEqual((await menuBox()).open, false, 'choosing an item closes the menu');
+  assert.ok(await page.$('.card.pinned'), 'and the action actually ran');
+  await page.click('.card .morebtn');
+  m = await menuBox();
+  assert.ok(m.items.some((t) => /Unpin/.test(t)),
+    'and the label reads Unpin next time — "Pin" while already pinned would be a lie');
+  await page.keyboard.press('Escape');
+}
+
 // ── VIEWER: three controls, ONE line at every width. The wrap must not make
 // the common case taller than it was. ──
 role = 'viewer';
@@ -136,6 +224,8 @@ for (const w of [360, 390, 1100]) {
   await page.waitForSelector('.card', { timeout: 5000 });
   await page.waitForTimeout(150);
   const g = await footGeom();
+  // Unchanged for a viewer: the menu is admin-only, so their card is exactly
+  // what it was. This change must cost the majority of readers nothing.
   assert.strictEqual(g.controls, 3, `a viewer sees Copy, 📸 and Open only (got ${g.controls} at ${w}px)`);
   assert.strictEqual(g.lines, 1, `and they share ONE line at ${w}px (got ${g.lines})`);
   assert.ok(g.open.right >= g.foot.right - 1, `Open source still right-aligned for a viewer at ${w}px`);
@@ -144,4 +234,4 @@ for (const w of [360, 390, 1100]) {
 
 await browser.close(); server.close();
 if (errs.length) { console.error('PAGE ERRORS:\n' + errs.join('\n')); process.exit(1); }
-console.log("CARD-FOOT OK — an admin's eight footer controls wrap instead of shrinking (icons keep 38px, both labels one line, Open source right-aligned), the board never pans at 320–390px, desktop is one row, and a viewer's three controls stay on one line");
+console.log("CARD-FOOT OK — an admin's five PRIMARY controls wrap instead of shrinking (the other four live in the ••• menu, which opens by keyboard, closes on Escape and on an outside click, is never clipped, and keeps its labels in step with state) (icons keep 38px, both labels one line, Open source right-aligned), the board never pans at 320–390px, desktop is one row, and a viewer's three controls stay on one line");

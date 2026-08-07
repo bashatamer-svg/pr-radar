@@ -1,4 +1,4 @@
-import { XMLParser } from 'fast-xml-parser';
+import { readFeedXml } from '../lib/xml.js';
 import crypto from 'node:crypto';
 import { ALL_FEEDS, BRAND_FEEDS, isWorthClassifying } from '../lib/sources.js';
 import { existingHashes, existingSummaryHashes, recentStories, recentItems, insertItems, insertInstances, instancesForItems, recordFeedHealth, brokenFeeds, activeSubscribers, getStateTime, touchState, itemsByHashes, itemsMissingAuthor } from '../lib/db.js';
@@ -12,11 +12,12 @@ import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
 import { renderBulletin, renderUrgent, sendBulletin, isInstantAlert, urgentTier } from '../lib/email.js';
 import { authorFromEntry, fetchAuthor, cleanAuthor, resetAuthorAiBudget } from '../lib/author.js';
 import { resolveUrl, isGoogleNews, isNonArticlePage } from '../lib/resolve.js';
-import { safeEqual } from '../lib/auth.js';
+import { safeExternalUrl } from '../lib/safe-url.js';
+import { requireOperator, auditReq } from '../lib/auth.js';
+import { startRun, JOBS, runJob } from '../lib/runs.js';
 
 export const config = { maxDuration: 60 };
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 const arr = (x) => (Array.isArray(x) ? x : x ? [x] : []);
 
 // Pull a short plain-text snippet out of an RSS/Atom entry. Feeds already ship
@@ -206,7 +207,11 @@ async function fetchFeed(feed) {
   try {
     const res = await fetch(feed.url, { signal: ctrl.signal, headers: BROWSER_HEADERS });
     if (!res.ok) throw new Error(`http ${res.status}`);
-    const xml = parser.parse(await res.text());
+    // Size-capped read + hardened parse (lib/xml.js). A feed that answers with
+    // an unbounded body or a DTD full of entities is recorded as a FAILED feed
+    // rather than allowed to consume the run — the catch below is what turns
+    // the throw into feed health, exactly like an http 500.
+    const xml = await readFeedXml(res);
     const entries = arr(xml?.rss?.channel?.item).concat(arr(xml?.feed?.entry));
 
     const items = entries.slice(0, 80).map((e) => {
@@ -220,7 +225,12 @@ async function fetchFeed(feed) {
         source: dash > 20 ? title.slice(dash + 3) : feed.id,
         author: authorFromEntry(e),          // RSS byline (<dc:creator>/<author>) when present, else null
         snippet: snippetOf(e),
-        url: String(link),
+        // The FIRST gate on a third-party URL: normalised here, or the item is
+        // dropped below. Everything downstream — the stored row, the board's
+        // href, five email templates, /api/go's Location header — inherits
+        // whatever this accepts, so a scheme nobody vetted must not get past
+        // the feed reader.
+        url: safeExternalUrl(link),
         published_at: safeIso(pub),
         tier: feed.tier,
         brand: feed.brand ?? null,           // brand the feed targets; the classifier can override
@@ -230,7 +240,9 @@ async function fetchFeed(feed) {
     });
 
     await recordFeedHealth(feed.id, true);
-    return items.filter((i) => i.headline.length > 15);
+    // A story with no usable link is not a story we can show, brief, or share
+    // — the card's whole job is getting a reader to the article.
+    return items.filter((i) => i.headline.length > 15 && i.url);
   } catch (e) {
     await recordFeedHealth(feed.id, false, e.message).catch(() => {});
     return [];
@@ -240,13 +252,24 @@ async function fetchFeed(feed) {
 }
 
 export default async function handler(req, res) {
-  // Bearer only (no ?t= query token), constant-time. Vercel Cron sends CRON_SECRET;
-  // RADAR_TOKEN is accepted for manual ops runs.
-  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  const ok =
-    (process.env.CRON_SECRET && safeEqual(bearer, process.env.CRON_SECRET)) ||
-    (process.env.RADAR_TOKEN && safeEqual(bearer, process.env.RADAR_TOKEN));
-  if (!ok) return res.status(401).json({ error: 'unauthorized' });
+  // Bearer only (no ?t= query token). This endpoint INGESTS, CLASSIFIES, WRITES
+  // stories, MAILS the subscriber list and PAGES the WhatsApp crisis numbers, so
+  // it is operator-gated: CRON_SECRET (what Vercel Cron sends) or a signed-in
+  // admin. It used to accept the shared read-only RADAR_TOKEN as well, via its
+  // own inline check that never heard about the central model in lib/auth.js —
+  // which meant anyone holding the READ token could fire the whole pipeline.
+  // ?dry=1 is gated identically: it stores nothing, but it still fetches thirty
+  // feeds and pays for a round of classifier calls.
+  const who = await requireOperator(req, res);
+  if (!who) return;   // 401/403 already sent
+  // A human-triggered run is worth a trail; the cron's own runs are not (they
+  // are every 15 minutes, and pr_state already records what they delivered).
+  if (who.kind === 'user') {
+    auditReq(req, who, 'radar.run', null, {
+      urgentOnly: req.query?.urgentOnly === '1', dry: req.query?.dry === '1',
+      debug: req.query?.debug === '1', backfillAuthors: req.query?.backfillAuthors === '1',
+    }).catch(() => {});
+  }
 
   resetAuthorAiBudget();   // fresh per-run AI byline budget (warm lambdas persist the counter)
 
@@ -285,6 +308,19 @@ export default async function handler(req, res) {
     console.log(`on-demand author sweep: filled ${result.filled}/${result.scanned}; ~${result.remaining ?? '?'} still authorless (last ${result.days}d)`);
     return res.status(200).json({ backfillAuthors: true, ...result });
   }
+
+  // OPEN THE RUN LEDGER (pr_runs). Only for runs that actually DO something:
+  // ?dry=1 and ?debug=1 are diagnostics, and recording them would pollute the
+  // one question the ledger exists to answer — "when did the scheduled job last
+  // run?". Fail-soft: `run.id` is null when the table is absent and every
+  // method is a no-op, so an un-migrated database behaves exactly as before.
+  //
+  // There is deliberately no try/catch around the pipeline below. A run that
+  // THROWS, or that is killed by the 60-second function timeout, leaves its row
+  // `status:'running'` with a null completed_at — and the stalled-run health
+  // check reports that. A catch would record the throw and miss the timeout,
+  // which is the failure mode this app is actually near.
+  const run = dry || debug ? null : await startRun(runJob(urgentOnly ? JOBS.radarUrgent : JOBS.radar, who));
 
   // 1. Fetch feeds in parallel. A dead feed yields [] and is logged.
   //    Urgent-only crisis polls (every 15 min) hit ONLY the brand-targeted
@@ -380,6 +416,10 @@ export default async function handler(req, res) {
   // bulletin silently stopped going out. Fall through instead; classify([]) is
   // a no-op (0 batches, 0 calls) and the digest is rebuilt from the DB.
   if (!candidates.length && urgentOnly) {
+    // A poll that found only stories it had already stored IS a successful run.
+    // Recording it is the whole point: without a ledger this is indistinguishable
+    // from the cron never having fired.
+    await run?.ok({ stored: 0, relevant: 0, alerts: 0 });
     return res.status(200).json({ scanned: raw.length, new: 0, note: 'nothing new' });
   }
 
@@ -488,6 +528,10 @@ export default async function handler(req, res) {
           // Resolve the primary URL once (direct links short-circuit, no fetch).
           let resolved = primary.url;
           try { resolved = await resolveUrl(primary.url); } catch { /* keep original */ }
+          // resolveUrl returns whatever Google's redirect chain or batchexecute
+          // handed back — third-party data again, and this is where it would
+          // otherwise be written onto the row as the card's primary link.
+          resolved = safeExternalUrl(resolved);
           if (resolved && !isGoogleNews(resolved)) {
             // A tag/keyword/search archive is NOT an article — it has no real
             // headline or byline, so the classifier fabricates an event and the
@@ -815,9 +859,12 @@ export default async function handler(req, res) {
   }
 
   let bulletinSent = false;
-  // Idempotency for the REAL daily send: the Vercel cron (04:00 UTC) and the
-  // GitHub Actions backup (04:10 UTC) both hit this path — send the bulletin
-  // at most once per day. A preview (?to=) always sends to its one address and
+  // Idempotency for the REAL daily send: the daily cron, the 15-minute urgent
+  // poll and any manual admin run all hit this path — send the bulletin at most
+  // once per day. (This comment used to name a "GitHub Actions backup at 04:10
+  // UTC". No such workflow has ever existed in this repo; the guard is needed
+  // regardless, but the reason given for it was fiction.)
+  // A preview (?to=) always sends to its one address and
   // ignores the marker; a dry run never sends. Fail OPEN: a marker-read error
   // sends anyway (a double-send is harmless; a suppressed send is the exact
   // failure this whole change is guarding against).
@@ -895,9 +942,9 @@ export default async function handler(req, res) {
   // a subscriber with categories set gets only items matching those
   // categories. Empty filtered set → skip that subscriber (no zero-item
   // email). Failures per-subscriber are logged, never fatal.
-  // Gated by !dailyAlreadySent (same guard as the admin/team sends above) so
-  // the 04:10 GitHub backup can't re-send today's digest to subscribers after
-  // the 04:00 Vercel cron already delivered it.
+  // Gated by !dailyAlreadySent (same guard as the admin/team sends above) so a
+  // second run on the same day — the 15-minute urgent poll, or a manual admin
+  // run — cannot re-mail today's digest to every subscriber.
   let watchlistSent = 0;
   if (!urgentOnly && !dry && !previewTo && !dailyAlreadySent && digest.length) {
     const subs = await activeSubscribers().catch((e) => {
@@ -967,6 +1014,12 @@ export default async function handler(req, res) {
       if (stale.length) console.log(`stored-author backfill: filled ${filled}/${stale.length} (unresolved ${breakdown.unresolved}, fetch-failed ${breakdown.fetchFailed}, no-byline ${breakdown.noByline}, write-fail ${breakdown.writeFailed})`);
     } catch (e) { console.error('stored-author backfill skipped (non-fatal)', e.message); }
   }
+
+  await run?.ok({
+    stored: classified.length,
+    relevant: classified.filter((i) => i.is_relevant !== false).length,
+    alerts: urgent.length,
+  });
 
   return res.status(200).json({
     scanned: raw.length,

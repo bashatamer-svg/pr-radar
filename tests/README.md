@@ -7,10 +7,14 @@ test touches the network or a real database, so the suite is safe anywhere.
 ## Run
 
 ```
-npm install          # dev-only: playwright-core for the browser tests
+npm ci               # exact install from package-lock.json (what CI runs)
 npm test             # everything
 npm test -- lanes    # only tests whose filename contains "lanes"
 ```
+
+`package-lock.json` **is tracked**. Use `npm ci`, not `npm install`, so the
+version of `fast-xml-parser` that parses hostile feed XML is the one that was
+tested rather than whatever npm resolves today.
 
 Browser tests drive headless Chromium. Set `CHROMIUM_PATH` to your Chromium
 binary if the default sandbox path doesn't exist; without a browser those tests
@@ -54,6 +58,24 @@ are **skipped**, the unit suite still runs.
 | Trends narratives (token clustering, LLM grouping + fallbacks, real-data regression, deep-link integrity) | `render-narrative-cluster`, `narr-ai`, `narr-real` (+ `narr-fixture` — captured production rows), `render-narratives`, `render-deeplink` |
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
+| Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
+| Whole app × 6 widths × 2 roles: no pan, no crush, no tiny target, no leak | `render-final-sweep` |
+| WhatsApp readiness ladder + house-knowledge staleness | `verify-readiness-checks` |
+| Sideways-scrolling rows show there is more, without panning the page | `render-scroll-hint` |
+| Trends "So what?" strip — derived arithmetic, honest bars, no model | `render-exec-strip` |
+| Icon controls have accessible names; result regions are polite live regions | `render-a11y` |
+| One session implementation across all seven pages, refresh + sign-out proven | `render-session-shared` |
+| Source text is fenced data in all five LLM passes; a forged tag cannot escape | `verify-prompt-injection` |
+| Trends never waits on the LLM — first paint clusters, then upgrades | `render-narratives-async` |
+| Feed failure streaks increment atomically, never reset to 1 | `verify-feed-streak` |
+| Migration + run ledgers: read-only, fail-soft, unavailable ≠ alarm | `verify-ledgers` |
+| schema.sql defines every table/column lib/db.js queries | `verify-schema-baseline` |
+| Which commit is deployed — reported, never invented; preview warns | `verify-build-identity` |
+| The release gate itself — a skipped browser test fails under CI | `verify-ci-gate` |
+| Security headers — every CSP directive, HSTS, COOP, and the app fitting them | `verify-security-headers` |
+| The CSP proven live — eight pages served under the real header, no violations | `render-csp` |
+| One URL scheme allowlist — board, emails, /api/go redirect, ingest, rel=noopener | `render-safe-url` |
+| RADAR_TOKEN reads and cannot operate; CRON_SECRET/admins can | `verify-token-privilege` |
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |
 | Feed probe — a 200 with no feed says WHY, not just its status | `verify-feed-probe` |
 | Trends leaderboard paging (all outlets/journalists reachable) | `render-leaderboard-pages` |

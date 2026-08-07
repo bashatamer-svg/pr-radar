@@ -1,4 +1,4 @@
-// Admin → Health (/api/alerts): the twelve live pipeline checks.
+// Admin → Health (/api/alerts): the eighteen live pipeline checks.
 //
 // Three properties are load-bearing, and all three are ways a health page can
 // be worse than none:
@@ -19,6 +19,8 @@
 // repeat of the SAME failing set within 22h so a chronic problem mails once
 // rather than every morning until it is filtered.
 import assert from 'node:assert';
+import { MIGRATIONS } from '../lib/migrations.js';
+const MIGRATION_IDS = MIGRATIONS.map((m) => m.id);
 
 process.env.SUPABASE_URL = 'https://fake.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'k';
@@ -29,6 +31,14 @@ process.env.RADAR_FROM = 'radar@example.com';
 process.env.OPS_ALERT_TO = 'ops@example.com';
 delete process.env.RADAR_TO;               // production's actual state
 delete process.env.REPORT_EMAIL_ENABLED;
+// The build check reads Vercel's system environment variables. The healthy
+// world below IS production, so give it production's: without them the check
+// correctly reports 'unknown' (see the explicit case at the end), and an
+// unknown outranks ok in the page badge.
+process.env.VERCEL = '1';
+process.env.VERCEL_ENV = 'production';
+process.env.VERCEL_GIT_COMMIT_SHA = '9e3fcc7a1b2c3d4e5f60718293a4b5c6d7e8f900';
+process.env.VERCEL_GIT_COMMIT_REF = 'main';
 
 const hoursAgo = (h) => new Date(Date.now() - h * 36e5).toISOString();
 
@@ -58,6 +68,16 @@ const freshWorld = () => ({
     input_tokens: 500, output_tokens: 800, cache_create_tokens: 2000, cache_read_tokens: 20000,
   })),
   dbSizeFn: true, dbBytes: 22 * 1048576,
+  // Both hand-applied ledgers present and current. `migrationsTable:false` and
+  // `runsTable:false` below cover the un-migrated state, which is production's
+  // today and must read as "unavailable", never as an alarm.
+  migrationsTable: true, migrationsApplied: null,   // null → every known migration
+  runsTable: true,
+  runs: [
+    { job: 'radar-urgent', started_at: hoursAgo(0.2), completed_at: hoursAgo(0.1), status: 'ok', duration_ms: 11000 },
+    { job: 'radar', started_at: hoursAgo(4), completed_at: hoursAgo(3.9), status: 'ok', duration_ms: 38000 },
+    { job: 'health', started_at: hoursAgo(3), completed_at: hoursAgo(3), status: 'ok', duration_ms: 2000 },
+  ],
   resendList: { data: [] },
   // counts: recent stored, recent relevant, baseline stored, baseline relevant
   quality: [700, 42, 2100, 126],
@@ -98,6 +118,17 @@ globalThis.fetch = async (url, opts = {}) => {
   }
 
   // ── optional tables ──
+  if (u.includes('/rest/v1/pr_schema_migrations')) {
+    if (!world.migrationsTable) return dead();
+    const ids = world.migrationsApplied ?? MIGRATION_IDS;
+    return json(ids.map((id) => ({ id, applied_at: hoursAgo(48) })));
+  }
+  if (u.includes('/rest/v1/pr_runs')) {
+    if (!world.runsTable) return dead();
+    if (m === 'POST') return json([{ id: 1 }]);
+    if (m === 'PATCH') return json([]);
+    return json(world.runs);
+  }
   if (u.includes('/rest/v1/pr_alerts')) {
     if (!world.alertsTable) return dead();
     if (m === 'POST') { recorded.push(JSON.parse(opts.body)); return json(null); }
@@ -177,8 +208,19 @@ const byId = (out, id) => (out.checks || []).find((c) => c.id === id);
 
   const admin = await call();
   assert.strictEqual(admin.code, 200, 'the admin/cron bearer gets the page');
-  assert.strictEqual(admin.out.checks.length, 12, `all twelve checks report (got ${admin.out.checks.length})`);
-  assert.strictEqual(admin.out.status, 'ok', `a healthy world reads ok (got ${admin.out.status}: ` +
+  assert.strictEqual(admin.out.checks.length, 18, `all eighteen checks report (got ${admin.out.checks.length})`);
+  // The build check leads: every number under it describes whatever code is
+  // running, and reading a preview deployment while believing it is production
+  // makes the whole page describe the wrong thing.
+  assert.strictEqual(admin.out.checks[0].id, 'build', 'the deployed build is reported first');
+  assert.strictEqual(admin.out.checks[1].id, 'migrations',
+    'and the schema it is running against second — every check below describes a build against a schema');
+  assert.strictEqual(admin.out.build.shortSha, '9e3fcc7', 'and rides the payload as a field for exact comparison');
+  // WhatsApp is deliberately OFF in production and the house-knowledge doc is
+  // empty in this world, so both read 'ok'/'unknown' rather than green — the
+  // page badge takes the WORST check, so this asserts what a healthy world
+  // actually looks like rather than an idealised one.
+  assert.ok(['ok', 'unknown'].includes(admin.out.status), `a healthy world reads ok or unknown (got ${admin.out.status}: ` +
     `${admin.out.checks.filter((c) => c.state !== 'ok').map((c) => `${c.id}=${c.state}`).join(', ')})`);
 }
 
@@ -355,5 +397,63 @@ const byId = (out, id) => (out.checks || []).find((c) => c.id === id);
   process.env.OPS_ALERT_TO = 'ops@example.com';
 }
 
-console.log('HEALTH-CHECKS OK — 12 admin-only checks; a missing optional table degrades one check, not the page; '
+/* 9 ── off Vercel the build check is UNKNOWN, and only that check ─────────── */
+// Every developer sandbox is in this state. A check that goes amber there is a
+// check people stop reading — and it takes the eleven beside it with it.
+{
+  world = freshWorld();
+  // EVERY source lib/build.js reads, not just the Vercel ones. It falls back to
+  // GITHUB_SHA on purpose (so the build identity works on a GitHub runner too),
+  // and clearing only VERCEL_* left this case asserting "no SHA available" in an
+  // environment that had one. It passed on every laptop and failed the moment it
+  // ran in CI — which is the environment that sets GITHUB_SHA, and exactly the
+  // kind of gap a release gate exists to find.
+  for (const k of ['VERCEL', 'VERCEL_ENV', 'VERCEL_REGION', 'VERCEL_URL', 'VERCEL_DEPLOYMENT_ID',
+    'VERCEL_GIT_COMMIT_SHA', 'VERCEL_GIT_COMMIT_REF', 'GIT_COMMIT_SHA', 'GITHUB_SHA', 'GITHUB_REF_NAME']) {
+    delete process.env[k];
+  }
+  const { out } = await call();
+  const build = out.checks.find((c) => c.id === 'build');
+  assert.strictEqual(build.state, 'unknown', 'no SHA available ⇒ unknown');
+  assert.notStrictEqual(build.state, 'warn', 'and never warn — this is the normal local state');
+  assert.strictEqual(out.build.known, false, 'the payload says so too');
+  assert.strictEqual(out.build.sha, null, 'and invents nothing');
+  // Everything else is unaffected: one check not knowing something must not
+  // colour the others. WhatsApp (deliberately off) and the run/migration
+  // ledgers legitimately read 'unknown' here too — what matters is that none of
+  // them turned into a warn or a crit because the BUILD check could not answer.
+  const others = out.checks.filter((c) => c.id !== 'build');
+  assert.ok(others.every((c) => c.state === 'ok' || c.state === 'unknown'),
+    `no other check degraded: ${others.filter((c) => !['ok', 'unknown'].includes(c.state)).map((c) => `${c.id}=${c.state}`).join(', ')}`);
+  process.env.VERCEL = '1'; process.env.VERCEL_ENV = 'production';
+  process.env.VERCEL_GIT_COMMIT_SHA = '9e3fcc7a1b2c3d4e5f60718293a4b5c6d7e8f900';
+}
+
+/* 10 ── with NEITHER ledger applied — production's state today ───────────── */
+// Both tables are hand-applied and neither is live yet. Missing must read as
+// "unavailable", never as "nothing ran" or "everything is un-migrated": the
+// pessimistic reading would put the page permanently amber on the very database
+// it is meant to reassure you about.
+{
+  world = freshWorld();
+  world.migrationsTable = false;
+  world.runsTable = false;
+  const { code, out } = await call();
+  assert.strictEqual(code, 200, 'the page still answers');
+  const mig = out.checks.find((c) => c.id === 'migrations');
+  const runs = out.checks.find((c) => c.id === 'runs');
+  assert.strictEqual(mig.state, 'unknown', 'an absent migration ledger is unknown, not warn');
+  assert.strictEqual(runs.state, 'unknown', 'an absent run ledger is unknown, not crit');
+  assert.ok(!out.checks.some((c) => c.id === 'runstall'),
+    'and the completion check is omitted rather than added as a second unknown');
+  // Everything else keeps working — that is the whole fail-soft contract. The
+  // WhatsApp channel reads 'unknown' because it is deliberately OFF, which is
+  // production's state and not a degradation.
+  const others = out.checks.filter((c) => !['migrations', 'runs', 'build'].includes(c.id));
+  const degraded = others.filter((c) => !['ok', 'unknown'].includes(c.state));
+  assert.deepStrictEqual(degraded.map((c) => `${c.id}=${c.state}`), [],
+    'no other check degrades when the two ledgers are absent');
+}
+
+console.log('HEALTH-CHECKS OK — 18 admin-only checks (build + schema state first, then recorded runs); a missing optional table degrades one check, not the page; '
   + 'a quiet day reads ok while a swallowed brief reads crit; the daily push mails on warn/crit only and suppresses a repeat within 22h');

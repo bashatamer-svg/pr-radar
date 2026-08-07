@@ -53,7 +53,10 @@ const server = createServer((req, res) => {
   if (u.pathname === '/api/auth') return j(u.searchParams.get('view') === 'me' ? { email: 'a@b.com', role: 'admin', kind: 'user' } : { supabaseUrl: '', anonKey: '' });
   if (u.pathname.startsWith('/api/')) return j({});
   const f = u.pathname === '/stats' ? '/stats.html' : u.pathname;
-  try { const b = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(b); }
+  try { const b = readFileSync(DIR + f);
+    // /assets/session.js is a real script now — serve it as one. A page whose
+    // shared session module arrives as text/html has no afetch at all.
+    res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' }); res.end(b); }
   catch { res.writeHead(404); res.end('nf'); }
 });
 await new Promise((r) => server.listen(8940, r));

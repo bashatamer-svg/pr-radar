@@ -14,12 +14,22 @@
 // server-side, where Vercel *can* reach Google (the sandbox can't), and the
 // decoded URL is cached back onto the row so the next share is instant.
 //
-// Public on purpose: a shared link goes to anyone, and it only ever redirects
-// to a URL we already stored from a feed (no open-redirect — there is no
-// caller-supplied destination). If resolution fails it falls back to the
+// Public on purpose: a shared link goes to anyone, and there is no
+// caller-supplied destination — the id names a row, and the row's URL is the
+// only place the target can come from. If resolution fails it falls back to the
 // original wrapper, so the link is never *worse* than before.
+//
+// "No caller-supplied destination" is NOT the same as "the destination is
+// safe", which is the assumption this endpoint used to make. The value comes
+// from a third-party feed, or from whatever Google's batchexecute hands back,
+// and it lands in a `Location:` header where HTML escaping does not apply at
+// all. So every candidate — the cached resolved_url, the freshly decoded URL,
+// and the stored wrapper it falls back to — goes through safeExternalUrl first.
+// A row whose URLs are all unusable answers 502 rather than emitting a redirect
+// to a scheme nobody vetted.
 
 import { itemLink, setResolvedUrl } from '../lib/db.js';
+import { safeExternalUrl } from '../lib/safe-url.js';
 
 export const config = { maxDuration: 15 };
 
@@ -103,24 +113,40 @@ export default async function handler(req, res) {
     return res.status(404).send('Not found');
   }
 
-  // Cache hit: a real URL was decoded on an earlier share — use it straight away.
-  if (row.resolved_url && !isGoogleNews(row.resolved_url)) {
-    if (debug) return res.status(200).json({ id: row.id, from: row.url, to: row.resolved_url, strategy: 'cache' });
-    return redirect(res, row.resolved_url, true);
+  // Cache hit: a real URL was decoded on an earlier share — use it straight
+  // away. Re-validated on every read, not trusted because it was validated once
+  // on write: the row may predate this check, or have been written by a path
+  // that did not run it.
+  const cached = safeExternalUrl(row.resolved_url);
+  if (cached && !isGoogleNews(cached)) {
+    if (debug) return res.status(200).json({ id: row.id, from: row.url, to: cached, strategy: 'cache' });
+    return redirect(res, cached, true);
   }
 
   const { to, strategy } = await resolve(row.url);
-  if (strategy === 'redirect' || strategy === 'batchexecute') {
-    setResolvedUrl(row.id, to).catch(() => {});   // fire-and-forget cache write
+  // Validate BEFORE caching, so an unusable decode is never written back onto
+  // the row for the next reader to trust.
+  const safe = safeExternalUrl(to);
+  if (safe && (strategy === 'redirect' || strategy === 'batchexecute')) {
+    setResolvedUrl(row.id, safe).catch(() => {});   // fire-and-forget cache write
   }
 
-  if (debug) return res.status(200).json({ id: row.id, from: row.url, to, strategy });
+  if (debug) return res.status(200).json({ id: row.id, from: row.url, to: safe, strategy, ...(safe ? {} : { refused: to || null }) });
+  if (!safe) {
+    // Every candidate failed the scheme check. Say so plainly rather than
+    // redirecting somewhere unvetted or 404ing as though the story did not
+    // exist — this is a stored-data problem, and a reader who reports it should
+    // get an answer that points at one.
+    return res.status(502).send('This story has no usable link.');
+  }
   // Only cache a confidently-resolved link; a fallback might resolve properly
   // next time (Google flakiness), so don't let a browser pin the wrapper.
-  return redirect(res, to, strategy !== 'fallback');
+  return redirect(res, safe, strategy !== 'fallback');
 }
 
 function redirect(res, url, cacheable) {
+  // `url` has already passed safeExternalUrl — this function is never reached
+  // with an unvalidated value, and must not be given one.
   res.setHeader('Location', url);
   if (cacheable) res.setHeader('Cache-Control', 'public, max-age=86400');
   return res.status(302).end();

@@ -21,7 +21,10 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"supabaseUrl":"","anonKey":""}'); return;
   }
   const f = u.pathname === '/' ? '/index.html' : u.pathname;
-  try { const b = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(b); } catch { res.writeHead(404); res.end('nf'); }
+  try { const b = readFileSync(DIR + f);
+    // /assets/session.js is a real script now — serve it as one. A page whose
+    // shared session module arrives as text/html has no afetch at all.
+    res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' }); res.end(b); } catch { res.writeHead(404); res.end('nf'); }
 });
 await new Promise((r) => server.listen(8913, r));
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });

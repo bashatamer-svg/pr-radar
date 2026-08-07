@@ -1,6 +1,21 @@
 // Server-aggregated trends for the /stats screen. Token-gated like api/items.js.
 //
-// GET /api/stats?t=<RADAR_TOKEN>&days=N  (N clamped 1..90, default 30)
+// GET /api/stats?days=N            (N clamped 1..90, default 30). Viewer+, Bearer only.
+// GET /api/stats?view=narratives&days=N   → { narratives } and nothing else.
+//
+// WHY TWO CALLS. This endpoint used to `await buildNarratives()` inline, and
+// that awaits Anthropic with a 12-second ceiling. Trends is a PAGE LOAD, so on
+// a cold request every chart on the screen — share of voice, sentiment,
+// categories, both leaderboards, the KPI row — waited on an LLM that contributes
+// exactly one card. The whole screen was as slow as its slowest optional part.
+//
+// Now the main call returns the core aggregates plus the DETERMINISTIC token
+// clustering, which is free (stage 1 runs either way) and already useful, so the
+// narrative card is populated on first paint rather than empty. The browser then
+// asks for ?view=narratives, which runs the LLM pass and swaps in the better
+// grouping. If that second call is slow, fails, or the key is unset, the page
+// keeps the stage-1 answer and nothing is missing — the same fail-soft
+// behaviour buildNarratives always had, moved off the critical path.
 //
 // Aggregation happens HERE, not in the browser: the board ships raw rows because
 // it renders cards, but a 90-day trend over items × instances would be a heavy,
@@ -36,6 +51,7 @@ export default async function handler(req, res) {
   if (!who) return;
 
   const windowDays = Math.max(1, Math.min(Number(req.query.days) || 30, 90));
+  const narrativesOnly = req.query.view === 'narratives';
   const items = await itemsForStats({ days: windowDays, withText: true });
 
   // Continuous Cairo-day axis, oldest → today. Stepping UTC-24h through a DST
@@ -47,6 +63,23 @@ export default async function handler(req, res) {
     if (!seenDays.has(d)) { seenDays.add(d); days.push(d); }
   }
   const dayIdx = new Map(days.map((d, i) => [d, i]));
+
+  // ── ?view=narratives — the LLM pass, on its own ──────────────────────────
+  // Returned as its own response so the charts never wait on it. Everything a
+  // narrative row needs (ids, idsTotal, series, sentiment split, rising) is in
+  // here, so the deep link behaves identically to when this rode the main
+  // payload — the board still opens exactly these ids and still learns the true
+  // count from idsTotal.
+  if (narrativesOnly) {
+    let narratives = [];
+    try { narratives = await buildNarratives(items, days, dayIdx); }
+    catch (e) { console.error('narratives failed, section omitted —', e.message); }
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({
+      meta: { days: windowDays, generatedAt: new Date().toISOString(), items: items.length },
+      narratives,
+    });
+  }
 
   // Coverage instances for the outlet/author leaderboards. Chunked — a 90-day
   // window can hold 1000+ ids and one giant in.() list overflows the URL.
@@ -150,11 +183,15 @@ export default async function handler(req, res) {
     .slice(0, LEADERBOARD_MAX)
     .map((a) => ({ ...a, outlets: [...a.outlets].slice(0, 3) }));
 
-  // Fail-soft: narratives are one card on the page, never a reason the whole
-  // trends screen 500s. buildNarratives already swallows its own LLM errors;
-  // this catches anything else so the charts still render.
+  // The DETERMINISTIC clustering only (`ai: false`) — no Anthropic call, no
+  // 12-second ceiling on a page load. Stage 1 runs either way, so this costs
+  // nothing beyond what the endpoint already did, and it means the narrative
+  // card has real content on first paint instead of a spinner.
+  //
+  // Fail-soft as before: narratives are one card, never a reason the whole
+  // screen 500s.
   let narratives = [];
-  try { narratives = await buildNarratives(items, days, dayIdx); }
+  try { narratives = await buildNarratives(items, days, dayIdx, { ai: false }); }
   catch (e) { console.error('narratives failed, section omitted —', e.message); }
 
   return res.status(200).json({
@@ -164,6 +201,10 @@ export default async function handler(req, res) {
     sentimentByBrand,
     categories,
     narratives,
+    // Tells the browser an LLM regrouping is worth asking for. False with no
+    // API key, so a deployment without one never fires a request that can only
+    // return what it already has.
+    narrativesPending: !!process.env.ANTHROPIC_API_KEY && narratives.length > 0,
     outlets,
     authors,
     totals: {

@@ -37,6 +37,7 @@ sends email + WhatsApp alerts. Pure ESM Node on Vercel serverless + Supabase
 
 | Command | Purpose |
 |---|---|
+| `npm ci` | Exact install from the tracked `package-lock.json`. What CI runs — prefer it over `npm install`. |
 | `npm test` | Full suite (tests/run.mjs, one process per file). **Must be green before every commit.** |
 | `npm test -- <substr>` | Only tests whose filename matches |
 | `node --check <file>` | Syntax-check every changed file before commit |
@@ -51,8 +52,9 @@ behaviour gets a regression test in the same commit.
 | Path | What lives here |
 |---|---|
 | `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `alerts.js` (pipeline health checks + the daily push); `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
-| `lib/*.js` | ALL shared logic. `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`presetPasswordFor`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
-| `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
+| `lib/*.js` | ALL shared logic. `xml.js` (the ONLY place `fast-xml-parser` is constructed — hostile-feed guards), `safe-url.js` (the ONE scheme allowlist for third-party links), `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`generateTempPassword`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
+| `public/*.html` | Self-contained pages (inline CSS/JS) for everything a page OWNS — its markup, styles and behaviour. API downloads must go fetch→blob (links can't carry the header) |
+| `public/assets/session.js` | The ONE session implementation: `session`, `saveSession`, `signOut`, `captureSessionFromHash`, `authConfig`, `refreshSession`, `afetch`. Loaded as a classic script BEFORE each page's inline block (not `defer` — the inline code calls into it at parse time). Authentication is not something a page owns |
 | `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
 | `scripts/` | One-off generators run manually (OG images) |
 | `tests/*.mjs` | The suite. `narr-fixture.mjs` (captured production data) and `byline-cases.mjs` (the byline ledger) are DATA, not tests — both are in the runner's `EXCLUDE` |
@@ -111,12 +113,14 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_users` / `pr_audit` | Sign-in allowlist + roles; audit trail. **Live-only: missing from schema.sql** (see Drift). The row is only half an account — the PASSWORD lives in Supabase Auth, and Admin → Users writes both (see the provisioning Gotcha) |
 | `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency; `manual_alert_<id>` = the board's 🔔 already fired for that card) |
 | `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users). `whatsapp` NULL (never '') = not paged; `active` gates BOTH channels. `addSubscriber` UPSERTS every column, so ask `getSubscriberByEmail` first or you blank a live row's filter and crisis number |
-| `pr_context` | Admin-editable house knowledge injected into classification. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
-| `pr_feed_health` | Per-feed failure streaks (bulletin footer) |
+| `pr_context` | Admin-editable house knowledge injected into classification. **It decays, and now says so**: a line naming a live story is right for a fortnight and then steers unrelated news, and nothing ever prompted a prune. `houseContextCheck` warns on a **dated** entry (`[YYYY-MM-DD]` line prefix, an optional convention) older than 45 days, or on the whole doc going 60 days untouched. Undated lines are deliberately NOT flagged — flagging them would make the check permanently amber on the doc as it stands, which is how a check stops being read. A FAILED read is `CONTEXT_UNAVAILABLE`, not `''`: the content and the timestamp are fetched independently, and collapsing an unreachable database into "empty document" reported a healthy `ok` for a read that never happened. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
+| `pr_feed_health` | Per-feed failure streaks (bulletin footer). **`fail_streak` never counted** — `recordFeedHealth` wrote a literal `1` on every failure, so a feed dead three weeks read like one that hiccuped once. It cannot be a read-then-write: the 15-min poll and the 05:00 run OVERLAP on the ten brand feeds, so two writers read the same number and both write value+1. PostgREST cannot express `set x = x + 1` either, so the increment goes through **`pr_bump_feed_failure`** (`migrations/2026-08-07-pr-feed-failure-streak.sql`, **NOT yet applied**) — one `INSERT..ON CONFLICT DO UPDATE`, atomic by construction. Without it the fallback records the error and **leaves the count alone** rather than resetting it to 1: stale is honest, `1` actively asserts something false. `last_ok_at` is never touched by a failure — it is what `brokenFeeds()` actually reads. Pinned by `verify-feed-streak` |
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
 | `pr_subscribers.whatsapp` | **Applied 3 Aug** via Supabase MCP with user approval, from `migrations/2026-08-03-pr-subscribers-whatsapp.sql` |
-| `pr_users.reset_requested_at` | Forgot-password queue: set when someone taps "Forgot password?", cleared by EVERY path that sets a password, so the queue empties itself. **Optional column — `migrations/2026-08-06-pr-users-reset-requested-at.sql` NOT yet applied**; until it is, the flow degrades to absent (see the Gotcha), never broken |
+| `pr_schema_migrations` | **Which migrations this database has.** Nothing recorded it before, which is how this file spent a week asserting `reset_requested_at` was un-applied when it was live — a wrong belief about schema state sends a reader hunting a bug in correct code. `lib/migrations.js` holds the code's side (`MIGRATIONS`, id = filename without `.sql`); the table is the DB's side; Admin → Health shows them together. **READ-ONLY to the app** — a migration is a human action taken with approval, and an app that can record or perform its own schema changes changes production while nobody watches. **NOT yet applied** (`migrations/2026-08-07-pr-schema-migrations.sql`); it BACKFILLS on evidence (each pre-ledger entry is inserted only if its object actually exists), so applying it states what is true rather than assuming a clean slate. **Recording is order-independent**: a migration dated on or after the ledger inserts its OWN row (guarded on the ledger table existing, so applying it first cannot error) and the ledger's backfill also detects it — get only one of the two and Health reports it missing forever while the object it created sits right there. Pinned by `verify-ledgers`, which asserts both directions against the SQL text |
+| `pr_runs` | **Did the job actually RUN?** Every "did it run?" check on Health was an INFERENCE from an outcome, and "no new stories in 20h" is equally consistent with a quiet night, with every story being a duplicate (the 15-min poll writes nothing then), and with the cron never firing. One row per run: start, finish, status, duration, counts, first line of any error, and the `git_sha` that ran it. A row left `running` with a null `completed_at` is a run the **function timeout killed** — the one failure no outcome-based check can see, since it writes nothing and throws nothing. `job` is the plain name for the CRON and `<job>:manual` for anyone else (`runJob`), so an admin's diagnostic run cannot reset an overdue clock. **NOT yet applied** (`migrations/2026-08-07-pr-runs.sql`) |
+| `pr_users.reset_requested_at` | Forgot-password queue: set when someone taps "Forgot password?", cleared by EVERY path that sets a password, so the queue empties itself. **APPLIED — live-verified 7 Aug** (this file previously said "NOT yet applied"; the column and its partial index are both present). The code still degrades gracefully without it, and that fallback is still tested |
 
 RLS is ON with **no policies**: only the service-role key reads/writes; anon
 gets nothing. All queries live in `lib/db.js`.
@@ -128,9 +132,27 @@ gets nothing. All queries live in `lib/db.js`.
   on explicit user request; **ask before any schema/DDL change**.
 - **Zero build step, zero heavy runtime deps** (only `fast-xml-parser`;
   `playwright-core` is dev-only). Solve without adding libraries.
+  **`package-lock.json` is tracked** — it used to be gitignored, so every
+  install resolved the XML parser afresh and `npm audit` had nothing stable to
+  judge. Change a dependency ⇒ commit the lockfile in the same commit.
 - **Tokens in the Authorization header ONLY** — never `?t=` (deliberately
   purged; don't reintroduce). `RADAR_TOKEN`=viewer, `CRON_SECRET`=admin,
-  humans = Supabase JWT. The server has enforced this since Task 18, but four
+  humans = Supabase JWT.
+  **And the viewer token cannot OPERATE.** `/api/radar` and `/api/geo` each
+  carried their OWN inline `safeEqual` pair accepting either token, so the
+  SHARED read-only `RADAR_TOKEN` could fire a full ingest — thirty feed fetches,
+  a round of paid classifier calls, the daily brief to every subscriber, the
+  WhatsApp crisis numbers. Both now call **`requireOperator`** (`lib/auth.js`),
+  which is `requireRole(…, 'admin')` under a name that states the policy at the
+  call site. Read-only is judged by EFFECT: `?dry=1` stores nothing but still
+  spends, so it is gated too. **A manual radar/geo run therefore needs
+  `CRON_SECRET` or a signed-in admin session — `RADAR_TOKEN` answers 403.**
+  Human-triggered runs are audited as `radar.run`; the cron's are not (every 15
+  minutes, and `pr_state` already records what they delivered). Pinned by
+  `verify-token-privilege`, which asserts every principal × endpoint cell
+  INCLUDING the must-nots, that a refusal happens before any feed is fetched or
+  mail sent, that `RADAR_TOKEN` still READS `/api/stats` and `/api/items`, and
+  that no file in `api/` reads `process.env.RADAR_TOKEN` again. The server has enforced this since Task 18, but four
   pages kept a client-side `authURL()` appending `?t=` alongside a `const
   token=''` that made every branch dead — removed 3 Aug. `render-notoken` now
   reads every `public/*.html` and fails on `authURL(`, `const token =`, or a
@@ -148,14 +170,25 @@ gets nothing. All queries live in `lib/db.js`.
 
 ## Deploy flow
 
-- Develop on `claude/pr-radar-improvements-q2yxwr`. **"Merge" = push that
-  branch (preview) AND `main`** (production — auto-deploys via Vercel webhook,
-  ~1–2 min). A local `prradar/improvements` may linger from an older session;
-  it is not on the remote and nothing deploys from it.
-- **Other sessions push here too** — `claude/pr-radar-health-alerts-8dbe8c`
-  landed Admin → Health on `main` mid-session on 2 Aug. Fetch before pushing and
-  REBASE onto `origin/main` rather than forcing over it, then re-run the suite:
-  the merged tree is what ships, and neither half was tested against the other.
+**PR-based since the CI gate landed.** Feature branch → pull request → CI green
+→ merge to `main` → Vercel deploys production → verify the running SHA.
+
+- **Develop on a `claude/<topic>-<id>` branch.** Never push to `main` directly:
+  `main` deploys to production on push, with real users on the live board, so a
+  direct push is an unreviewed, untested production deploy. (Earlier sessions
+  did push both branch and `main`; that is what this flow replaces.)
+- **CI** (`.github/workflows/ci.yml`) runs on every PR and on pushes to `main`
+  and `claude/**`: `npm ci`, `node --check`, JSON validation, Chromium install,
+  `npm test` with **`CI=true`** — which makes a SKIPPED browser test a FAILED
+  run. Half the suite drives Chromium (every mobile-layout regression, the auth
+  UI, the CSP proof), and a green run that exercised none of them is worse than
+  a red one. Plus a runtime-only `npm audit` in a separate job, so a dev-only
+  advisory cannot block a correct change. Pinned by `verify-ci-gate`.
+- **CI running is not CI mattering.** Nothing in a repository forces a check to
+  pass or a change through a PR — that is branch protection, which lives in
+  GitHub settings and cannot be committed. The exact list is
+  **`docs/REPOSITORY_SETTINGS.md`**, flagged NOT VERIFIED until an owner ticks
+  it off. Do not claim protection is on without checking.
 - **A push to `main` is not proof of a deploy.** The webhook silently missed
   `9e3fcc7` (3 Aug): `git ls-remote` showed `main` at the new SHA, the BRANCH
   preview built, and no production build was ever created — so the live site
@@ -164,6 +197,21 @@ gets nothing. All queries live in `lib/db.js`.
   TWICE, once `target: null` (preview) and once `target: "production"`. One
   entry alone means it did not ship. Re-trigger with an empty commit pushed to
   `main` — Vercel needs a new SHA, so re-pushing the same one does nothing.
+  **The app now answers this itself**: `lib/build.js` reads Vercel's system env
+  vars and `Admin → Health` prints the RUNNING commit, so the check is
+  `git rev-parse origin/main` against a number on the page rather than a
+  dashboard reading. It is also the first check and rides the payload as
+  `build`. Nothing is fabricated — off Vercel it reads `unknown` (never amber:
+  that is every sandbox's normal state, and a permanently-amber check takes the
+  twelve beside it down with it), and a PREVIEW deployment WARNS, because
+  reading Health on a preview URL makes every other number describe the wrong
+  deployment. Deploy TIME is deliberately absent rather than approximated —
+  Vercel exposes none at runtime, and `instanceStartedAt` is the lambda's cold
+  start, labelled as such. Pinned by `verify-build-identity` + `render-health-tab`.
+- **Other sessions push here too.** Fetch before pushing and REBASE onto
+  `origin/main` rather than forcing over it, then re-run the suite: the merged
+  tree is what ships, and neither half was tested against the other. "Require
+  branches to be up to date" in the ruleset is the automated form of this.
 - Does NOT ship with a deploy: env vars (Vercel dashboard only), DB schema
   (manual SQL, ask first), OG images (committed PNGs; regenerate by script).
 
@@ -171,12 +219,12 @@ gets nothing. All queries live in `lib/db.js`.
 
 | Where | Fact |
 |---|---|
-| `schema.sql` | Missing `pr_users` + `pr_audit` (created ad-hoc in prod). Add them (idempotently) next time schema.sql is touched — with user approval |
+| `schema.sql` | **RESOLVED 7 Aug.** Was missing `pr_users`, `pr_audit`, `pr_alerts`, `pr_usage`, `pr_subscribers.whatsapp` and `pr_users.reset_requested_at` — a file that looked authoritative and could not rebuild a working database. Reconstructed from the LIVE catalogue (read-only `information_schema`/`pg_indexes`/`pg_constraint`), so it matches production exactly: note `pr_users.id`/`pr_audit.id` are IDENTITY columns, not bigserial, and `pr_users.role` carries a CHECK. All 11 `pr_*` tables now present, all RLS-on/no-policies. Pinned by `verify-schema-baseline`, which derives what must exist from what `lib/db.js` actually queries rather than a hand-kept list — so a new column used in code fails the commit that adds it |
 | Vercel env | `RADAR_TO` unset → the **team/admin** copy of the daily brief doesn't go out; the brief itself does, via the subscriber path, which never reads `RADAR_TO` (6 active subscribers, 5 Aug). Adding recipients is better done in Admin → Subscribers than here — the var needs a dashboard edit **and** a redeploy. Set **`OPS_ALERT_TO`** too, or the daily health push records its alert and reaches nobody (it falls back to `RADAR_TO`) |
 | `pr_state.daily_bulletin_sent` | RESOLVED — advancing daily since the 3 Aug run; read **05 Aug 05:00** on 5 Aug (live-verified). The ten-day freeze was the marker-stamping bug fixed 2 Aug (see the two-recipient-lists Gotcha). **A stale marker is not a missed send** — check Resend, not `pr_state` |
 | `pr_items` | **Cause found and fixed 2 Aug** — the bursts (100 parked in the 7 days to 2 Aug) were the classifier omitting items from an otherwise-valid reply, which parsed cleanly and so never retried; see the omission Gotcha. **73** burst-era rows still sit parked in the rolling 7d window (5 Aug; 0 parked in the last 24h — the fix holds) and keep the Health check red until they age out ~6 Aug or are cleared with Admin → Tools → "Re-classify parked stories" |
 | Meta | A **new WABA "PR Radar"** was created 3 Aug alongside the old *Test WhatsApp Business Account*; account status Approved, business verification still Unverified. **Templates do not transfer between accounts**, so `pr_urgent` must exist and be APPROVED on whichever WABA `WHATSAPP_PHONE_ID` belongs to. `#132001` cannot distinguish its three causes (unapproved / wrong language code / wrong account) — use **Admin → Tools → "Check account & template"** (`?view=whatsapp-check`), which asks Meta from production and names the fix. Set `WHATSAPP_WABA_ID` if the account can't be resolved from the phone number. The template body carries **TWO variables** — `{{1}}` the story, `{{2}}` the action — because a variable's VALUE cannot contain a newline, so the paragraph break has to live in the template. The send shape must match how they are declared: `WHATSAPP_TEMPLATE_VAR` is a CSV of the variable names in order (default `1,2` = positional; names like `story,action` send `parameter_name`). A mismatch fails as `#132001`, exactly like a missing template |
-| `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
+| `api/radar.js` comments | **RESOLVED 7 Aug.** Two comments justified the daily-send guard with "the 04:10 GitHub Actions backup". No such workflow has ever existed here — the guard is right, the reason given for it was fiction, and a reader chasing that cron would have found nothing. Both rewritten around the real second callers (the 15-min poll, a manual admin run). The repo now HAS a workflow, `.github/workflows/ci.yml`, and it runs tests only — it deploys nothing and calls no endpoint |
 
 ## Gotchas (each cost real debugging time)
 
@@ -304,6 +352,23 @@ gets nothing. All queries live in `lib/db.js`.
   with every checkable field green. `whatsapp-check` now says so itself.
   Registering a real business number is the only fix. Pinned by
   `render-whatsapp` + `verify-whatsapp-check`.
+  **Readiness is a FIVE-RUNG LADDER, not a boolean** (`whatsappReadiness`):
+  credentials → a real sender → an approved template → a cleared display name →
+  recipients. `whatsappConfigured()` answers rung ONE, and Admin read it as the
+  whole question — which is how "template APPROVED, display name cleared,
+  credentials set" read as healthy while every send failed on the +1 555 test
+  sender. Rungs 3 and 4 can only be answered by ASKING Meta, so without a probe
+  they report **unverified**, never fine. Rung 5 counts the **resolved** list
+  (`whatsappRecipientCount()` = env ∪ subscribers, and it THROWS rather than
+  under-reporting) — `whatsappStatus().recipients` is `WHATSAPP_TO` alone, and
+  in the documented normal setup that var is EMPTY because it needs a Vercel
+  edit and a redeploy, so counting it reported "nobody to page" for a channel
+  that would have paged five people. With no resolved count a populated
+  `WHATSAPP_TO` is a floor (ok); an empty one is **unknown**, never zero.
+  The check is never CRIT: WhatsApp is
+  the side channel, email is the one that must work, and a red page over a
+  secondary channel blocked for a week trains its reader to ignore red. Pinned
+  by `verify-readiness-checks`.
   The WhatsApp message LEADS with the same `urgentTier()` label as the email
   subject (URGENT / ALERT) — the template's header line is static text and
   cannot vary per message, so the tier has to live inside `{{1}}`.
@@ -359,11 +424,22 @@ gets nothing. All queries live in `lib/db.js`.
   **(3) The subscriber add must ASK FIRST** (`getSubscriberByEmail`) — see that
   Gotcha; an active row is left completely alone, a paused one gets a targeted
   `active:true` PATCH.
-  **(4) The starter-password floor is 6, not the 8 `/api/auth` enforces.** That
-  8 governs a password a person CHOOSES; applying it to the generated one would
-  rename it for every four-letter first name (`mona123` → `mona1234`) and break
-  the only thing the convention is for — an admin saying it without looking it
-  up. Only a 1–2 letter first name is topped up (`Ed` → `ed1234`).
+  **(4) The temporary password is RANDOM and derived from nothing.**
+  `generateTempPassword()` (`lib/auth.js`) — `crypto.randomBytes`, 30 characters
+  over a 32-symbol unambiguous alphabet in six hyphenated groups = **150 bits**.
+  It used to be a CONVENTION, `firstName + 123` (`Tamer Basha` → `tamer123`),
+  chosen so an admin could say it over the phone; the price was that a corporate
+  mailing list plus a public sign-in page made every colleague's account
+  guessable until they got round to changing it. Nothing in the value may come
+  from the name, email, role, id or the time of issue — a timestamped seed is
+  guessable by anyone who knows roughly when the account was made. The
+  readability lives in the FORMAT now (recovery-code shape), not the content.
+  The alphabet is 32 symbols so masking 5 bits per byte is UNIFORM; the admin
+  reset generator in `public/admin.html` was `v % 54` over 12 characters (~69
+  bits, and biased) and now matches the server exactly. Pinned by
+  `verify-user-provision` (25 provisions of the same person ⇒ 25 different
+  passwords; no `mona`/`said`/`admin`/`123` substring) + `render-adminui` (the
+  browser generator's shape, uniqueness and full-alphabet reach).
   Each step is reported separately (`credentials` / `subscriber` / `emailed` /
   `bccd`) because a provisioned account whose email bounced needs a human to pass
   the password on, and that must not read like a clean run. The admin's own BCC
@@ -393,10 +469,11 @@ gets nothing. All queries live in `lib/db.js`.
   reset, self-service change, first signup), so the queue empties itself rather
   than needing a "mark done" click; Dismiss is only for a request you decide not
   to action, and says out loud that the password is unchanged.
-  The column is OPTIONAL: `listUsers` asks for it and falls back without it (a
-  select naming a missing column 400s the WHOLE Users tab), and every helper
-  returns false/[]/null on failure — so the un-migrated state is a feature that
-  is absent, not a 500 on the sign-in screen. Pinned by
+  The column is now APPLIED in production (live-verified 7 Aug), but the
+  degradation stays and stays TESTED: `listUsers` asks for it and falls back
+  without it (a select naming a missing column 400s the WHOLE Users tab), and
+  every helper returns false/[]/null on failure — so a rebuilt or rolled-back
+  database is a feature that is absent, not a 500 on the sign-in screen. Pinned by
   `verify-password-reset` + `render-reset-ui`.
 - **A prompt cache is only worth ASKING for when a read can follow the write.**
   The classifier's ~5k-token system block is identical every call, so caching it
@@ -468,6 +545,40 @@ gets nothing. All queries live in `lib/db.js`.
   `render-leaderboard-mobile`. **Reports (`reports.html`) was measured over the
   same widths and is clean** — its `.row` of two `flex:1` action buttons shares
   the shortfall evenly and only grows taller below 360px; don't "fix" it.
+  **And the wrap fixed the FIT, not the LOAD** (7 Aug): eight equally-weighted
+  controls still asked a reader to scan all eight to find one. The four
+  lower-frequency admin actions (Pin, Hide, Useful, Not useful) moved into a
+  **••• More** menu, leaving five primary — Copy · 📸 · 🔔 · ••• · Open source.
+  📸 stays primary because a VIEWER uses it (their card is unchanged at three
+  controls — this must cost the majority of readers nothing); 🔔 stays because a
+  missed alert is the only time-critical thing on the card. The menu is
+  **anchored to the footer's right edge, not to the ••• button** — button-anchored
+  it overflows the card's left edge when ••• wraps to the start of a row. It
+  opens focused on its first item, walks with arrows, closes on Escape
+  (returning focus to the button — an Escape that strands you at the top of the
+  document is a menu you cannot leave), on an outside click, and on choosing an
+  item; `aria-expanded` moves WITH the panel; and the item LABEL flips with the
+  state (`Pin for the team` ↔ `Unpin`), because an item reading "Pin" while
+  already pinned is a lie. The whole menu is admin-gated by
+  `body:not([data-role="admin"])` — stricter than the old
+  `[data-role="viewer"]` rule, which showed those four for the moment before
+  `loadMe()` resolved. Pinned by `render-card-foot`.
+  Fixed alongside it: `vote()` cleared `aria-pressed` on EVERY `.fb` in the
+  card, so voting silently un-pressed the pin and hide buttons — the stored
+  value was untouched, so it came back on the next render and read as a
+  rendering glitch.
+  **`render-final-sweep` is the net under all of it**: every page × 320/360/390/
+  430/768/1280 × viewer AND admin, asserting no document pan, nothing rendered
+  narrower than its own content, no non-inline control under a usable tap
+  target, and no page error. It found three real ones on its first run — the
+  board's `?` guide link measured **9px wide** (`display:grid` with
+  `place-items:center` sizes to the glyph unless the box is told otherwise),
+  Trends' chart legend entries were 16px tall despite doubling as filter links,
+  and the Reports page's two `.back` links — the only way OFF that page — were
+  14px. Two measurement rules it had to learn: **`scrollWidth` is meaningless on
+  an SVG node** (own coordinate system — chart legibility is
+  `render-leaderboard-mobile`'s job), and an **`display:inline` link is
+  typography**, not a tap target.
   General rule for this whole family: a flex row of controls needs an explicit
   give — wrap, scroll, or a hidden child — and `flex:none` on anything whose
   size is part of its usability (touch targets, identity text). A row whose
@@ -489,6 +600,42 @@ gets nothing. All queries live in `lib/db.js`.
   they carry a `.back` to the board, and PR Radar pages are self-contained, so a
   third copy would be three places to drift. Pinned by `render-account-menu`
   (320/390/560/900px, viewer AND admin) + `render-authui`.
+- **The session lives in ONE file** (`public/assets/session.js`). "Read
+  `pr_session`, refresh against GoTrue, attach a Bearer header, retry once on
+  401" was pasted into SIX pages character-for-character, plus a seventh partial
+  copy in `login.html` (which CREATES the session the others read). Six places
+  for a security-relevant fix to land, and the failure is silent — five pages
+  get it, the sixth keeps the bug until someone opens it. Rules the module
+  holds: the token travels in the `Authorization` header and nowhere else,
+  `saveSession` is the single writer of `pr_session`, a 401 buys exactly ONE
+  refresh (unbounded would loop on a dead session), and nothing there logs.
+  **Residual security debt, recorded not hidden**: access + refresh tokens are
+  in localStorage, so any successful XSS reads them. The real fix is Secure
+  HttpOnly SameSite cookies, which needs a server-side session exchange (GoTrue
+  hands tokens to the BROWSER), CSRF on every mutating endpoint, and a rewritten
+  refresh path — a half-migration would be worse than either end state. This
+  extraction is the preparation: one implementation to change instead of seven.
+  It is also what makes dropping `'unsafe-inline'` from the CSP reachable.
+  A page must not redefine any of it — `var` in the module and `let` in a page
+  is a hard SyntaxError that kills the whole inline block. Browser test servers
+  must serve `.js` as `text/javascript`; a shared module arriving as `text/html`
+  leaves the page with no `afetch` at all and it still renders. Pinned by
+  `render-session-shared`.
+- **An icon is not a name, and `title` is not an accessible one.** The card
+  footer offered 📸 🔔 📌 🙈 ▲ ▼ and the admin rows ✎ ✕ with the meaning only in
+  a tooltip — which a screen reader does not reliably announce and a touch user
+  can never see, so six of an admin's eight card controls were unlabelled. Rule:
+  **a control whose visible text contains no letters (Latin or Arabic) needs an
+  `aria-label`**, and a toggle needs `aria-pressed` beside it so it announces
+  its STATE as well as its name. Every region that reports the result of an
+  action (`.formmsg`, `#msg`, `#uOut`, the board's `#status`) is
+  `role="status" aria-live="polite"` — **polite deliberately**: each message
+  follows a submit the reader is already waiting on, and assertive would
+  interrupt mid-sentence, which is how announcements get turned off. Nothing in
+  this app is urgent enough for `role="alert"`. Pinned by `render-a11y`, which
+  scans EVERY page (so a new one cannot skip it), rejects a label under four
+  characters or one that says "button", and checks the computed names, the
+  post-click state and keyboard reachability in a real browser.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
@@ -496,6 +643,95 @@ gets nothing. All queries live in `lib/db.js`.
   arbitrary hosts) and has no production secrets. Verify via Supabase/Vercel/
   Resend MCPs, or ship an admin diagnostic (pattern: Tools → "Verify
   verdicts") and let production prove it.
+- **The browser security posture lives in `vercel.json` and nowhere else** —
+  no framework, no middleware, so it is invisible in code review and silently
+  deletable. **CSP**: `default-src 'self'`, `base-uri 'none'` (a `<base>`
+  silently repoints every relative URL including `/api/*`), `object-src 'none'`,
+  `frame-ancestors 'none'`, `frame-src 'none'`, `form-action 'self'` (the
+  sign-in form posts passwords), `img-src 'self' data: blob:`, `connect-src
+  'self' https://*.supabase.co`. Two allowances are load-bearing and easy to
+  break by "tightening": **`blob:` in img-src** — the card snapshot previews a
+  canvas as `<img src="blob:…">`, and without it the sheet shows a broken image
+  with nothing in the console; **`https://*.supabase.co` in connect-src** —
+  every page's `refreshSession()` POSTs to `${supabaseUrl}/auth/v1/token`, so
+  dropping it signs every user out the moment their access token expires. The
+  wildcard is the PROVIDER, never the project ref (tracked-file rule).
+  **`script-src`/`style-src` keep `'unsafe-inline'` ON PURPOSE, and that is the
+  remaining weakness**: pages are self-contained by design, the board and admin
+  carry ~55 inline `onclick` attributes, and the PDF export opens a `blob:`
+  document that INHERITS this policy and prints from an inline handler.
+  Removing it means de-inlining all of that FIRST — declaring it before then
+  ships a blank board. `'unsafe-eval'` is refused outright.
+  **`upgrade-insecure-requests` is deliberately absent**: it rewrites outgoing
+  navigations, and the http-only Egyptian outlet links `safe-url.js` keeps on
+  purpose would break. **HSTS** is a year + includeSubDomains, **without
+  `preload`** — preload is effectively irreversible and binds the registrable
+  domain, which is the owner's call. Plus COOP `same-origin`.
+  Pinned two ways, and both are needed: `verify-security-headers` asserts every
+  directive AND that the pages fit it (no remote subresource, no `<base>`, no
+  `eval`), and `render-csp` SERVES the real header and loads all eight pages in
+  a browser, failing on any violation — a directive one token too narrow
+  produces a page that renders and then quietly does nothing.
+- **An `href` is a destination, and `esc()` does not vet one** (`lib/safe-url.js`).
+  Article URLs are third-party all the way down — a feed supplies them,
+  `resolveUrl` rewrites them from whatever Google News returns, they are stored,
+  and they reach the board's `href`, five email templates, a webhook, a Word
+  export and **`/api/go`'s `Location:` header on a PUBLIC endpoint**. Nothing
+  checked the SCHEME. `esc()` was everywhere and is the wrong tool: `javascript:`
+  contains no character HTML-escaping touches, and a `Location` header is not
+  escaped at all. `safeExternalUrl` / `firstSafeUrl` are the one rule — a CLOSED
+  allowlist of `https:`/`http:` (http kept deliberately: Egyptian outlets still
+  serve it, and refusing would blank real cards to buy nothing), plus refusals
+  for control characters (`java\tscript:`), protocol-relative `//host`,
+  hostless URLs, over-length values, and **embedded credentials**
+  (`https://vodafone.com.eg@evil.example/` reads as Vodafone and goes to
+  evil.example). Applied at ingest (`fetchFeed` drops an item with no usable
+  link), after `resolveUrl`, in `setResolvedUrl`, in every renderer, and in
+  `/api/go` — where the cached `resolved_url` is **re-validated on every read**,
+  never trusted because it was validated once on write, and a row with no usable
+  link answers **502** rather than redirecting somewhere unvetted. `public/index.html`
+  carries a browser MIRROR (`safeUrl`) because the board builds its own hrefs;
+  `render-safe-url` asserts both sides against the SAME 29-case table, so the
+  two cannot drift the way the server and the board already had. It also fails
+  any `target="_blank"` without `rel="noopener noreferrer"`.
+- **Feed text is DATA, and all five LLM passes are told so** (`lib/prompt-safety.js`).
+  Headlines, excerpts, outlet names, scraped article pages and another AI's
+  answer about Vodafone all arrive from outside and go straight into a prompt.
+  The structural position was already good and must stay that way: **no pass
+  defines a tool, none takes an action, and every output is validated** (verdicts
+  map onto a fixed key set; narrative ids are checked against the ids that went
+  in). So the realistic harm is a WRONG VERDICT — a hostile story marking itself
+  irrelevant so it never reaches the board, or the other 24 items in its batch
+  mis-screened. Two defences: the shared `UNTRUSTED_DATA_RULES` block in every
+  system prompt, and — the one that actually holds — source text FENCED in
+  `<source_text>` with each field `neutralize()`d so it cannot CLOSE the fence.
+  Same lesson as the bylines: an instruction is necessary and never sufficient;
+  the deterministic guard is what works. `neutralize` is deliberately narrow —
+  it rewrites only that tag pair and strips control characters, because feed
+  text legitimately carries `<b>`, quotes and «guillemets» and mangling those
+  would corrupt the headline the board displays. The attempt is **kept
+  readable**: it is a fact about the item, so hiding it would make a hostile
+  source invisible rather than harmless. The five passes are `classify`,
+  `dedupe-semantic`, `narratives`, `author` and **`geo`** — the last was found
+  by the test's source scan, not by reading, which is why the scan fails any new
+  `api.anthropic.com` call site that skips the module. Pinned by
+  `verify-prompt-injection`.
+- **Feed XML is hostile input, and there is ONE parser** (`lib/xml.js`).
+  `api/radar.js` and `api/admin.js` each built their own `XMLParser` with
+  duplicated options, so hardening one left the other reading third-party XML
+  under the old rules; `verify-xml-hardening` now fails any file outside
+  `lib/xml.js` that imports `fast-xml-parser`. Three guards, each for a real
+  way a feed can hurt a 60s function: **size** — `readCapped` streams and
+  cancels past 4 MB, because `await res.text()` buffers whatever the server
+  sends and 30 feeds are fetched in parallel, so one unbounded body is an OOM
+  for the whole run; **entity declarations** — a DOCTYPE containing `<!ENTITY`
+  is refused unparsed (billion-laughs / XXE), scanning ONLY the doctype so an
+  article about XML with `<!ENTITY` in its CDATA is not killed; **one option
+  set**. A refusal throws, and `fetchFeed`'s existing catch records it as a
+  failed feed exactly like an http 500 — a hostile feed goes dark, not the run.
+  `processEntities` stays ON deliberately: named/numeric entities are what real
+  feeds carry, and `decodeEntities` in `api/radar.js` only ever handled Google
+  News' *second* layer of encoding on top.
 - **Never add a feed URL unprobed.** A 404 fails silently and the radar looks
   calm while blind. Candidates live in `lib/feed-candidates.js`; Admin → Tools
   → "Probe feeds" verifies them FROM PRODUCTION (the sandbox has no egress to
@@ -609,9 +845,32 @@ gets nothing. All queries live in `lib/db.js`.
 - **Inline styles sit inside `style="…"`** — never use double quotes within a
   declaration (a `"Segoe UI"` in the font stack truncated every property after
   it and silently killed colours). Single quotes only; the test guards it.
-- **Narratives are two-stage** (`lib/narratives.js`): a deterministic token
-  pre-pass, then an LLM pass (Haiku, `NARRATIVE_MODEL`) that re-groups and
-  writes the English title. Stage 2 is fail-soft and optional — no
+- **Narratives are two-stage AND two REQUESTS** (`lib/narratives.js`): a
+  deterministic token pre-pass, then an LLM pass (Haiku, `NARRATIVE_MODEL`) that
+  re-groups and writes the English title.
+  **The LLM pass is OFF the Trends load path.** `/api/stats` used to `await
+  buildNarratives()` inline, so on a cold request every chart on the screen —
+  share of voice, sentiment, categories, both leaderboards, the KPI row — waited
+  on a 12-second ceiling for ONE card: the whole screen was as slow as its
+  slowest optional part. Now `/api/stats` returns the deterministic clustering
+  (`{ ai: false }` — stage 1 runs either way, so it is free) and the card is
+  populated on FIRST PAINT; `stats.html` then fetches
+  **`/api/stats?view=narratives`** and swaps in the better grouping, marking the
+  card "refining…" meanwhile. `narrativesPending` is false with no
+  `ANTHROPIC_API_KEY`, so a deployment without one never fires a request that
+  can only return what it already has. A stale answer is dropped by sequence
+  number (`narrSeq`), which is bumped on **every** load and not only where a
+  replacement request is sent — gating the bump on `narrativesPending` left it
+  untouched when the reader switched to a window with nothing to refine, so the
+  30-day answer still in flight matched, passed the guard and painted 30-day
+  narratives onto a 7-day board. A FAILED upgrade renders **no error state at
+  all** — nothing is missing, only un-upgraded — while an **EMPTY** one is
+  applied: `[]` is the model's verdict that none of the clusters is really one
+  story, and keeping stage 1 there would leave on screen exactly the false
+  grouping stage 2 exists to reject. Pinned by `render-narratives-async`, which asserts zero Anthropic
+  calls from `/api/stats` with the key CONFIGURED (so it cannot pass for the
+  wrong reason on a keyless machine) and that ids/idsTotal/`NARR_IDS_MAX`
+  survive the split. Stage 2 is fail-soft and optional — no
   `ANTHROPIC_API_KEY`, a timeout (12s), a malformed reply or an id it invented
   and stage 1's answer stands, so the section always renders. Model output is
   untrusted: ids are validated against the input, duplicates and <2-story groups
@@ -635,6 +894,26 @@ gets nothing. All queries live in `lib/db.js`.
   along as `&n=` so the board banner reads "top N of M" instead of under-
   reporting. Pinned by `render-narrative-cluster` + `render-deeplink`.
   General rule: a cap that changes what the user sees must be visible in the UI.
+- **Trends opens with "So what?", and every line is DERIVED ARITHMETIC.** A
+  chart answers "what does the shape look like", which is the second question;
+  the first is "what changed, and who do I talk to", and a PR reader was
+  deriving it by eye from five cards each morning. `execInsights()`
+  (`stats.html`) computes up to five findings from the SAME arrays the charts
+  render — Vodafone-negative movement half-window over half-window, a rival
+  gaining share, the category carrying the most criticism, the outlet and
+  byline driving it, and how many narratives are still rising. **No request and
+  no model**: a second aggregation could disagree with the card underneath, and
+  an LLM headline is exactly the thing that must not be guessed here. Four
+  honesty bars, all asserted: a comparison needs **two days a side** (or there
+  is no previous period), the two halves must be **the same length** (an odd
+  window — the 7-day "Week" chip is the one the team lives in — otherwise gives
+  the current half four days against three and labels both "3 days", so a steady
+  week prints as a rise; the unmatched middle day is dropped instead), a
+  percentage needs a **non-zero baseline** (a rise
+  from nothing prints counts and no `%`), and an outlet or byline needs
+  **≥2 Vodafone-negatives** (one negative is an article, not a stance). When
+  nothing clears the bars it SAYS SO — a strip that always finds five things is
+  one nobody believes by the second week. Pinned by `render-exec-strip`.
 - **Trends exports are PER CARD** (⤓ XLS / ⤓ PDF next to each card's ⊞ Table),
   never a page-wide bar — you export the section you are looking at, and the
   filename is named after it. `sectionsFor(cardId)` maps a card's DOM id to its
@@ -769,6 +1048,34 @@ gets nothing. All queries live in `lib/db.js`.
   because ~42% of relevant cards have no author and never will — Egyptian wire
   and desk copy is unsigned, so a raw count is meaningless.
   Pinned by `verify-health-checks` + `render-health-tab`.
+- **A ledger must never be able to fail the job it watches** (`lib/runs.js`).
+  A monitoring table that can take down the ingest it monitors is a worse bug
+  than the blindness it was added to fix — so every function there swallows
+  everything, and the caller cannot tell "recorded" from "not recorded". There
+  is deliberately **no try/catch around the radar pipeline**: a run that throws,
+  or is killed at the 60s function cap, leaves its row `running`, and the
+  stalled-run check reports that. A catch would record the throw and MISS the
+  timeout, which is the failure this app is actually near. `?dry=1`/`?debug=1`
+  are not recorded — they are diagnostics, and they would pollute the one
+  question the ledger exists to answer. Both ledgers degrade to **`unknown`**,
+  never to an alarm: "the table is absent" and "nothing ran" are opposite facts,
+  and guessing the alarming one puts the page permanently red on the very
+  database it should reassure you about.
+  Two things the overdue clock gets wrong if you build it the obvious way.
+  **It cannot read a windowed query**: "what ran lately" (`recentRuns`, 9 days)
+  is the wrong question for "when did X last run", because a job dead longer
+  than the window has no row in it, reads as never-recorded, and is SKIPPED —
+  so the outage cures itself and a cron stopped for a fortnight goes quiet
+  instead of red. `latestRuns(jobs)` is a separate, horizon-free
+  `limit=1`-per-job read (indexed; the 15-min poll writes 96 rows a day, so any
+  row cap is minutes of urgent runs), and it is what seeds the clock.
+  **And a MANUAL run is not the schedule.** Every one of these endpoints is
+  `requireOperator`-gated, which admits signed-in admins — so one interactive
+  `/api/geo` click wrote the same `geo` key and reset an eight-day overdue
+  clock. `runJob(job, who)` files anything but the cron's own service principal
+  under **`<job>:manual`**, which the clock ignores and the completion check
+  still reads, so a manual run that stalls is still reported. Pinned by
+  `verify-ledgers`.
 - **A parked story is invisible everywhere except Admin → Health.** When the
   classifier returns no verdict, `classify.js` stores the item
   `category:'unclassified', confidence:0, summary:null, is_relevant:false` —
@@ -842,8 +1149,12 @@ never once been sufficient.
   it should answer "Request sent", put a row in Admin → Requests and mail
   `ADMIN_EMAILS`. Before the migration is applied it answers the same and
   records nothing, which is the designed degradation, not a failure.
-7. **Admin → Health** — 12 live checks + 14-day alert history, computed on
-  open. Five answer "did it run?" (brief freshness vs stories waiting, ingest
+7. **Admin → Health** — up to 18 live checks + 14-day alert history, computed
+  on open. The first three answer "what am I even looking at": the **deployed
+  build** (running commit vs `origin/main`), the **schema migrations** this
+  database has, and whether the **scheduled jobs actually ran** (recorded, not
+  inferred — plus a completion check that catches a run killed by the function
+  timeout). Five answer "did it run?" by outcome" (brief freshness vs stories waiting, ingest
   volume, parked stories, recipients, dead feeds). Seven answer harder
   questions: **screening quality** (7d relevance rate vs the prior 3 weeks),
   **byline backfill** (share, not count), **weekly report** (reads `off`, not

@@ -31,7 +31,10 @@ const server = createServer((req, res) => {
     }
   }
   const f = u.pathname === '/' ? '/index.html' : (u.pathname === '/login' ? '/login.html' : (u.pathname === '/account' ? '/account.html' : u.pathname));
-  try { const b = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(b); } catch { res.writeHead(404); res.end('nf'); }
+  try { const b = readFileSync(DIR + f);
+    // /assets/session.js is a real script now — serve it as one. A page whose
+    // shared session module arrives as text/html has no afetch at all.
+    res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' }); res.end(b); } catch { res.writeHead(404); res.end('nf'); }
 });
 await new Promise((r) => server.listen(8903, r));
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -60,10 +63,15 @@ const errs = [];
   await page.click('#acctBtn');
   assert.ok(await page.$eval('#account .who .em', el => /viewer@vodafone/.test(el.textContent) && el.getBoundingClientRect().width > 0),
     'the account menu shows which account you are signed into');
-  const pinShown = await page.$eval('#item-1 .fb.pin', el => getComputedStyle(el).display !== 'none').catch(() => true);
-  assert.strictEqual(pinShown, false, 'viewer: pin control is hidden');
-  const upShown = await page.$eval('#item-1 .fb.up', el => getComputedStyle(el).display !== 'none').catch(() => true);
-  assert.strictEqual(upShown, false, 'viewer: vote control is hidden');
+  // Pin / hide / useful / not-useful moved into the ••• More menu, and the
+  // whole menu is admin-only — so for a viewer the question is whether the
+  // MENU is reachable, not whether four individual buttons are.
+  const moreShown = await page.$eval('#item-1 .more', el => getComputedStyle(el).display !== 'none').catch(() => false);
+  assert.strictEqual(moreShown, false, 'viewer: the ••• admin menu is hidden');
+  const pinShown = await page.$eval('#item-1 .mitem.pin', el => el.offsetParent !== null).catch(() => false);
+  assert.strictEqual(pinShown, false, 'viewer: the pin action is not reachable');
+  const upShown = await page.$eval('#item-1 .mitem.up', el => el.offsetParent !== null).catch(() => false);
+  assert.strictEqual(upShown, false, 'viewer: the vote actions are not reachable');
   // copy-brief (read-only) stays available
   assert.ok(await page.$('#item-1 .btn.copy'), 'viewer keeps read-only copy brief');
   // viewer sees NO admin link, but does see the change-password link
@@ -83,8 +91,15 @@ const errs = [];
   await page.goto('http://localhost:8903/', { waitUntil: 'networkidle' });
   await page.waitForSelector('.card', { timeout: 4000 });
   assert.strictEqual(await page.getAttribute('body', 'data-role'), 'admin', 'body tagged admin');
-  const pinShown = await page.$eval('#item-1 .fb.pin', el => getComputedStyle(el).display !== 'none');
-  assert.ok(pinShown, 'admin: pin control visible');
+  // The admin's write controls live behind ••• More now. Visible MENU, and the
+  // pin reachable inside it — checking only the button would pass on a menu
+  // that opens onto nothing.
+  const moreShown = await page.$eval('#item-1 .more', el => getComputedStyle(el).display !== 'none');
+  assert.ok(moreShown, 'admin: the ••• menu is available');
+  await page.click('#item-1 .morebtn');
+  assert.ok(await page.$eval('#item-1 .mitem.pin', el => el.offsetParent !== null),
+    'admin: the pin action is reachable inside it');
+  await page.keyboard.press('Escape');
   assert.ok(await page.$('#account a[href="/admin"]'), 'admin: admin-panel link is present');
   await page.close();
 }
