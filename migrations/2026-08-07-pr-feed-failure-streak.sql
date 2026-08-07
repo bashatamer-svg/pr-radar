@@ -51,3 +51,21 @@ $$;
 
 comment on function pr_bump_feed_failure(text, text) is
   'Atomically increment pr_feed_health.fail_streak for one feed and record its error. Single INSERT..ON CONFLICT statement, so concurrent radar runs cannot lose an increment. Never touches last_ok_at.';
+
+-- RECORD THIS MIGRATION IN THE LEDGER, if the ledger exists yet.
+--
+-- Order-independent on purpose: 2026-08-07-pr-schema-migrations.sql detects
+-- this function and backfills a row for this file, so applying that one FIRST
+-- covers this one. Applying them the other way round left nothing to write the
+-- row — and Health would then report this migration permanently missing while
+-- the function sat right there. The guard means neither order is wrong and
+-- neither errors; whichever runs second fills the gap.
+do $$
+begin
+  if exists (select 1 from information_schema.tables
+             where table_schema = 'public' and table_name = 'pr_schema_migrations') then
+    insert into pr_schema_migrations (id, note)
+    values ('2026-08-07-pr-feed-failure-streak', 'recorded by the migration itself')
+    on conflict (id) do nothing;
+  end if;
+end $$;

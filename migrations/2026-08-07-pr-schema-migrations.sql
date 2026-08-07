@@ -82,6 +82,29 @@ begin
     values ('2026-08-06-pr-users-reset-requested-at', 'backfilled: pr_users.reset_requested_at exists')
     on conflict (id) do nothing;
   end if;
+
+  -- Its two COMPANIONS, shipped in the same change as this file. Each also
+  -- records itself (guarded on this table existing), so the pair is
+  -- order-independent: apply this one first and these two branches record them
+  -- when they land; apply them first and these branches record them now.
+  -- Detecting only the four older migrations left Health reporting both as
+  -- permanently missing whichever way round they were applied.
+
+  -- 2026-08-07-pr-runs.sql — created table pr_runs
+  if exists (select 1 from information_schema.tables
+             where table_schema = 'public' and table_name = 'pr_runs') then
+    insert into pr_schema_migrations (id, note)
+    values ('2026-08-07-pr-runs', 'backfilled: pr_runs exists')
+    on conflict (id) do nothing;
+  end if;
+
+  -- 2026-08-07-pr-feed-failure-streak.sql — created function pr_bump_feed_failure
+  if exists (select 1 from information_schema.routines
+             where routine_schema = 'public' and routine_name = 'pr_bump_feed_failure') then
+    insert into pr_schema_migrations (id, note)
+    values ('2026-08-07-pr-feed-failure-streak', 'backfilled: pr_bump_feed_failure() exists')
+    on conflict (id) do nothing;
+  end if;
 end $$;
 
 -- And record this migration itself.

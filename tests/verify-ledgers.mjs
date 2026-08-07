@@ -43,6 +43,39 @@ const { runChecks, startRun, JOBS, runJob } = await import('../lib/runs.js');
     'every migration is optional — the code fails soft to "feature absent" for all of them');
 }
 
+// A migration that never writes its own row is one Health reports as missing
+// FOREVER, while the object it created sits right there in the database — the
+// exact wrong-belief-about-schema-state this ledger was built to end, just
+// inverted. Two files shipped alongside the ledger did precisely that: the
+// backfill knew about the four migrations that predate it and about itself,
+// and nothing wrote a row for pr_runs or pr_bump_feed_failure in either order
+// of application.
+//
+// So the invariant is ORDER-INDEPENDENCE, asserted against the SQL text: a
+// migration dated on or after the ledger records itself (guarded on the ledger
+// table existing, so applying it first cannot error), AND the ledger's backfill
+// detects it (so applying the ledger second still fills the gap).
+{
+  const dir = root + 'migrations';
+  const LEDGER = '2026-08-07-pr-schema-migrations';
+  const sql = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith('.sql'))
+    .map((f) => [f.replace(/\.sql$/, ''), readFileSync(`${dir}/${f}`, 'utf8')]));
+  const dateOf = (id) => id.slice(0, 10);
+  const records = (text, id) => text.includes(`values ('${id}'`);
+
+  for (const id of Object.keys(sql)) {
+    assert.ok(records(sql[LEDGER], id) || records(sql[id], id),
+      `${id} is never inserted into pr_schema_migrations by any file — Health would report it missing forever`);
+    if (id === LEDGER || dateOf(id) < dateOf(LEDGER)) continue;   // pre-ledger: backfill only
+    assert.ok(records(sql[id], id),
+      `${id} must record itself — applied AFTER the ledger, nothing else would ever write its row`);
+    assert.ok(records(sql[LEDGER], id),
+      `the ledger backfill must detect ${id} — applied BEFORE the ledger, nothing else would ever write its row`);
+    assert.match(sql[id], /if exists \(select 1 from information_schema\.tables\s+where table_schema = 'public' and table_name = 'pr_schema_migrations'\)/,
+      `${id}'s self-record must be guarded on the ledger table existing, or applying it first errors`);
+  }
+}
+
 const mockDb = (handler) => { globalThis.fetch = handler; };
 const rows = (v) => ({ ok: true, status: 200, text: async () => JSON.stringify(v) });
 const gone = () => ({ ok: false, status: 404, text: async () => 'relation "pr_schema_migrations" does not exist' });
@@ -334,4 +367,4 @@ for (const f of ['2026-08-07-pr-schema-migrations.sql', '2026-08-07-pr-runs.sql'
   }
 }
 
-console.log('LEDGERS OK — migration state and run state are both READ-ONLY to the app and both degrade to "unavailable" rather than to an alarm; a stopped cron is distinguished from a quiet night, a killed run from a slow one; the ledger cannot fail the job it watches; the SQL is idempotent, RLS-on, touches no radar_* object, and backfills only on evidence');
+console.log('LEDGERS OK — migration state and run state are both READ-ONLY to the app and both degrade to "unavailable" rather than to an alarm; every migration records itself whichever order it is applied in; a stopped cron is distinguished from a quiet night — including one dead longer than the query window, and without a manual run resetting its clock — and a killed run from a slow one; the ledger cannot fail the job it watches; the SQL is idempotent, RLS-on, touches no radar_* object, and backfills only on evidence');

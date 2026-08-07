@@ -71,3 +71,21 @@ comment on table pr_runs is
 -- RLS on, no policies: the service-role key (used by api/*.js) bypasses RLS;
 -- the anon/public PostgREST role gets zero rows. Matches every other pr_ table.
 alter table pr_runs enable row level security;
+
+-- RECORD THIS MIGRATION IN THE LEDGER, if the ledger exists yet.
+--
+-- Order-independent on purpose: 2026-08-07-pr-schema-migrations.sql detects
+-- pr_runs and backfills a row for this file, so applying that one FIRST covers
+-- this one. Applying them the other way round left nothing to write the row —
+-- and Health would then report this migration permanently missing while its
+-- table sat right there. The guard means neither order is wrong and neither
+-- errors; whichever runs second fills the gap.
+do $$
+begin
+  if exists (select 1 from information_schema.tables
+             where table_schema = 'public' and table_name = 'pr_schema_migrations') then
+    insert into pr_schema_migrations (id, note)
+    values ('2026-08-07-pr-runs', 'recorded by the migration itself')
+    on conflict (id) do nothing;
+  end if;
+end $$;
