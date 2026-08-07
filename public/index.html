@@ -425,6 +425,26 @@
 <script>
 const $ = (s, r=document) => r.querySelector(s);
 const esc = (s) => String(s==null?'':s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+// Browser mirror of lib/safe-url.js — see the rule and the reasoning there.
+// esc() is NOT a substitute: `javascript:alert(1)` contains no character that
+// HTML-escaping touches, so an escaped hostile URL is still a working
+// javascript: href. Every href built from stored article data goes through this
+// and renders as plain text when it comes back null.
+// Kept in sync by render-safe-url (which asserts both sides agree on the same
+// table of cases).
+const SAFE_SCHEMES = ['https:','http:'];
+function safeUrl(v){
+  if(typeof v!=='string') return null;
+  const raw=v.trim();
+  if(!raw||raw.length>2048) return null;
+  if(/[\u0000-\u001f\u007f-\u009f]/.test(raw)) return null;   // "java\tscript:" and friends
+  if(raw.startsWith('//')) return null;                        // protocol-relative
+  let u; try{ u=new URL(raw); }catch(e){ return null; }
+  if(!SAFE_SCHEMES.includes(u.protocol)) return null;
+  if(!u.hostname) return null;
+  if(u.username||u.password) return null;                      // https://vodafone.com.eg@evil/
+  return u.href;
+}
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const params = new URLSearchParams(location.search);
@@ -634,7 +654,7 @@ function uniqOutlets(insts){
   return [...by.values()];
 }
 const spreadOf = it => uniqOutlets(it.instances).length;
-const linkOf = it => it.resolved_url || it.url || (it.id?`/api/go?id=${it.id}`:'#');
+const linkOf = it => safeUrl(it.resolved_url) || safeUrl(it.url) || (it.id?`/api/go?id=${it.id}`:'#');
 // Critical (red ring / "needs eyes") is a Vodafone-action signal — a competitor's
 // negative story is market intel, not our crisis, so it never trips crit.
 const isCrit = it => sentOf(it)==='negative' && it.brand==='Vodafone' && (it.importance||0)>=4;
@@ -729,7 +749,7 @@ function angleHtml(text){
 }
 function coverageHtml(insts){
   const list=uniqOutlets(insts); if(list.length<2) return '';
-  const rows=list.slice(0,16).map(x=>{ const name=esc(x.outlet||'—'); const link=x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${name}</a>`:`<span style="font-weight:600">${name}</span>`; const by=x.author?` <span class="au">· ${esc(x.author)}</span>`:''; return `<div class="row">${link}${by}</div>`; }).join('');
+  const rows=list.slice(0,16).map(x=>{ const name=esc(x.outlet||'—'); const u=safeUrl(x.url); const link=u?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${name}</a>`:`<span style="font-weight:600">${name}</span>`; const by=x.author?` <span class="au">· ${esc(x.author)}</span>`:''; return `<div class="row">${link}${by}</div>`; }).join('');
   const more=list.length>16?`<div class="row au">+${list.length-16} more outlets</div>`:'';
   return `<details class="cov"><summary>📰 Coverage · ${list.length} outlets<span class="chev">›</span></summary><div class="rows">${rows}${more}</div></details>`;
 }
@@ -741,7 +761,8 @@ function cardHtml(it){
   const spreadBadge=spread>1?`<span class="spread ${sent==='negative'&&spread>=4?'hot':''}" title="${spread} outlets ran this">◱ ${spread} outlets</span>`:'';
   const cat=it.category?`<span class="cat">${esc(String(it.category).replace(/_/g,' '))}</span>`:'';
   const age=ageLabel(it); const ageEl=age?`<span class="age">${esc(age)}</span>`:'';
-  const href=it.id?`/api/go?id=${it.id}`:(it.url||'#');
+  // /api/go re-validates server-side; the direct fallback is validated here.
+  const href=it.id?`/api/go?id=${it.id}`:(safeUrl(it.url)||'#');
   // Attribution is never blank: a person byline when we have one, else the
   // publication's newsroom (unbylined copy is desk-written — that IS the author).
   // DISPLAY-ONLY fallback: nothing is written to the DB, so the journalist
@@ -757,7 +778,7 @@ function cardHtml(it){
   return `<article class="card ${sent}${crit?' crit':''}${pinned?' pinned':''}${hidden?' hidden':''}" id="item-${it.id}">
     <div class="c-top"><div class="metas">${brand}${spreadBadge}${cat}${ageEl}${confPip(it)}${pinMark}</div>
       <div class="dots" title="Impact ${it.importance||1} of 5 — how much this matters to us: how directly it hits Vodafone, and how far it travelled"><span class="dlab">Impact</span>${dots(it.importance)}</div></div>
-    <h3 class="headline"><a href="${esc(href)}" target="_blank" rel="noopener">${esc(it.headline)}</a></h3>
+    <h3 class="headline"><a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(it.headline)}</a></h3>
     <div class="subrow"><span class="sent ${sent}" title="${SENT_TIP}">${sentLabel(it)}</span>${by}${dueEl}</div>
     ${it.summary?`<p class="summary">${esc(it.summary)}</p>`:''}
     ${angleHtml(it.pr_angle)}
@@ -770,7 +791,7 @@ function cardHtml(it){
       <button class="fb hide" aria-pressed="${hidden}" title="Hide from the team view" onclick="togglePin(${it.id},'hide',this)">🙈</button>
       <button class="fb up" aria-pressed="${fb===1}" title="Useful" onclick="vote(${it.id},1,this)">▲</button>
       <button class="fb down" aria-pressed="${fb===-1}" title="Not useful" onclick="vote(${it.id},-1,this)">▼</button>
-      <a class="btn open" href="${esc(href)}" target="_blank" rel="noopener">Open source ↗</a>
+      <a class="btn open" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>
     </div></article>`;
 }
 

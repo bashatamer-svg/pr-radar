@@ -12,6 +12,7 @@ import { detectSurges, renderSurgeEmail } from '../lib/surge.js';
 import { renderBulletin, renderUrgent, sendBulletin, isInstantAlert, urgentTier } from '../lib/email.js';
 import { authorFromEntry, fetchAuthor, cleanAuthor, resetAuthorAiBudget } from '../lib/author.js';
 import { resolveUrl, isGoogleNews, isNonArticlePage } from '../lib/resolve.js';
+import { safeExternalUrl } from '../lib/safe-url.js';
 import { requireOperator, auditReq } from '../lib/auth.js';
 
 export const config = { maxDuration: 60 };
@@ -223,7 +224,12 @@ async function fetchFeed(feed) {
         source: dash > 20 ? title.slice(dash + 3) : feed.id,
         author: authorFromEntry(e),          // RSS byline (<dc:creator>/<author>) when present, else null
         snippet: snippetOf(e),
-        url: String(link),
+        // The FIRST gate on a third-party URL: normalised here, or the item is
+        // dropped below. Everything downstream — the stored row, the board's
+        // href, five email templates, /api/go's Location header — inherits
+        // whatever this accepts, so a scheme nobody vetted must not get past
+        // the feed reader.
+        url: safeExternalUrl(link),
         published_at: safeIso(pub),
         tier: feed.tier,
         brand: feed.brand ?? null,           // brand the feed targets; the classifier can override
@@ -233,7 +239,9 @@ async function fetchFeed(feed) {
     });
 
     await recordFeedHealth(feed.id, true);
-    return items.filter((i) => i.headline.length > 15);
+    // A story with no usable link is not a story we can show, brief, or share
+    // — the card's whole job is getting a reader to the article.
+    return items.filter((i) => i.headline.length > 15 && i.url);
   } catch (e) {
     await recordFeedHealth(feed.id, false, e.message).catch(() => {});
     return [];
@@ -502,6 +510,10 @@ export default async function handler(req, res) {
           // Resolve the primary URL once (direct links short-circuit, no fetch).
           let resolved = primary.url;
           try { resolved = await resolveUrl(primary.url); } catch { /* keep original */ }
+          // resolveUrl returns whatever Google's redirect chain or batchexecute
+          // handed back — third-party data again, and this is where it would
+          // otherwise be written onto the row as the card's primary link.
+          resolved = safeExternalUrl(resolved);
           if (resolved && !isGoogleNews(resolved)) {
             // A tag/keyword/search archive is NOT an article — it has no real
             // headline or byline, so the classifier fabricates an event and the

@@ -59,6 +59,8 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
+| One URL scheme allowlist — board, emails, /api/go redirect, ingest, rel=noopener | `render-safe-url` |
+| RADAR_TOKEN reads and cannot operate; CRON_SECRET/admins can | `verify-token-privilege` |
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |
 | Feed probe — a 200 with no feed says WHY, not just its status | `verify-feed-probe` |
 | Trends leaderboard paging (all outlets/journalists reachable) | `render-leaderboard-pages` |

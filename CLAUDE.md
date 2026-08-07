@@ -52,7 +52,7 @@ behaviour gets a regression test in the same commit.
 | Path | What lives here |
 |---|---|
 | `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `alerts.js` (pipeline health checks + the daily push); `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
-| `lib/*.js` | ALL shared logic. `xml.js` (the ONLY place `fast-xml-parser` is constructed — hostile-feed guards), `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`generateTempPassword`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
+| `lib/*.js` | ALL shared logic. `xml.js` (the ONLY place `fast-xml-parser` is constructed — hostile-feed guards), `safe-url.js` (the ONE scheme allowlist for third-party links), `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`generateTempPassword`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
 | `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
 | `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
 | `scripts/` | One-off generators run manually (OG images) |
@@ -526,6 +526,28 @@ gets nothing. All queries live in `lib/db.js`.
   arbitrary hosts) and has no production secrets. Verify via Supabase/Vercel/
   Resend MCPs, or ship an admin diagnostic (pattern: Tools → "Verify
   verdicts") and let production prove it.
+- **An `href` is a destination, and `esc()` does not vet one** (`lib/safe-url.js`).
+  Article URLs are third-party all the way down — a feed supplies them,
+  `resolveUrl` rewrites them from whatever Google News returns, they are stored,
+  and they reach the board's `href`, five email templates, a webhook, a Word
+  export and **`/api/go`'s `Location:` header on a PUBLIC endpoint**. Nothing
+  checked the SCHEME. `esc()` was everywhere and is the wrong tool: `javascript:`
+  contains no character HTML-escaping touches, and a `Location` header is not
+  escaped at all. `safeExternalUrl` / `firstSafeUrl` are the one rule — a CLOSED
+  allowlist of `https:`/`http:` (http kept deliberately: Egyptian outlets still
+  serve it, and refusing would blank real cards to buy nothing), plus refusals
+  for control characters (`java\tscript:`), protocol-relative `//host`,
+  hostless URLs, over-length values, and **embedded credentials**
+  (`https://vodafone.com.eg@evil.example/` reads as Vodafone and goes to
+  evil.example). Applied at ingest (`fetchFeed` drops an item with no usable
+  link), after `resolveUrl`, in `setResolvedUrl`, in every renderer, and in
+  `/api/go` — where the cached `resolved_url` is **re-validated on every read**,
+  never trusted because it was validated once on write, and a row with no usable
+  link answers **502** rather than redirecting somewhere unvetted. `public/index.html`
+  carries a browser MIRROR (`safeUrl`) because the board builds its own hrefs;
+  `render-safe-url` asserts both sides against the SAME 29-case table, so the
+  two cannot drift the way the server and the board already had. It also fails
+  any `target="_blank"` without `rel="noopener noreferrer"`.
 - **Feed XML is hostile input, and there is ONE parser** (`lib/xml.js`).
   `api/radar.js` and `api/admin.js` each built their own `XMLParser` with
   duplicated options, so hardening one left the other reading third-party XML
