@@ -33,8 +33,14 @@ const PAGES = readdirSync(DIR).filter((f) => f.endsWith('.html'));
     const html = readFileSync(`${DIR}/${f}`, 'utf8');
     for (const m of html.matchAll(/<(button|a)\b([^>]*)>([\s\S]*?)<\/\1>/g)) {
       const attrs = m[2];
-      // Visible text with markup and template holes removed.
-      const text = m[3].replace(/<[^>]+>/g, '').replace(/\$\{[^}]*\}/g, '').trim();
+      // Visible text, with markup removed and template holes resolved as far
+      // as they can be: a hole containing a quoted literal — `${x?'Unpin':'Pin
+      // for the team'}` — renders as words, so stripping it wholesale would
+      // report a perfectly-labelled control as icon-only.
+      const text = m[3]
+        .replace(/<[^>]+>/g, '')
+        .replace(/\$\{[^}]*\}/g, (h) => (/['"`][^'"`]*[A-Za-z]{3}/.test(h) ? 'text' : ''))
+        .trim();
       if (!text) continue;
       // Letters in any script the app uses (Latin or Arabic) = it names itself.
       if (/[A-Za-z؀-ۿ]/.test(text)) continue;
@@ -63,12 +69,19 @@ const PAGES = readdirSync(DIR).filter((f) => f.endsWith('.html'));
 /* ── 2. toggles report their state, not just their name ─────────────────── */
 {
   const board = readFileSync(`${DIR}/index.html`, 'utf8');
-  for (const cls of ['fb pin', 'fb hide', 'fb up', 'fb down']) {
+  // These four moved into the ••• More menu, where they are LABELLED rows
+  // rather than bare icons — so the accessible name is their visible text and
+  // an aria-label would be a second, competing one.
+  for (const cls of ['mitem pin', 'mitem hide', 'mitem up', 'mitem down']) {
     const m = board.match(new RegExp(`<button class="${cls}"[^>]*>`));
     assert.ok(m, `the ${cls} control exists`);
     assert.match(m[0], /aria-pressed=/, `${cls} announces whether it is currently on`);
-    assert.match(m[0], /aria-label=/, `${cls} announces what it does`);
   }
+  // The menu button itself IS icon-only, so it needs the full set.
+  const more = board.match(/<button class="fb morebtn"[\s\S]*?>/)[0];
+  assert.match(more, /aria-haspopup="true"/, 'the ••• button announces that it opens a menu');
+  assert.match(more, /aria-expanded="false"/, 'and whether it is currently open');
+  assert.match(more, /aria-label=/, 'and what it is');
 }
 
 /* ── 3. status regions are live ─────────────────────────────────────────── */
@@ -132,22 +145,31 @@ const PAGES = readdirSync(DIR).filter((f) => f.endsWith('.html'));
   // Every control in the admin card footer resolves to a real accessible name.
   // Computed from the DOM, not read from the source, so an aria-label that is
   // present but overridden (or a control that renders without one) fails here.
-  const names = await page.$$eval('#item-1 .foot button, #item-1 .foot a', (els) => els.map((e) => ({
+  // DIRECT children only: the four items inside the ••• menu are descendants of
+  // .foot too, and counting them would make "how many controls does an admin
+  // face at once" meaningless — which is the number this change exists to move.
+  const names = await page.$$eval('#item-1 .foot > button, #item-1 .foot > a, #item-1 .foot > .more > button', (els) => els.map((e) => ({
     text: e.textContent.trim().slice(0, 14),
     name: (e.getAttribute('aria-label') || e.textContent).trim(),
   })));
-  assert.ok(names.length >= 8, `an admin sees the full control set (got ${names.length})`);
+  // Five now, not eight: Copy · 📸 · 🔔 · ••• · Open source. The other four
+  // moved into the menu — see render-card-foot, which proves they are still
+  // reachable and still work.
+  assert.strictEqual(names.length, 5, `an admin sees five primary controls (got ${names.length})`);
   for (const n of names) {
     assert.ok(/[A-Za-z]{4}/.test(n.name), `the "${n.text}" control has a readable name, got "${n.name}"`);
   }
   // The two that mean the most and read the least: pin and hide.
-  const pin = await page.$eval('#item-1 .fb.pin', (e) => ({ label: e.getAttribute('aria-label'), pressed: e.getAttribute('aria-pressed') }));
-  assert.match(pin.label, /Pin/i, 'the 📌 announces what it does');
+  await page.click('#item-1 .morebtn');
+  const pin = await page.$eval('#item-1 .mitem.pin', (e) => ({ name: e.textContent.trim(), pressed: e.getAttribute('aria-pressed') }));
+  assert.match(pin.name, /Pin for the team/i, 'the pin item announces what it does, in words');
   assert.strictEqual(pin.pressed, 'false', 'and that it is currently off');
-  await page.click('#item-1 .fb.pin');
+  await page.click('#item-1 .mitem.pin');
   await page.waitForTimeout(200);
-  assert.strictEqual(await page.getAttribute('#item-1 .fb.pin', 'aria-pressed'), 'true',
-    'and the announced state follows the actual state');
+  await page.click('#item-1 .morebtn');
+  const after = await page.$eval('#item-1 .mitem.pin', (e) => ({ name: e.textContent.trim(), pressed: e.getAttribute('aria-pressed') }));
+  assert.strictEqual(after.pressed, 'true', 'and the announced state follows the actual state');
+  assert.match(after.name, /Unpin/i, 'and so does the LABEL — "Pin" while already pinned would be a lie');
 
   // The board's status line is live, so "showing 1 story" is heard rather than
   // only seen.
@@ -158,7 +180,7 @@ const PAGES = readdirSync(DIR).filter((f) => f.endsWith('.html'));
 
   // Keyboard: every footer control is reachable. A control that can only be
   // clicked is not a control for a keyboard user.
-  const focusable = await page.$$eval('#item-1 .foot button, #item-1 .foot a',
+  const focusable = await page.$$eval('#item-1 .foot > button, #item-1 .foot > a, #item-1 .foot > .more > button',
     (els) => els.filter((e) => e.tabIndex >= 0).length);
   assert.strictEqual(focusable, names.length, 'every footer control is keyboard-reachable');
 

@@ -528,6 +528,28 @@ gets nothing. All queries live in `lib/db.js`.
   `render-leaderboard-mobile`. **Reports (`reports.html`) was measured over the
   same widths and is clean** — its `.row` of two `flex:1` action buttons shares
   the shortfall evenly and only grows taller below 360px; don't "fix" it.
+  **And the wrap fixed the FIT, not the LOAD** (7 Aug): eight equally-weighted
+  controls still asked a reader to scan all eight to find one. The four
+  lower-frequency admin actions (Pin, Hide, Useful, Not useful) moved into a
+  **••• More** menu, leaving five primary — Copy · 📸 · 🔔 · ••• · Open source.
+  📸 stays primary because a VIEWER uses it (their card is unchanged at three
+  controls — this must cost the majority of readers nothing); 🔔 stays because a
+  missed alert is the only time-critical thing on the card. The menu is
+  **anchored to the footer's right edge, not to the ••• button** — button-anchored
+  it overflows the card's left edge when ••• wraps to the start of a row. It
+  opens focused on its first item, walks with arrows, closes on Escape
+  (returning focus to the button — an Escape that strands you at the top of the
+  document is a menu you cannot leave), on an outside click, and on choosing an
+  item; `aria-expanded` moves WITH the panel; and the item LABEL flips with the
+  state (`Pin for the team` ↔ `Unpin`), because an item reading "Pin" while
+  already pinned is a lie. The whole menu is admin-gated by
+  `body:not([data-role="admin"])` — stricter than the old
+  `[data-role="viewer"]` rule, which showed those four for the moment before
+  `loadMe()` resolved. Pinned by `render-card-foot`.
+  Fixed alongside it: `vote()` cleared `aria-pressed` on EVERY `.fb` in the
+  card, so voting silently un-pressed the pin and hide buttons — the stored
+  value was untouched, so it came back on the next render and read as a
+  rendering glitch.
   General rule for this whole family: a flex row of controls needs an explicit
   give — wrap, scroll, or a hidden child — and `flex:none` on anything whose
   size is part of its usability (touch targets, identity text). A row whose

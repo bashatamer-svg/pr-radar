@@ -134,8 +134,11 @@
     .trow{padding:0 12px;gap:9px}
   }
   /* Viewers are read-only — hide the write controls (pins/hide/votes) entirely. */
-  body[data-role="viewer"] .fb.pin, body[data-role="viewer"] .fb.hide,
-  body[data-role="viewer"] .fb.up, body[data-role="viewer"] .fb.down{ display:none }
+  /* Pin / hide / useful / not-useful now live inside the ••• menu, and the
+     whole menu is admin-only — the same gate the 🔔 uses. Stricter than the
+     old `[data-role="viewer"]` rule, which showed those four for the moment
+     before loadMe() resolved. */
+  body:not([data-role="admin"]) .more{ display:none }
   /* The alert bell PAGES PEOPLE — admin only, and hidden until the role is
      known so a viewer never sees it flash in and out. */
   body:not([data-role="admin"]) .fb.alert{ display:none }
@@ -315,7 +318,7 @@
      instead — .btn.open's margin-left:auto right-aligns it on whichever line
      it lands on. Viewers' 3-control footer is one line at every width, as
      before. Pinned by render-card-foot. */
-  .foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding-top:13px;border-top:1px solid var(--hair-2)}
+  .foot{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding-top:13px;border-top:1px solid var(--hair-2)}
   .btn{flex:none;white-space:nowrap;cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--ink-2);font-family:var(--sans);
        font-size:12.5px;font-weight:700;padding:9px 13px;border-radius:11px;line-height:1;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
   .btn:hover{border-color:var(--faint)}
@@ -330,6 +333,33 @@
 
   /* ── team_share pin / hide (admin) ── */
   .fb.pin[aria-pressed=true]{background:var(--amber);color:#fff;border-color:var(--amber)}
+  /* ── ••• More ───────────────────────────────────────────────────────────
+     A viewer sees three controls; an admin used to see EIGHT, which fitted
+     physically after the wrap fix but still asked a reader to scan eight
+     equally-weighted icons to find the one they wanted. The four
+     lower-frequency admin actions move in here; Copy, 📸 and Open source stay
+     primary, and the 🔔 keeps its own place because a missed alert is the one
+     thing on this card that is time-critical.
+     Anchored to the FOOTER's right edge rather than to the button, so it is
+     always inside the card whichever line the ••• wraps onto — anchoring to
+     the button overflows left when it lands at the start of a row. */
+  .more{position:static;flex:none}
+  .moremenu{position:absolute;right:0;bottom:calc(100% + 6px);z-index:20;display:none;
+            min-width:196px;max-width:min(240px,calc(100vw - 40px));padding:6px;
+            background:var(--card);border:1px solid var(--hair);border-radius:12px;
+            box-shadow:0 12px 32px -10px rgba(16,20,28,.28)}
+  .more[data-open=true] .moremenu{display:block}
+  .mitem{display:flex;align-items:center;gap:9px;width:100%;cursor:pointer;border:0;background:none;
+         font-family:var(--sans);font-size:13px;color:var(--ink-2);text-align:start;
+         padding:9px 10px;border-radius:8px;line-height:1.3}
+  .mitem:hover{background:var(--neu-bg)}
+  .mitem:focus-visible{outline:2px solid var(--red);outline-offset:-2px}
+  .mitem[aria-pressed=true]{color:var(--ink);font-weight:700;background:var(--neu-bg)}
+  .mitem.up[aria-pressed=true]{color:var(--pos)}
+  .mitem.down[aria-pressed=true]{color:var(--red)}
+  .msep{height:1px;background:var(--hair);margin:5px 4px}
+  .fb.morebtn{letter-spacing:1px;line-height:1}
+  .more[data-open=true] .morebtn{background:var(--neu-bg);border-color:var(--ink-2);color:var(--ink)}
   .fb.hide[aria-pressed=true]{background:var(--ink-2);color:#fff;border-color:var(--ink-2)}
   .card.pinned{box-shadow:0 2px 12px -8px rgba(20,23,28,.18),inset 3px 0 0 0 var(--amber)}
   .card.hidden{opacity:.5}
@@ -759,10 +789,17 @@ function cardHtml(it){
       <button class="btn copy" type="button" onclick="copyBrief(${it.id},this)">⧉ Copy brief</button>
       <button class="fb share" type="button" aria-label="Share a branded snapshot of this story" title="Share a branded snapshot" onclick="snapshotCard(${it.id})">📸</button>
       <button class="fb alert" type="button" aria-label="Send this story as an instant alert to the full alert list" title="Send this card as an instant alert — email (and WhatsApp when live) to the full alert list. For cards corrected after ingest; the rule still applies." onclick="sendAlert(${it.id},this)">🔔</button>
-      <button class="fb pin" aria-pressed="${pinned}" aria-label="Pin this story for the team" title="Pin for the team" onclick="togglePin(${it.id},'pin',this)">📌</button>
-      <button class="fb hide" aria-pressed="${hidden}" aria-label="Hide this story from the team view" title="Hide from the team view" onclick="togglePin(${it.id},'hide',this)">🙈</button>
-      <button class="fb up" aria-pressed="${fb===1}" aria-label="Mark this story useful" title="Useful" onclick="vote(${it.id},1,this)">▲</button>
-      <button class="fb down" aria-pressed="${fb===-1}" aria-label="Mark this story not useful" title="Not useful" onclick="vote(${it.id},-1,this)">▼</button>
+      <div class="more" data-open="false">
+        <button class="fb morebtn" type="button" aria-haspopup="true" aria-expanded="false"
+                aria-label="More actions for this story" title="More actions" onclick="toggleMore(this,event)">•••</button>
+        <div class="moremenu" role="menu" aria-label="More actions">
+          <button class="mitem pin" type="button" role="menuitem" aria-pressed="${pinned}" onclick="togglePin(${it.id},'pin',this)"><span aria-hidden="true">📌</span> ${pinned?'Unpin':'Pin for the team'}</button>
+          <button class="mitem hide" type="button" role="menuitem" aria-pressed="${hidden}" onclick="togglePin(${it.id},'hide',this)"><span aria-hidden="true">🙈</span> ${hidden?'Unhide':'Hide from the team'}</button>
+          <div class="msep" role="separator"></div>
+          <button class="mitem up" type="button" role="menuitem" aria-pressed="${fb===1}" onclick="vote(${it.id},1,this)"><span aria-hidden="true">▲</span> Useful</button>
+          <button class="mitem down" type="button" role="menuitem" aria-pressed="${fb===-1}" onclick="vote(${it.id},-1,this)"><span aria-hidden="true">▼</span> Not useful</button>
+        </div>
+      </div>
       <a class="btn open" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>
     </div></article>`;
 }
@@ -798,10 +835,63 @@ async function sendAlert(id,btn){
   }catch(e){ alert('Network error.'); }
   btn.disabled=false; if(btn.textContent==='…') btn.textContent=old;
 }
+/* ── the ••• More menu ─────────────────────────────────────────────────────
+   Only ONE menu is open at a time, and it closes on Escape, on an outside
+   click, and on choosing an item. A menu you can only dismiss by picking
+   something is a menu that traps you — the same rule the account menu follows,
+   and the listeners are registered once rather than per card (a board can hold
+   a hundred of these). */
+function closeAllMore(except){
+  document.querySelectorAll('.more[data-open="true"]').forEach(m=>{
+    if(m===except) return;
+    m.dataset.open='false';
+    const b=m.querySelector('.morebtn'); if(b) b.setAttribute('aria-expanded','false');
+  });
+}
+function toggleMore(btn,ev){
+  if(ev) ev.stopPropagation();
+  const wrap=btn.closest('.more'); const open=wrap.dataset.open!=='true';
+  closeAllMore(wrap);
+  wrap.dataset.open=String(open);
+  // aria-expanded has to move WITH the panel, or a screen reader announces a
+  // menu that is no longer there.
+  btn.setAttribute('aria-expanded',String(open));
+  if(open) wrap.querySelector('.mitem')?.focus();
+}
+if(!window.__moreWired){
+  window.__moreWired=true;
+  document.addEventListener('click',(e)=>{ if(!e.target.closest('.more')) closeAllMore(); });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'){
+      // Return focus to the button that opened it, or Escape silently strands
+      // a keyboard user at the top of the document.
+      const open=document.querySelector('.more[data-open="true"]');
+      closeAllMore();
+      open?.querySelector('.morebtn')?.focus();
+      return;
+    }
+    // Arrow keys walk the open menu, which is what role="menu" promises.
+    const wrap=document.querySelector('.more[data-open="true"]'); if(!wrap) return;
+    if(e.key!=='ArrowDown'&&e.key!=='ArrowUp') return;
+    e.preventDefault();
+    const items=[...wrap.querySelectorAll('.mitem')];
+    const i=items.indexOf(document.activeElement);
+    items[(i+(e.key==='ArrowDown'?1:items.length-1)+items.length)%items.length]?.focus();
+  });
+}
+// Choosing an item closes the menu — after the action, so the label it
+// rewrites (Pin ↔ Unpin) is the one the reader sees next time they open it.
+function afterMoreAction(btn){ closeAllMore(); }
+
 async function vote(id,val,btn){
   const cur=btn.getAttribute('aria-pressed')==='true'; const next=cur?null:val;
-  const card=btn.closest('.card'); card.querySelectorAll('.fb').forEach(b=>b.setAttribute('aria-pressed','false'));
+  // Scoped to the two VOTE controls. It used to clear aria-pressed on every
+  // `.fb` in the card, which silently un-pressed the pin and hide buttons the
+  // moment anyone voted — the stored value was untouched, so it came back on
+  // the next render and read as a rendering glitch.
+  const card=btn.closest('.card'); card.querySelectorAll('.mitem.up,.mitem.down').forEach(b=>b.setAttribute('aria-pressed','false'));
   if(next!==null) btn.setAttribute('aria-pressed','true');
+  afterMoreAction(btn);
   const it=ITEMS.find(x=>x.id===id); if(it) it.feedback=next;
   try{ await afetch(`/api/items`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,feedback:next===null?0:next})}); }catch(e){}
 }
@@ -818,9 +908,14 @@ async function togglePin(id,mode,btn){
   const set=pinnedSet(); if(next===true) set.add(id); else set.delete(id); savePinned(set);
   const card=btn.closest('.card');
   card.classList.toggle('pinned',next===true); card.classList.toggle('hidden',next===false);
-  const pb=card.querySelector('.fb.pin'), hb=card.querySelector('.fb.hide');
-  if(pb) pb.setAttribute('aria-pressed',String(next===true));
-  if(hb) hb.setAttribute('aria-pressed',String(next===false));
+  const pb=card.querySelector('.mitem.pin'), hb=card.querySelector('.mitem.hide');
+  // The menu item carries a LABEL as well as a state, so both move together —
+  // an item reading "Pin for the team" while already pinned is a lie.
+  if(pb){ pb.setAttribute('aria-pressed',String(next===true));
+    pb.innerHTML=`<span aria-hidden="true">📌</span> ${next===true?'Unpin':'Pin for the team'}`; }
+  if(hb){ hb.setAttribute('aria-pressed',String(next===false));
+    hb.innerHTML=`<span aria-hidden="true">🙈</span> ${next===false?'Unhide':'Hide from the team'}`; }
+  afterMoreAction(pb||hb);
   // refresh the little "Pinned/Hidden" marker in the metas row
   const metas=card.querySelector('.metas .pinmark'); if(metas) metas.remove();
   if(next!==null){ const m=document.createElement('span'); m.className='pinmark '+(next===true?'pin':'hide'); m.textContent=next===true?'📌 Pinned':'🙈 Hidden'; card.querySelector('.metas').appendChild(m); }

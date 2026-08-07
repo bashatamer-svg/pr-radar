@@ -22,8 +22,20 @@ const server = createServer((req, res) => {
     if (u.searchParams.get('ids')) { idsRequested = u.searchParams.get('ids'); const ids = idsRequested.split(',').map(Number); const all = [...win, older].filter((i) => ids.includes(i.id)); res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(all)); }
     res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(win));
   }
+  // Pin and hide are ADMIN actions — /api/items PATCH requires admin — and they
+  // now live behind the admin-only ••• menu. This mock had no /api/auth at all,
+  // so the page never learned a role; the controls were visible anyway because
+  // the old CSS only hid them for an explicit `viewer`. Answering honestly here
+  // is what the board actually faces.
+  if (u.pathname === '/api/auth') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify(u.searchParams.get('view') === 'config'
+      ? { supabaseUrl: '', anonKey: '' }
+      : { email: 'admin@vodafone.com', role: 'admin', kind: 'user' }));
+  }
   const f = u.pathname === '/' ? '/index.html' : u.pathname;
-  try { const body = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(body); }
+  try { const body = readFileSync(DIR + f);
+    res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' }); res.end(body); }
   catch { res.writeHead(404); res.end('nf'); }
 });
 await new Promise((r) => server.listen(8897, r));
@@ -42,10 +54,17 @@ await page.waitForTimeout(400);
 assert.ok(await page.$('#item-2.pinned'), 'server-pinned card has .pinned');
 assert.ok(await page.$('#item-2 .pinmark.pin'), 'pinned marker shown');
 assert.ok(await page.$('#item-3.hidden'), 'hidden card has .hidden');
-assert.strictEqual(await page.getAttribute('#item-2 .fb.pin', 'aria-pressed'), 'true', 'pin button pressed on server-pinned');
+// Pin / hide moved into the ••• More menu (they are admin actions, and eight
+// equally-weighted icons on one card was too many to scan). The behaviour is
+// unchanged; the path to it is one click longer.
+const openMore = async (sel) => { await page.click(`${sel} .morebtn`); await page.waitForTimeout(60); };
+await openMore('#item-2');
+assert.strictEqual(await page.getAttribute('#item-2 .mitem.pin', 'aria-pressed'), 'true', 'pin item pressed on server-pinned');
+await page.keyboard.press('Escape');
 
 // pin a normal card → PATCH team_share:true, class flips, marker appears
-await page.click('#item-1 .fb.pin');
+await openMore('#item-1');
+await page.click('#item-1 .mitem.pin');
 await page.waitForTimeout(150);
 assert.ok(await page.$('#item-1.pinned'), 'item-1 became pinned');
 assert.ok(await page.$('#item-1 .pinmark.pin'), 'item-1 pin marker appeared');
@@ -55,12 +74,14 @@ const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('pr_pin
 assert.ok(stored.includes(1) && stored.includes(2) && stored.includes(99), `pinned set synced: ${stored}`);
 
 // hide another card → PATCH team_share:false
-await page.click('#item-1 .fb.hide');   // item-1 was pinned; hide should flip to hidden
+await openMore('#item-1');
+await page.click('#item-1 .mitem.hide');   // item-1 was pinned; hide should flip to hidden
 await page.waitForTimeout(150);
 assert.ok(await page.$('#item-1.hidden'), 'item-1 flipped to hidden');
 assert.ok(patches.some((p) => p.id === 1 && p.team_share === false), 'PATCH team_share:false sent');
 // re-pin item-1 for the filter test
-await page.click('#item-1 .fb.pin');
+await openMore('#item-1');
+await page.click('#item-1 .mitem.pin');
 await page.waitForTimeout(150);
 
 // activate Pinned filter → fetches older pin by id, shows only pinned

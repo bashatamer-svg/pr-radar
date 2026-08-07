@@ -116,10 +116,13 @@ assert.deepStrictEqual(problems, [], 'no page reports a CSP violation under the 
   // 1. INLINE HANDLERS still fire. Every board control is an onclick attribute;
   //    a script-src without 'unsafe-inline' makes them all dead with no visible
   //    failure — the buttons are there and nothing happens. Asserted by EFFECT.
-  const before = await page.$eval('#item-1 .fb.pin', (e) => e.getAttribute('aria-pressed'));
-  await page.click('#item-1 .fb.pin');
+  // Pin lives in the ••• More menu now, so this exercises TWO inline handlers:
+  // the one that opens the menu and the one that acts.
+  await page.click('#item-1 .morebtn');
+  const before = await page.$eval('#item-1 .mitem.pin', (e) => e.getAttribute('aria-pressed'));
+  await page.click('#item-1 .mitem.pin');
   await page.waitForTimeout(150);
-  const after = await page.$eval('#item-1 .fb.pin', (e) => e.getAttribute('aria-pressed'));
+  const after = await page.$eval('#item-1 .mitem.pin', (e) => e.getAttribute('aria-pressed'));
   assert.notStrictEqual(after, before, 'an inline onclick handler still runs under the CSP');
 
   // 2. blob: images. The card snapshot draws to a canvas and previews it as
