@@ -22,6 +22,17 @@ for (const w of [390, 900]) {
   assert.ok(/emailed the moment it lands/.test(text), 'urgent alerts explained');
   assert.ok(/any date range/.test(text) && /Word/.test(text), 'Reports section explained');
   assert.ok(/sector-wide mobile-market news/.test(text), 'market-sector scope explained');
+  // The board's two ORDER controls. The guide explained every other thing on
+  // that screen — tiles, lanes, Impact, sentiment, outlet count — and said
+  // nothing about the sort bar, so a reader met a pinned control with no
+  // explanation of which order is the safe one or what Newest does to the
+  // lanes. Each claim here is a real property of the control (see
+  // render-board-sort / render-sticky-sort), so a change to one moves both.
+  for (const claim of ['Choosing the order', 'one flat list', 'never hides anything']) {
+    assert.ok(text.includes(claim), `the order section states: ${claim}`);
+  }
+  assert.ok(/default/.test(text) && /always opens on/.test(text),
+    'the guide says Impact is the default and that the choice is not remembered — the reason the board cannot open on a stale Newest sort');
   assert.ok(/every Vodafone mention including regulatory/.test(text), 'Vodafone regulatory exception explained');
   // The ingest explainer must state BOTH clocks and the real numbers — this is
   // what a user reads when they ask "why isn't my story on the board yet?".
