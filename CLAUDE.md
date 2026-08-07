@@ -273,7 +273,18 @@ gets nothing. All queries live in `lib/db.js`.
   headings already in the list (last `.sechead` to pass under the bar, rAF-
   throttled on scroll) and invents nothing; it is `aria-hidden` because the real
   headings are still in the DOM and a label re-announcing on every scroll tick is
-  how a reader turns announcements off. Putting Sort **inside** a `.sechead` was
+  how a reader turns announcements off.
+  **It shows NOTHING until a heading has actually passed under the bar.** The
+  first version fell back to `heads[0]` when none had, which at the top of the
+  list printed "Needs a response 1" in the bar directly above the identical
+  inline heading — a duplicate one line apart that read as a rendering bug
+  (user-reported, live). The label replaces a heading the pinning covered up;
+  while the real one is on screen it must be silent.
+  Chip sizing is deliberate in both directions: the bar is ~39px, but that
+  height came out of the BAR's own padding, not the controls —
+  `render-board-sort` floors a sort chip at 28px citing the card-footer Gotcha,
+  and a control whose size is part of its usability does not get shrunk to buy
+  layout. 28px is a floor, not a target to trim past. Putting Sort **inside** a `.sechead` was
   the rejected design and the reason is worth keeping: there are three lane
   headers, `if(!rows.length) continue` deletes one on a quiet day, and choosing
   Newest collapses the lanes — so the control would have repeated 3×, vanished
