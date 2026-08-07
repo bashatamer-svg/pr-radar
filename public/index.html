@@ -83,7 +83,12 @@
   .account .acctlink{cursor:pointer;text-decoration:none;border:1px solid var(--hair);background:var(--raise);
                     color:var(--ink-2);font-size:11px;border-radius:8px;padding:5px 9px;font-weight:600;white-space:nowrap}
   .account .acctlink:hover{border-color:var(--faint)}
-  .account .acctlink.guide{width:28px;height:28px;padding:0;border-radius:50%;display:grid;place-items:center;font-weight:800}
+  /* 32px, not 28: this is a round icon target with a single "?" in it, and at
+     28 it measured 9px WIDE — the glyph's own width, because `display:grid`
+     with `place-items:center` sizes to content unless the box is told
+     otherwise. flex:none stops the header row shrinking it further. */
+  .account .acctlink.guide{flex:none;width:32px;min-width:32px;height:32px;padding:0;border-radius:50%;
+        display:grid;place-items:center;font-weight:800;font-size:14px}
 
   /* ── account menu ──
      Identity, Change password and Sign out used to sit in the header as three

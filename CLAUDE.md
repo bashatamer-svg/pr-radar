@@ -224,7 +224,7 @@ gets nothing. All queries live in `lib/db.js`.
 | `pr_state.daily_bulletin_sent` | RESOLVED — advancing daily since the 3 Aug run; read **05 Aug 05:00** on 5 Aug (live-verified). The ten-day freeze was the marker-stamping bug fixed 2 Aug (see the two-recipient-lists Gotcha). **A stale marker is not a missed send** — check Resend, not `pr_state` |
 | `pr_items` | **Cause found and fixed 2 Aug** — the bursts (100 parked in the 7 days to 2 Aug) were the classifier omitting items from an otherwise-valid reply, which parsed cleanly and so never retried; see the omission Gotcha. **73** burst-era rows still sit parked in the rolling 7d window (5 Aug; 0 parked in the last 24h — the fix holds) and keep the Health check red until they age out ~6 Aug or are cleared with Admin → Tools → "Re-classify parked stories" |
 | Meta | A **new WABA "PR Radar"** was created 3 Aug alongside the old *Test WhatsApp Business Account*; account status Approved, business verification still Unverified. **Templates do not transfer between accounts**, so `pr_urgent` must exist and be APPROVED on whichever WABA `WHATSAPP_PHONE_ID` belongs to. `#132001` cannot distinguish its three causes (unapproved / wrong language code / wrong account) — use **Admin → Tools → "Check account & template"** (`?view=whatsapp-check`), which asks Meta from production and names the fix. Set `WHATSAPP_WABA_ID` if the account can't be resolved from the phone number. The template body carries **TWO variables** — `{{1}}` the story, `{{2}}` the action — because a variable's VALUE cannot contain a newline, so the paragraph break has to live in the template. The send shape must match how they are declared: `WHATSAPP_TEMPLATE_VAR` is a CSV of the variable names in order (default `1,2` = positional; names like `story,action` send `parameter_name`). A mismatch fails as `#132001`, exactly like a missing template |
-| `api/radar.js` comments | Mention a 04:10 GitHub Actions backup cron — no workflow exists in this repo (unconfirmed origin) |
+| `api/radar.js` comments | **RESOLVED 7 Aug.** Two comments justified the daily-send guard with "the 04:10 GitHub Actions backup". No such workflow has ever existed here — the guard is right, the reason given for it was fiction, and a reader chasing that cron would have found nothing. Both rewritten around the real second callers (the 15-min poll, a manual admin run). The repo now HAS a workflow, `.github/workflows/ci.yml`, and it runs tests only — it deploys nothing and calls no endpoint |
 
 ## Gotchas (each cost real debugging time)
 
@@ -560,6 +560,18 @@ gets nothing. All queries live in `lib/db.js`.
   card, so voting silently un-pressed the pin and hide buttons — the stored
   value was untouched, so it came back on the next render and read as a
   rendering glitch.
+  **`render-final-sweep` is the net under all of it**: every page × 320/360/390/
+  430/768/1280 × viewer AND admin, asserting no document pan, nothing rendered
+  narrower than its own content, no non-inline control under a usable tap
+  target, and no page error. It found three real ones on its first run — the
+  board's `?` guide link measured **9px wide** (`display:grid` with
+  `place-items:center` sizes to the glyph unless the box is told otherwise),
+  Trends' chart legend entries were 16px tall despite doubling as filter links,
+  and the Reports page's two `.back` links — the only way OFF that page — were
+  14px. Two measurement rules it had to learn: **`scrollWidth` is meaningless on
+  an SVG node** (own coordinate system — chart legibility is
+  `render-leaderboard-mobile`'s job), and an **`display:inline` link is
+  typography**, not a tap target.
   General rule for this whole family: a flex row of controls needs an explicit
   give — wrap, scroll, or a hidden child — and `flex:none` on anything whose
   size is part of its usability (touch targets, identity text). A row whose

@@ -942,9 +942,9 @@ export default async function handler(req, res) {
   // a subscriber with categories set gets only items matching those
   // categories. Empty filtered set → skip that subscriber (no zero-item
   // email). Failures per-subscriber are logged, never fatal.
-  // Gated by !dailyAlreadySent (same guard as the admin/team sends above) so
-  // the 04:10 GitHub backup can't re-send today's digest to subscribers after
-  // the 04:00 Vercel cron already delivered it.
+  // Gated by !dailyAlreadySent (same guard as the admin/team sends above) so a
+  // second run on the same day — the 15-minute urgent poll, or a manual admin
+  // run — cannot re-mail today's digest to every subscriber.
   let watchlistSent = 0;
   if (!urgentOnly && !dry && !previewTo && !dailyAlreadySent && digest.length) {
     const subs = await activeSubscribers().catch((e) => {

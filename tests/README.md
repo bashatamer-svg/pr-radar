@@ -59,6 +59,7 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
+| Whole app × 6 widths × 2 roles: no pan, no crush, no tiny target, no leak | `render-final-sweep` |
 | WhatsApp readiness ladder + house-knowledge staleness | `verify-readiness-checks` |
 | Sideways-scrolling rows show there is more, without panning the page | `render-scroll-hint` |
 | Trends "So what?" strip — derived arithmetic, honest bars, no model | `render-exec-strip` |
