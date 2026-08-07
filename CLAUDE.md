@@ -606,6 +606,28 @@ gets nothing. All queries live in `lib/db.js`.
   `render-safe-url` asserts both sides against the SAME 29-case table, so the
   two cannot drift the way the server and the board already had. It also fails
   any `target="_blank"` without `rel="noopener noreferrer"`.
+- **Feed text is DATA, and all five LLM passes are told so** (`lib/prompt-safety.js`).
+  Headlines, excerpts, outlet names, scraped article pages and another AI's
+  answer about Vodafone all arrive from outside and go straight into a prompt.
+  The structural position was already good and must stay that way: **no pass
+  defines a tool, none takes an action, and every output is validated** (verdicts
+  map onto a fixed key set; narrative ids are checked against the ids that went
+  in). So the realistic harm is a WRONG VERDICT — a hostile story marking itself
+  irrelevant so it never reaches the board, or the other 24 items in its batch
+  mis-screened. Two defences: the shared `UNTRUSTED_DATA_RULES` block in every
+  system prompt, and — the one that actually holds — source text FENCED in
+  `<source_text>` with each field `neutralize()`d so it cannot CLOSE the fence.
+  Same lesson as the bylines: an instruction is necessary and never sufficient;
+  the deterministic guard is what works. `neutralize` is deliberately narrow —
+  it rewrites only that tag pair and strips control characters, because feed
+  text legitimately carries `<b>`, quotes and «guillemets» and mangling those
+  would corrupt the headline the board displays. The attempt is **kept
+  readable**: it is a fact about the item, so hiding it would make a hostile
+  source invisible rather than harmless. The five passes are `classify`,
+  `dedupe-semantic`, `narratives`, `author` and **`geo`** — the last was found
+  by the test's source scan, not by reading, which is why the scan fails any new
+  `api.anthropic.com` call site that skips the module. Pinned by
+  `verify-prompt-injection`.
 - **Feed XML is hostile input, and there is ONE parser** (`lib/xml.js`).
   `api/radar.js` and `api/admin.js` each built their own `XMLParser` with
   duplicated options, so hardening one left the other reading third-party XML
