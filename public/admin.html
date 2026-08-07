@@ -209,7 +209,7 @@ function subEditRow(s){
         <input id="eWa" type="tel" value="${s.whatsapp?esc(s.whatsapp):''}" placeholder="WhatsApp — e.g. 201001234567 (blank = not paged)" autocomplete="off">
         <button class="btn sm" type="button" onclick="saveSub(${s.id})">Save</button>
         <button class="btn ghost sm" type="button" onclick="cancelEdit()">Cancel</button>
-        <div class="formmsg" id="eMsg"></div>
+        <div class="formmsg" id="eMsg" role="status" aria-live="polite"></div>
       </div>
     </div>
   </div>`;
@@ -226,9 +226,9 @@ function subRow(s){
       <div class="cats">${cats}${s.whatsapp?`<span class="cat wa" title="Also paged on WhatsApp for urgent stories">✆ ${esc(maskWa(s.whatsapp))}</span>`:''}</div>
     </div>
     <div class="acts">
-      <button class="x edit" type="button" title="Edit this subscriber" onclick="editSub(${s.id})">✎</button>
+      <button class="x edit" type="button" aria-label="Edit subscriber ${esc(s.email)}" title="Edit this subscriber" onclick="editSub(${s.id})">✎</button>
       <button class="toggle" type="button" aria-pressed="${!!s.active}" title="${s.active?'Active — click to pause':'Paused — click to activate'}" onclick="toggleSub(${s.id},this)"></button>
-      <button class="x del" type="button" title="Remove subscriber" onclick="removeSub(${s.id})">✕</button>
+      <button class="x del" type="button" aria-label="Remove subscriber ${esc(s.email)}" title="Remove subscriber" onclick="removeSub(${s.id})">✕</button>
     </div>
   </div>`;
 }
@@ -244,7 +244,7 @@ function renderSubs(){
         <input id="fCats" type="text" placeholder="Categories, comma-sep (blank = all)" autocomplete="off">
         <input id="fWa" type="tel" placeholder="WhatsApp — country code + number, e.g. 201001234567" autocomplete="off">
         <button class="btn" id="addBtn" type="button">Add</button>
-        <div class="formmsg" id="fMsg"></div>
+        <div class="formmsg" id="fMsg" role="status" aria-live="polite"></div>
       </div>
     </div>
     <div class="card">
@@ -346,7 +346,7 @@ function userRow(u){
       <button class="btn ghost sm" type="button" title="Reset this user's password — generates a secure temporary one" onclick="setUserPassword(${u.id},'${esc(u.email)}')">Reset password</button>
       <button class="btn ghost sm" type="button" title="Toggle admin/viewer" onclick="toggleRole(${u.id},'${esc(u.role)}','${esc(u.email)}',this)">${u.role==='admin'?'Make viewer':'Make admin'}</button>
       <button class="toggle" type="button" aria-pressed="${!!u.active}" title="${u.active?'Active — click to block':'Blocked — click to allow'}" onclick="toggleUser(${u.id},'${esc(u.email)}',this)"></button>
-      <button class="x" type="button" title="Remove user" onclick="removeUser(${u.id},'${esc(u.email)}')">✕</button>
+      <button class="x" type="button" aria-label="Remove user ${esc(u.email)}" title="Remove user" onclick="removeUser(${u.id},'${esc(u.email)}')">✕</button>
     </div>
   </div>`;
 }
@@ -365,8 +365,8 @@ function renderUsers(){
         <label class="opt" for="uSub" title="Also add them to the daily brief mailing list"><input type="checkbox" id="uSub" checked> Daily brief</label>
         <label class="opt" for="uNotify" title="Email them their sign-in details now"><input type="checkbox" id="uNotify" checked> Email sign-in</label>
         <button class="btn" id="uAddBtn" type="button">Add</button>
-        <div class="formmsg" id="uMsg"></div>
-        <div class="prov" id="uOut" hidden></div>
+        <div class="formmsg" id="uMsg" role="status" aria-live="polite"></div>
+        <div class="prov" id="uOut" role="status" aria-live="polite" hidden></div>
       </div>
     </div>
     <div class="card">
@@ -485,7 +485,7 @@ function reqRow(r){
     <div class="acts">
       <button class="btn sm" type="button" title="Approve as a viewer" onclick="approveReq(${r.id},'${esc(r.email)}','viewer')">Approve</button>
       <button class="btn ghost sm" type="button" title="Approve as an admin" onclick="approveReq(${r.id},'${esc(r.email)}','admin')">as admin</button>
-      <button class="x" type="button" title="Reject request" onclick="rejectReq(${r.id},'${esc(r.email)}')">✕</button>
+      <button class="x" type="button" aria-label="Reject the access request from ${esc(r.email)}" title="Reject request" onclick="rejectReq(${r.id},'${esc(r.email)}')">✕</button>
     </div>
   </div>`;
 }
@@ -500,7 +500,7 @@ function resetRow(r){
     </div>
     <div class="acts">
       <button class="btn sm" type="button" title="Generate a new password for them" onclick="setUserPassword(${r.id},'${esc(r.email)}')">Reset password</button>
-      <button class="x" type="button" title="Dismiss without changing their password" onclick="dismissReset(${r.id},'${esc(r.email)}')">✕</button>
+      <button class="x" type="button" aria-label="Dismiss the password-reset request from ${esc(r.email)} without changing it" title="Dismiss without changing their password" onclick="dismissReset(${r.id},'${esc(r.email)}')">✕</button>
     </div>
   </div>`;
 }
@@ -556,13 +556,13 @@ function renderTools(){
         <input id="baDays" type="number" min="1" max="30" value="7" title="Look back this many days" aria-label="Days" style="flex:0 0 84px">
         <input id="baLimit" type="number" min="1" max="200" value="40" title="Max items per pass" aria-label="Limit" style="flex:0 0 84px">
         <button class="btn" id="baBtn" type="button">Backfill authors</button>
-        <div class="formmsg" id="baMsg"></div>
+        <div class="formmsg" id="baMsg" role="status" aria-live="polite"></div>
       </div>
       <div class="nm" id="baGap" style="margin-top:9px;font-weight:700;color:var(--ink-2)">Checking backlog…</div>
       <div class="nm" style="margin-top:4px;color:var(--faint)">days back · max per pass. Each pass fills up to the AI-byline cap; a big backlog may need a few runs.</div>
       <div class="form" style="margin-top:12px">
         <button class="btn ghost" id="aiBtn" type="button" title="Re-probe a sample of the authorless cards live and show the evidence — what each page contained">Verify verdicts</button>
-        <div class="formmsg" id="aiMsg"></div>
+        <div class="formmsg" id="aiMsg" role="status" aria-live="polite"></div>
       </div>
       <div id="aiRows"></div>
     </div>
@@ -571,7 +571,7 @@ function renderTools(){
       <div class="nm" style="line-height:1.6;margin:0 0 11px">Two cards that are really one story, sitting on the board separately. Ingest merges what it is <b>sure</b> about; this surfaces the rest — mostly the same event written up by a second outlet hours later, where the wording overlaps too little for the automatic bars. Read-only until you press Merge. <b>Merging</b> keeps the older card, adds the other's outlet and byline to its coverage, and hides the duplicate everywhere (board and Trends).</div>
       <div class="form">
         <button class="btn ghost" id="dupBtn" type="button">Find duplicates</button>
-        <div class="formmsg" id="dupMsg"></div>
+        <div class="formmsg" id="dupMsg" role="status" aria-live="polite"></div>
       </div>
       <div id="dupRows"></div>
     </div>
@@ -580,7 +580,7 @@ function renderTools(){
       <div class="nm" style="line-height:1.6;margin:0 0 11px">Check which of the shortlisted outlets actually publish a working RSS feed — run from <b>production</b>, because the dev sandbox can't reach news sites. Read-only: it fetches and parses each candidate, nothing is stored or ingested. Verified URLs then get added to the source list in code.</div>
       <div class="form">
         <button class="btn ghost" id="pfBtn" type="button">Probe feeds</button>
-        <div class="formmsg" id="pfMsg"></div>
+        <div class="formmsg" id="pfMsg" role="status" aria-live="polite"></div>
       </div>
       <div id="pfRows"></div>
     </div>
@@ -589,7 +589,7 @@ function renderTools(){
       <div class="nm" style="line-height:1.6;margin:0 0 11px">Stories the classifier returned no verdict for are held back from the board and the brief, and show as <b>Classification</b> on the Health tab. Re-screen them here — anything it still won't answer for stays parked rather than being guessed at.</div>
       <div class="form">
         <button class="btn ghost" id="rcBtn" type="button">Re-classify parked stories</button>
-        <div class="formmsg" id="rcMsg"></div>
+        <div class="formmsg" id="rcMsg" role="status" aria-live="polite"></div>
       </div>
     </div>
     <div class="card">
@@ -602,7 +602,7 @@ function renderTools(){
           <option value="2">Vodafone negative · ALERT</option>
         </select>
         <button class="btn" id="atBtn" type="button">Send test to myself</button>
-        <div class="formmsg" id="atMsg"></div>
+        <div class="formmsg" id="atMsg" role="status" aria-live="polite"></div>
       </div>
     </div>
     <div class="card">
@@ -612,7 +612,7 @@ function renderTools(){
       <div class="form">
         <button class="btn" id="waTestBtn" type="button" disabled>Send test alert</button>
         <button class="btn ghost" id="waChkBtn" type="button">Check account &amp; template</button>
-        <div class="formmsg" id="waMsg"></div>
+        <div class="formmsg" id="waMsg" role="status" aria-live="polite"></div>
       </div>
       <div id="waRows"></div>
     </div>`;
@@ -796,7 +796,7 @@ async function runDupeScan(){
           <div dir="auto" style="font-size:12.5px;margin-top:5px;color:var(--muted)"><b>merge #${p.drop.id}</b> · ${esc(p.drop.source||'')}<br>${esc(p.drop.headline||'')}</div>
           <div style="margin-top:7px;display:flex;gap:8px;align-items:center">
             <button class="btn ghost" type="button" data-keep="${p.keep.id}" data-drop="${p.drop.id}" data-n="${n}">Merge into #${p.keep.id}</button>
-            <span class="formmsg" id="dupr-${n}"></span>
+            <span class="formmsg" id="dupr-${n}" role="status" aria-live="polite"></span>
           </div>
         </div>`).join('');
       box.querySelectorAll('button[data-keep]').forEach(b=>b.onclick=()=>mergeDupe(b));
@@ -967,7 +967,7 @@ function renderHealth(){
       <div id="hChecks">${checks||'<div class="empty">No checks returned.</div>'}</div>
       <div class="form" style="margin-top:12px">
         <button class="btn ghost" id="hRefresh" type="button">Re-check</button>
-        <div class="formmsg" id="hMsg"></div>
+        <div class="formmsg" id="hMsg" role="status" aria-live="polite"></div>
       </div>
     </div>
     <div class="card">

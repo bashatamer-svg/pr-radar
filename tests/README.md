@@ -59,6 +59,7 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
+| Icon controls have accessible names; result regions are polite live regions | `render-a11y` |
 | One session implementation across all seven pages, refresh + sign-out proven | `render-session-shared` |
 | Source text is fenced data in all five LLM passes; a forged tag cannot escape | `verify-prompt-injection` |
 | Trends never waits on the LLM — first paint clusters, then upgrades | `render-narratives-async` |

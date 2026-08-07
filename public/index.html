@@ -412,7 +412,7 @@
   <div class="pulse" id="pulse" hidden></div>
 
   <div class="bar2" id="bar2" hidden>
-    <div class="status" id="status"></div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
     <div class="frow" id="sentRow"></div>
     <div class="frow" id="winRow"></div>
     <div class="frow" id="sortRow"></div>
@@ -467,7 +467,7 @@ async function loadMe(){
 }
 function renderAccount(){
   const el=$('#account'); if(!el) return;
-  let h=`<a class="acctlink guide" href="/guide" title="How it works — a quick guide">?</a>`;
+  let h=`<a class="acctlink guide" href="/guide" aria-label="Guide — how the board works" title="How it works — a quick guide">?</a>`;
   if(ME&&ME.role==='admin'){ h+=`<a class="acctlink" href="/admin" title="Admin panel — users, subscribers, feedback, audit">⚙ Admin</a>`; }
   if(ME&&ME.email){
     // Everything about YOUR account behind one button: which account you are
@@ -757,12 +757,12 @@ function cardHtml(it){
     ${coverageHtml(it.instances)}
     <div class="foot">
       <button class="btn copy" type="button" onclick="copyBrief(${it.id},this)">⧉ Copy brief</button>
-      <button class="fb share" type="button" title="Share a branded snapshot" onclick="snapshotCard(${it.id})">📸</button>
-      <button class="fb alert" type="button" title="Send this card as an instant alert — email (and WhatsApp when live) to the full alert list. For cards corrected after ingest; the rule still applies." onclick="sendAlert(${it.id},this)">🔔</button>
-      <button class="fb pin" aria-pressed="${pinned}" title="Pin for the team" onclick="togglePin(${it.id},'pin',this)">📌</button>
-      <button class="fb hide" aria-pressed="${hidden}" title="Hide from the team view" onclick="togglePin(${it.id},'hide',this)">🙈</button>
-      <button class="fb up" aria-pressed="${fb===1}" title="Useful" onclick="vote(${it.id},1,this)">▲</button>
-      <button class="fb down" aria-pressed="${fb===-1}" title="Not useful" onclick="vote(${it.id},-1,this)">▼</button>
+      <button class="fb share" type="button" aria-label="Share a branded snapshot of this story" title="Share a branded snapshot" onclick="snapshotCard(${it.id})">📸</button>
+      <button class="fb alert" type="button" aria-label="Send this story as an instant alert to the full alert list" title="Send this card as an instant alert — email (and WhatsApp when live) to the full alert list. For cards corrected after ingest; the rule still applies." onclick="sendAlert(${it.id},this)">🔔</button>
+      <button class="fb pin" aria-pressed="${pinned}" aria-label="Pin this story for the team" title="Pin for the team" onclick="togglePin(${it.id},'pin',this)">📌</button>
+      <button class="fb hide" aria-pressed="${hidden}" aria-label="Hide this story from the team view" title="Hide from the team view" onclick="togglePin(${it.id},'hide',this)">🙈</button>
+      <button class="fb up" aria-pressed="${fb===1}" aria-label="Mark this story useful" title="Useful" onclick="vote(${it.id},1,this)">▲</button>
+      <button class="fb down" aria-pressed="${fb===-1}" aria-label="Mark this story not useful" title="Not useful" onclick="vote(${it.id},-1,this)">▼</button>
       <a class="btn open" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>
     </div></article>`;
 }

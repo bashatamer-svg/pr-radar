@@ -570,6 +570,21 @@ gets nothing. All queries live in `lib/db.js`.
   must serve `.js` as `text/javascript`; a shared module arriving as `text/html`
   leaves the page with no `afetch` at all and it still renders. Pinned by
   `render-session-shared`.
+- **An icon is not a name, and `title` is not an accessible one.** The card
+  footer offered 📸 🔔 📌 🙈 ▲ ▼ and the admin rows ✎ ✕ with the meaning only in
+  a tooltip — which a screen reader does not reliably announce and a touch user
+  can never see, so six of an admin's eight card controls were unlabelled. Rule:
+  **a control whose visible text contains no letters (Latin or Arabic) needs an
+  `aria-label`**, and a toggle needs `aria-pressed` beside it so it announces
+  its STATE as well as its name. Every region that reports the result of an
+  action (`.formmsg`, `#msg`, `#uOut`, the board's `#status`) is
+  `role="status" aria-live="polite"` — **polite deliberately**: each message
+  follows a submit the reader is already waiting on, and assertive would
+  interrupt mid-sentence, which is how announcements get turned off. Nothing in
+  this app is urgent enough for `role="alert"`. Pinned by `render-a11y`, which
+  scans EVERY page (so a new one cannot skip it), rejects a label under four
+  characters or one that says "button", and checks the computed names, the
+  post-click state and keyboard reachability in a real browser.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
