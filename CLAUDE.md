@@ -859,6 +859,22 @@ gets nothing. All queries live in `lib/db.js`.
   along as `&n=` so the board banner reads "top N of M" instead of under-
   reporting. Pinned by `render-narrative-cluster` + `render-deeplink`.
   General rule: a cap that changes what the user sees must be visible in the UI.
+- **Trends opens with "So what?", and every line is DERIVED ARITHMETIC.** A
+  chart answers "what does the shape look like", which is the second question;
+  the first is "what changed, and who do I talk to", and a PR reader was
+  deriving it by eye from five cards each morning. `execInsights()`
+  (`stats.html`) computes up to five findings from the SAME arrays the charts
+  render — Vodafone-negative movement half-window over half-window, a rival
+  gaining share, the category carrying the most criticism, the outlet and
+  byline driving it, and how many narratives are still rising. **No request and
+  no model**: a second aggregation could disagree with the card underneath, and
+  an LLM headline is exactly the thing that must not be guessed here. Three
+  honesty bars, all asserted: a comparison needs **two days a side** (or there
+  is no previous period), a percentage needs a **non-zero baseline** (a rise
+  from nothing prints counts and no `%`), and an outlet or byline needs
+  **≥2 Vodafone-negatives** (one negative is an article, not a stance). When
+  nothing clears the bars it SAYS SO — a strip that always finds five things is
+  one nobody believes by the second week. Pinned by `render-exec-strip`.
 - **Trends exports are PER CARD** (⤓ XLS / ⤓ PDF next to each card's ⊞ Table),
   never a page-wide bar — you export the section you are looking at, and the
   filename is named after it. `sectionsFor(cardId)` maps a card's DOM id to its

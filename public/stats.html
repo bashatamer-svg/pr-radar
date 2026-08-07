@@ -80,6 +80,19 @@
   .khead .xp{cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--muted);
              font-family:var(--sans);font-size:11px;font-weight:700;padding:5px 8px;border-radius:9px;white-space:nowrap}
   .khead .xp:hover{border-color:var(--red);color:var(--red)}
+  /* "So what?" — the executive strip. Reads as prose, not as a chart. */
+  .exec{background:var(--card);border:1px solid var(--hair);border-radius:16px;padding:14px 16px;margin:12px 0}
+  .exhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;font-size:12px;font-weight:800;
+          letter-spacing:.1em;text-transform:uppercase;color:var(--red)}
+  .exsub{font-size:10.5px;font-weight:600;letter-spacing:.02em;text-transform:none;color:var(--faint)}
+  .exlist{list-style:none;margin:9px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+  .exrow a,.exrow>span{display:flex;align-items:flex-start;gap:9px;padding:6px 6px;border-radius:9px;
+        color:var(--ink-2);text-decoration:none;font-size:13.5px;line-height:1.5}
+  .exrow a:hover{background:var(--neu-bg);color:var(--ink)}
+  .exrow a:focus-visible{outline:2px solid var(--red);outline-offset:-2px}
+  .exdot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:7px;background:var(--faint)}
+  .exdot.bad{background:var(--red)} .exdot.good{background:var(--pos)} .exdot.flat{background:var(--muted)}
+  .exempty{margin-top:8px;font-size:13px;color:var(--muted);line-height:1.5}
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
   @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
   .kpi{background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:12px 13px;animation:rise .5s both}
@@ -586,6 +599,113 @@ function leaderboardRows(list,kind){
    Page assembly
    ============================================================ */
 
+/* ── "So what?" — the executive strip ─────────────────────────────────────
+   Trends opened on charts. A chart answers "what does the shape look like",
+   which is the second question; the first is "what changed, and who do I need
+   to talk to". A PR reader was deriving that by eye from five cards every
+   morning.
+
+   Every line below is DERIVED ARITHMETIC over the same arrays the charts
+   render — not a second aggregation, and emphatically not an LLM. Three rules
+   it keeps, because an executive summary that overstates is worse than none:
+
+     1. Nothing is stated without the numbers behind it. Each line carries its
+        own counts, so the reader can check it against the card underneath.
+     2. A comparison needs a real baseline. Half a window with no prior half,
+        or a rise from zero, produces NO line rather than a percentage that
+        divides by nothing.
+     3. When nothing qualifies, it says so. A strip that always finds five
+        things to say is a strip nobody believes by the second week. */
+function execInsights(){
+  const D=DATA, t=D.totals, W=boardWin(), out=[];
+  const days=(D.days||[]).length;
+  // Split the window in half and compare like with like. Needs at least two
+  // days a side, or "up 100%" is one story against zero.
+  const half=Math.floor(days/2);
+  const sum=(a,from,to)=>(a||[]).slice(from,to).reduce((x,y)=>x+(y||0),0);
+  const comparable=half>=2;
+  const label=`vs the previous ${half} day${half===1?'':'s'}`;
+
+  // 1. Vodafone negatives, this half against the last. The number the team
+  //    actually reports upwards.
+  if(comparable){
+    const neg=D.sov?.Vodafone?.negatives||[];
+    const now=sum(neg,half,days), before=sum(neg,0,half);
+    if(now||before){
+      const diff=now-before;
+      const tone=diff>0?'bad':diff<0?'good':'flat';
+      const word=diff>0?'up':diff<0?'down':'level';
+      const pctTxt=before>0&&diff!==0?` (${diff>0?'+':''}${Math.round((diff/before)*100)}%)`:'';
+      out.push({tone,
+        text:`<b>Vodafone negatives ${word}</b>${pctTxt} — ${now} in the last ${half}d, ${before} ${label}`,
+        href:`/?brand=Vodafone&sent=negative&win=${W}`});
+    }
+  }
+
+  // 2. The competitor gaining the most share of voice. Only when there is a
+  //    baseline to have gained ON — a rival appearing from nothing is news the
+  //    reader can see in the chart, not a percentage.
+  if(comparable){
+    let best=null;
+    for(const b of ['Orange','WE','e&']){
+      const m=D.sov?.[b]?.mentions||[];
+      const now=sum(m,half,days), before=sum(m,0,half);
+      if(before<2||now<=before) continue;
+      const gain=Math.round(((now-before)/before)*100);
+      if(gain>=25&&(!best||gain>best.gain)) best={brand:b,gain,now,before};
+    }
+    if(best) out.push({tone:'flat',
+      text:`<b>${esc(best.brand)} is louder</b> — ${best.now} mentions in the last ${half}d vs ${best.before} ${label} (+${best.gain}%)`,
+      href:`/?brand=${encodeURIComponent(best.brand)}&win=${W}`});
+  }
+
+  // 3. Where the pressure is. Vodafone-negative by category — the one that
+  //    names a team to hand it to.
+  {
+    const c=(D.categories||[]).filter(x=>x.vodNeg>0).sort((a,b)=>b.vodNeg-a.vodNeg)[0];
+    if(c) out.push({tone:'bad',
+      text:`<b>Most Vodafone criticism is ${esc(String(c.category).replace(/_/g,' '))}</b> — ${c.vodNeg} of ${t.vodafone.negatives} negative${t.vodafone.negatives===1?'':'s'}`,
+      href:`/?cat=${encodeURIComponent(c.category)}&brand=Vodafone&sent=negative&win=${W}`});
+  }
+
+  // 4. Who is writing it. An outlet with a single negative is not a pattern,
+  //    so this needs two.
+  {
+    const o=(D.outlets||[]).filter(x=>x.vodNeg>=2).sort((a,b)=>b.vodNeg-a.vodNeg)[0];
+    if(o) out.push({tone:'bad',
+      text:`<b>${esc(o.outlet)} leads the negative coverage</b> — ${o.vodNeg} Vodafone-negative of ${o.mentions} stor${o.mentions===1?'y':'ies'}`,
+      href:`/?outlet=${encodeURIComponent(o.outlet)}&win=${W}`});
+    const a=(D.authors||[]).filter(x=>x.vodNeg>=2).sort((x,y)=>y.vodNeg-x.vodNeg)[0];
+    if(a) out.push({tone:'bad',
+      text:`<b>${esc(a.author)} is the most critical byline</b> — ${a.vodNeg} Vodafone-negative of ${a.mentions}`,
+      href:`/?author=${encodeURIComponent(a.author)}&win=${W}`});
+  }
+
+  // 5. Threads still growing. Counted from the same `rising` flag the
+  //    narrative rows show, so the strip and the card cannot disagree.
+  {
+    const rising=(D.narratives||[]).filter(n=>n.rising);
+    if(rising.length) out.push({tone:'bad',
+      text:`<b>${rising.length} narrative${rising.length===1?'':'s'} still building</b> — biggest: ${esc(rising.sort((a,b)=>b.total-a.total)[0].name)}`,
+      href:null});
+  }
+  return out;
+}
+function execHtml(){
+  const ins=execInsights();
+  if(!ins.length){
+    // Deliberate: no coverage, or nothing that clears the bars above. Saying so
+    // is the honest answer, and it is also information.
+    return `<div class="exec"><div class="exhead">So what?</div>
+      <div class="exempty">Nothing in this window clears the bar for a callout — too little coverage, or no movement worth reporting.</div></div>`;
+  }
+  return `<div class="exec"><div class="exhead">So what?<span class="exsub">derived from the numbers below · last ${DATA.meta.days} days</span></div>
+    <ul class="exlist">${ins.slice(0,5).map(i=>{
+      const body=`<span class="exdot ${i.tone}" aria-hidden="true"></span><span>${i.text}</span>`;
+      return `<li class="exrow">${i.href?`<a href="${esc(i.href)}">${body}</a>`:body}</li>`;
+    }).join('')}</ul></div>`;
+}
+
 function kpiHtml(){
   const t=DATA.totals;
   const sovPct=pct(t.vodafone.mentions,t.items);
@@ -818,6 +938,9 @@ function render(){
   const cats=categoryRows();
   const narr=narrativeRows(DATA.narratives);
   c.innerHTML=kpiHtml()
+    // Summary numbers, then what they MEAN, then the detail. Above the charts
+    // on purpose: the first question is "what changed and who do I talk to".
+    +execHtml()
     +CHARTS.map(x=>cardHtml(x.id,x.title,x.sub)).join('')
     +cardHtml('c-narr','Narratives','same-theme stories grouped · rising flagged')
     +cardHtml('c-cat','Categories','volume · trend · negative share')
