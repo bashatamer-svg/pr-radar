@@ -16,7 +16,7 @@
 import { buildReport, buildReportRange, parseCairoRange, renderReport } from '../lib/report.js';
 import { sendBulletin } from '../lib/email.js';
 import { requireRole } from '../lib/auth.js';
-import { startRun, JOBS } from '../lib/runs.js';
+import { startRun, JOBS, runJob } from '../lib/runs.js';
 
 export const config = { maxDuration: 30 };
 
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     if (who.role !== 'admin') return res.status(403).json({ error: 'sending the report is admin-only' });
     // Only the SEND path is the Monday job. Viewing or exporting a report is a
     // person reading a page, and recording it would bury the weekly fire.
-    const run = await startRun(JOBS.report);
+    const run = await startRun(runJob(JOBS.report, who));
     const enabled = process.env.REPORT_EMAIL_ENABLED === '1';
     let sent = false, note = null;
     if (enabled) {

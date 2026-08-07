@@ -19,7 +19,7 @@ process.env.SUPABASE_URL = 'https://fake.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'k';
 
 const { MIGRATIONS, migrationStatus, migrationCheck } = await import('../lib/migrations.js');
-const { runChecks, startRun, JOBS } = await import('../lib/runs.js');
+const { runChecks, startRun, JOBS, runJob } = await import('../lib/runs.js');
 
 /* ═══ 1. the migration ledger ══════════════════════════════════════════════ */
 
@@ -131,6 +131,65 @@ const ago = (h) => new Date(Date.now() - h * 36e5).toISOString();
   assert.match(c.hint, /did not fire, rather than firing and finding nothing/,
     'and distinguishes it from a quiet night, which is the entire point');
 }
+// …AND IT MUST STAY CRITICAL. The recent-runs window is nine days; a job dead
+// for longer than that has no row inside it at all, so deriving "when did X
+// last run?" from that query alone made the outage CURE ITSELF — the job looked
+// as though it had never been recorded, the overdue check skipped it, and a
+// cron stopped for a fortnight went quiet on the page instead of red. The
+// per-job latest read has no horizon, and it is what the clock reads.
+{
+  const out = runChecks(
+    // Only the still-alive job is inside the window.
+    [{ job: 'radar-urgent', started_at: ago(0.2), completed_at: ago(0.1), status: 'ok', duration_ms: 9000 }],
+    Date.now(),
+    [{ job: 'radar-urgent', started_at: ago(0.2), completed_at: ago(0.1), status: 'ok', duration_ms: 9000 },
+     { job: 'radar', started_at: ago(14 * 24), completed_at: ago(14 * 24), status: 'ok', duration_ms: 9000 }],
+  );
+  const c = out.find((x) => x.id === 'runs');
+  assert.strictEqual(c.state, 'crit', 'a job dead longer than the query window is STILL critical');
+  assert.match(c.detail, /overdue: radar \(/, 'and is named, with its true age');
+  assert.match(c.detail, /14d/, 'which is the age the short window could not have known');
+}
+
+// A MANUAL run must not answer "did the schedule fire?". Every one of these
+// endpoints is operator-gated, which admits signed-in admins — so an
+// interactive /api/geo click wrote the same `geo` key and reset an eight-day
+// overdue clock, hiding a dead cron for another week.
+{
+  const out = runChecks(
+    [{ job: 'geo:manual', started_at: ago(1), completed_at: ago(1), status: 'ok', duration_ms: 4000 },
+     { job: 'radar', started_at: ago(2), completed_at: ago(2), status: 'ok', duration_ms: 9000 }],
+    Date.now(),
+    [{ job: 'geo:manual', started_at: ago(1), completed_at: ago(1), status: 'ok', duration_ms: 4000 },
+     { job: 'geo', started_at: ago(20 * 24), completed_at: ago(20 * 24), status: 'ok', duration_ms: 4000 },
+     { job: 'radar', started_at: ago(2), completed_at: ago(2), status: 'ok', duration_ms: 9000 }],
+  );
+  const c = out.find((x) => x.id === 'runs');
+  assert.strictEqual(c.state, 'crit', 'the manual run an hour ago does not excuse the cron that has not fired in 20 days');
+  assert.match(c.detail, /overdue: geo \(/, 'geo is still reported overdue');
+  assert.ok(!/geo:manual/.test(c.detail), 'and the manual key is not listed as a scheduled job');
+}
+// …but a manual run is still WATCHED. It can stall or throw like any other, and
+// the completion check reads every row, whatever the key.
+{
+  const out = runChecks([
+    { job: 'geo:manual', started_at: ago(3), completed_at: null, status: 'running' },
+    { job: 'radar', started_at: ago(1), completed_at: ago(1), status: 'ok', duration_ms: 9000 },
+  ]);
+  const c = out.find((x) => x.id === 'runstall');
+  assert.strictEqual(c.state, 'warn', 'a manual run killed mid-flight is still reported');
+  assert.match(c.detail, /geo:manual/, 'by name');
+}
+// The key itself: only the cron's own service principal is "scheduled".
+{
+  assert.strictEqual(runJob(JOBS.geo, { kind: 'service', actor: 'service:cron', role: 'admin' }), 'geo',
+    'the cron writes the scheduled key');
+  assert.strictEqual(runJob(JOBS.geo, { kind: 'user', actor: 'a@b.com', email: 'a@b.com', role: 'admin' }), 'geo:manual',
+    'a signed-in admin writes a manual key');
+  assert.strictEqual(runJob(JOBS.radar, undefined), 'radar:manual',
+    'and an unknown principal is manual — never silently counted as the schedule');
+}
+
 // A run KILLED mid-flight. It writes nothing and throws nothing — a lambda hit
 // by the 60s cap leaves only an open row, so this is the only place it shows.
 {

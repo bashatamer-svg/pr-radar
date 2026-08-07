@@ -16,7 +16,7 @@
 // only — it exposes operational internals, not team content.
 
 import {
-  recentAlerts, recentRuns, parkedItemCount, lastItemSeenAt, ingestSummary, brokenFeeds,
+  recentAlerts, recentRuns, latestRuns, parkedItemCount, lastItemSeenAt, ingestSummary, brokenFeeds,
   getHouseKnowledge, houseKnowledgeUpdatedAt,
   getStateTime, relevanceBaseline, authorBacklog, digestEligibleCount,
   activeSubscribers, monthToDateUsage, databaseSizeBytes,
@@ -27,9 +27,9 @@ import { recentDeliveryStatus } from '../lib/deliverability.js';
 import { requireRole } from '../lib/auth.js';
 import { buildInfo, buildCheck } from '../lib/build.js';
 import { migrationStatus, migrationCheck } from '../lib/migrations.js';
-import { startRun, JOBS, runChecks } from '../lib/runs.js';
-import { whatsappCheck } from '../lib/whatsapp.js';
-import { houseContextCheck } from '../lib/house-context.js';
+import { startRun, JOBS, runChecks, runJob } from '../lib/runs.js';
+import { whatsappCheck, whatsappRecipientCount } from '../lib/whatsapp.js';
+import { houseContextCheck, CONTEXT_UNAVAILABLE } from '../lib/house-context.js';
 
 export const config = { maxDuration: 20 };
 
@@ -74,7 +74,7 @@ export default async function handler(req, res) {
   // Only the SCHEDULED push is a job. Opening the page is not a run, and
   // recording every admin page-load would bury the daily fire it exists to
   // confirm.
-  const run = req.query?.notify === '1' ? await startRun(JOBS.health) : null;
+  const run = req.query?.notify === '1' ? await startRun(runJob(JOBS.health, who)) : null;
 
   const checks = [];
   const add = (c) => checks.push(c);
@@ -97,19 +97,33 @@ export default async function handler(req, res) {
   // consistent with a quiet night, with every story being a duplicate, and with
   // the cron never firing. Null when the ledger is absent, which reads as
   // 'unknown' rather than as "nothing ran".
-  for (const c of runChecks(await recentRuns({ days: 9 }).catch(() => null))) add(c);
+  // Two reads, two questions. The short window carries failures, stalls and
+  // durations; the per-job latest carries "when did this last run?" with NO
+  // horizon, because a job dead longer than the window used to fall out of the
+  // query and stop being reported at all.
+  const [recent, latest] = await Promise.all([
+    recentRuns({ days: 9 }).catch(() => null),
+    latestRuns(Object.values(JOBS)).catch(() => null),
+  ]);
+  for (const c of runChecks(recent, Date.now(), latest)) add(c);
 
   // The crisis SIDE channel, as a ladder rather than a boolean. Credentials
   // present is rung one of five, and reading it as "ready" is how a channel
   // with an approved template and a test-number sender looked healthy while
-  // every send failed.
-  add(whatsappCheck());
+  // every send failed. The recipient count is RESOLVED (env ∪ subscribers) —
+  // the list lives in Admin, so counting WHATSAPP_TO alone reports "nobody to
+  // page" for a channel that would page five people.
+  const waReach = await whatsappRecipientCount().catch(() => null);
+  add(whatsappCheck(waReach == null ? {} : { recipients: waReach }));
 
   // The living-knowledge doc is injected into EVERY classification and marked
   // authoritative, so a line whose story has ended keeps steering unrelated
   // news. Nothing ever prompted anyone to prune it.
   const [ctxText, ctxAt] = await Promise.all([
-    getHouseKnowledge().catch(() => ''),
+    // NOT '' — that is a real, healthy state ("no living-knowledge row"), and
+    // reporting a failed read as an empty document hides the failure behind an
+    // `ok`. The sentinel keeps the two apart.
+    getHouseKnowledge().catch(() => CONTEXT_UNAVAILABLE),
     houseKnowledgeUpdatedAt().catch(() => undefined),
   ]);
   add(houseContextCheck({ content: ctxText, updatedAt: ctxAt }));

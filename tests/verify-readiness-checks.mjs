@@ -18,7 +18,7 @@ process.env.SUPABASE_URL = 'https://fake.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'k';
 
 const { whatsappReadiness, whatsappCheck, isTestSender } = await import('../lib/whatsapp.js');
-const { houseContextCheck, staleContextEntries, CONTEXT_STALE_DAYS, CONTEXT_REVIEW_DAYS } =
+const { houseContextCheck, staleContextEntries, CONTEXT_STALE_DAYS, CONTEXT_REVIEW_DAYS, CONTEXT_UNAVAILABLE } =
   await import('../lib/house-context.js');
 
 const wa = (env = {}, probe = {}) => {
@@ -79,13 +79,67 @@ const rungOf = (r, id) => r.rungs.find((x) => x.id === id);
 }
 
 // Nobody to page. Credentials perfect, channel useless — the failure that used
-// to look identical to a clean send.
+// to look identical to a clean send. Note the count is RESOLVED and passed in:
+// "nobody" is a claim about env ∪ subscribers, and only the caller can make it.
 {
   const r = wa({ WHATSAPP_ENABLED: '1', WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_ID: 'p' },
-    { displayNumber: '+20 100 123 4567', nameStatus: 'APPROVED', templateStatus: 'APPROVED' });
+    { displayNumber: '+20 100 123 4567', nameStatus: 'APPROVED', templateStatus: 'APPROVED', recipients: 0 });
   assert.strictEqual(rungOf(r, 'recipients').state, 'missing', 'no recipients is a failed rung');
   assert.notStrictEqual(r.state, 'ok', 'and the channel is not ready without anyone to reach');
   assert.match(r.hint, /Admin → Subscribers/, 'naming where the list lives — not an env var');
+}
+
+// THE DOCUMENTED NORMAL SETUP: the crisis list lives in Admin → Subscribers and
+// WHATSAPP_TO is empty, because the env var needs a Vercel edit AND a redeploy.
+// Counting only the env var reported "nobody to page" — and warned the whole
+// channel — for a setup that would have paged five people.
+{
+  const r = wa({ WHATSAPP_ENABLED: '1', WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_ID: 'p' },
+    { displayNumber: '+20 100 123 4567', nameStatus: 'APPROVED', templateStatus: 'APPROVED', recipients: 5 });
+  assert.strictEqual(rungOf(r, 'recipients').state, 'ok',
+    'five subscriber numbers and an empty WHATSAPP_TO is a reachable channel');
+  assert.match(rungOf(r, 'recipients').note, /5 number/, 'and the count is the resolved one');
+  assert.strictEqual(r.state, 'ok', 'so the ladder reads ready');
+}
+
+// Not asked ≠ nobody. With no resolved count the function cannot see the
+// subscriber list at all, so an empty env list is UNKNOWN — never a claim that
+// there is nobody there.
+{
+  const r = wa({ WHATSAPP_ENABLED: '1', WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_ID: 'p' },
+    { displayNumber: '+20 100 123 4567', nameStatus: 'APPROVED', templateStatus: 'APPROVED' });
+  assert.strictEqual(rungOf(r, 'recipients').state, 'unknown',
+    'without the resolved count, an empty WHATSAPP_TO proves nothing about the subscriber list');
+  assert.notStrictEqual(r.state, 'ok', 'and an unverified rung still keeps the ladder off "ready"');
+  // …but a populated env list is a FLOOR: those numbers are reachable whatever
+  // the database says, so it is ok rather than unknown.
+  const r2 = wa({ WHATSAPP_ENABLED: '1', WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_ID: 'p', WHATSAPP_TO: '201001234567' },
+    { displayNumber: '+20 100 123 4567', nameStatus: 'APPROVED', templateStatus: 'APPROVED' });
+  assert.strictEqual(rungOf(r2, 'recipients').state, 'ok',
+    'a number in WHATSAPP_TO is reachable regardless of the subscriber list');
+}
+
+// The resolver behind that count: the UNION, and it THROWS rather than
+// under-reporting. `resolveWhatsappRecipients()` degrades to the env list so a
+// crisis still reaches someone; a CHECK must not make that trade, or it reports
+// a partial list as the whole one.
+{
+  const { whatsappRecipientCount } = await import('../lib/whatsapp.js');
+  process.env.WHATSAPP_TO = '201001234567, 201009999999';
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('pr_subscribers')) {
+      return { ok: true, status: 200,
+        text: async () => JSON.stringify([{ whatsapp: '201001234567' }, { whatsapp: '201005555555' }]) };
+    }
+    throw new Error('not asked');
+  };
+  assert.strictEqual(await whatsappRecipientCount(), 3,
+    'env ∪ subscribers, deduped — the number in both places counts once');
+
+  globalThis.fetch = async () => { throw new Error('database down'); };
+  await assert.rejects(() => whatsappRecipientCount(),
+    'an unreadable subscriber list throws, so the caller reports unknown instead of the env-only count');
+  delete process.env.WHATSAPP_TO;
 }
 
 // A rejected template says templates do not transfer between accounts, which is
@@ -172,6 +226,19 @@ const dateAgo = (d) => daysAgo(d).slice(0, 10);
   assert.strictEqual(houseContextCheck({}).state, 'unknown');
   assert.strictEqual(houseContextCheck().state, 'unknown');
 }
+// …and "could not ask" must not be able to arrive looking like "nothing there".
+// The two queries are independent, so a content read can fail while the
+// timestamp read succeeds — and `.catch(() => '')` turned that into the healthy
+// "empty — only the static house context is injected", hiding a database
+// failure behind an ok on the one page whose job is to report it.
+{
+  const c = houseContextCheck({ content: CONTEXT_UNAVAILABLE, updatedAt: daysAgo(3) });
+  assert.strictEqual(c.state, 'unknown',
+    'a failed content read is unknown even when the timestamp read succeeded');
+  assert.match(c.detail, /could not read/i, 'and says so');
+  assert.notStrictEqual(houseContextCheck({ content: '', updatedAt: daysAgo(3) }).state, 'unknown',
+    'while a genuinely empty document is still the good state it always was');
+}
 {
   assert.ok(CONTEXT_STALE_DAYS < CONTEXT_REVIEW_DAYS,
     'a single entry expires before the whole doc is called unreviewed — the specific signal must fire first');
@@ -188,6 +255,12 @@ const dateAgo = (d) => daysAgo(d).slice(0, 10);
       return { ok: true, status: 200,
         text: async () => JSON.stringify([{ content: `[${dateAgo(200)}] an ancient fact`, updated_at: daysAgo(200) }]) };
     }
+    // The crisis list as it is actually kept: three numbers in Admin, nothing
+    // in WHATSAPP_TO.
+    if (u.includes('pr_subscribers') && u.includes('whatsapp=not.is.null')) {
+      return { ok: true, status: 200,
+        text: async () => JSON.stringify([{ whatsapp: '201001111111' }, { whatsapp: '201002222222' }, { whatsapp: '201003333333' }]) };
+    }
     throw new Error('everything else is down');
   };
   const { default: alerts } = await import('../api/alerts.js');
@@ -201,6 +274,16 @@ const dateAgo = (d) => daysAgo(d).slice(0, 10);
   const ctx = out.checks.find((c) => c.id === 'context');
   assert.strictEqual(ctx.state, 'warn', 'the 200-day-old entry is flagged');
   assert.match(ctx.detail, /ancient fact/, 'and quoted');
+
+  // The endpoint RESOLVES the recipient list before it judges the rung — this
+  // is the wiring, not just the pure function. WHATSAPP_TO is unset here, so
+  // the env-only count would have reported "nobody to page" for three numbers
+  // that would all have been messaged.
+  const waCheck = out.checks.find((c) => c.id === 'whatsapp');
+  assert.ok(!/nobody to page/.test(`${waCheck.detail} ${waCheck.hint}`),
+    `subscriber numbers count as recipients (got "${waCheck.detail}")`);
+  assert.ok(!/recipients/i.test(waCheck.detail),
+    'so recipients is not among the blocked rungs');
 }
 
-console.log('READINESS OK — WhatsApp is a five-rung ladder, so an approved template with a +1 555 test sender never reads as ready and an unprobed rung reads as unverified rather than fine; the house-knowledge doc flags dated entries past 45 days and an untouched doc past 60, leaves undated lines alone, treats empty as good, and neither check can be critical or break the page');
+console.log('READINESS OK — WhatsApp is a five-rung ladder, so an approved template with a +1 555 test sender never reads as ready and an unprobed rung reads as unverified rather than fine; recipients are counted from env ∪ subscribers (the list lives in Admin, so the env var alone said "nobody to page" for a working channel) and an unreadable list is unknown, not zero; the house-knowledge doc flags dated entries past 45 days and an untouched doc past 60, leaves undated lines alone, treats empty as good but a FAILED read as unknown, and neither check can be critical or break the page');

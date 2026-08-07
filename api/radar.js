@@ -14,7 +14,7 @@ import { authorFromEntry, fetchAuthor, cleanAuthor, resetAuthorAiBudget } from '
 import { resolveUrl, isGoogleNews, isNonArticlePage } from '../lib/resolve.js';
 import { safeExternalUrl } from '../lib/safe-url.js';
 import { requireOperator, auditReq } from '../lib/auth.js';
-import { startRun, JOBS } from '../lib/runs.js';
+import { startRun, JOBS, runJob } from '../lib/runs.js';
 
 export const config = { maxDuration: 60 };
 
@@ -320,7 +320,7 @@ export default async function handler(req, res) {
   // `status:'running'` with a null completed_at — and the stalled-run health
   // check reports that. A catch would record the throw and miss the timeout,
   // which is the failure mode this app is actually near.
-  const run = dry || debug ? null : await startRun(urgentOnly ? JOBS.radarUrgent : JOBS.radar);
+  const run = dry || debug ? null : await startRun(runJob(urgentOnly ? JOBS.radarUrgent : JOBS.radar, who));
 
   // 1. Fetch feeds in parallel. A dead feed yields [] and is logged.
   //    Urgent-only crisis polls (every 15 min) hit ONLY the brand-targeted

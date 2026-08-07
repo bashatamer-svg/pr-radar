@@ -113,13 +113,13 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_users` / `pr_audit` | Sign-in allowlist + roles; audit trail. **Live-only: missing from schema.sql** (see Drift). The row is only half an account — the PASSWORD lives in Supabase Auth, and Admin → Users writes both (see the provisioning Gotcha) |
 | `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency; `manual_alert_<id>` = the board's 🔔 already fired for that card) |
 | `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users). `whatsapp` NULL (never '') = not paged; `active` gates BOTH channels. `addSubscriber` UPSERTS every column, so ask `getSubscriberByEmail` first or you blank a live row's filter and crisis number |
-| `pr_context` | Admin-editable house knowledge injected into classification. **It decays, and now says so**: a line naming a live story is right for a fortnight and then steers unrelated news, and nothing ever prompted a prune. `houseContextCheck` warns on a **dated** entry (`[YYYY-MM-DD]` line prefix, an optional convention) older than 45 days, or on the whole doc going 60 days untouched. Undated lines are deliberately NOT flagged — flagging them would make the check permanently amber on the doc as it stands, which is how a check stops being read. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
+| `pr_context` | Admin-editable house knowledge injected into classification. **It decays, and now says so**: a line naming a live story is right for a fortnight and then steers unrelated news, and nothing ever prompted a prune. `houseContextCheck` warns on a **dated** entry (`[YYYY-MM-DD]` line prefix, an optional convention) older than 45 days, or on the whole doc going 60 days untouched. Undated lines are deliberately NOT flagged — flagging them would make the check permanently amber on the doc as it stands, which is how a check stops being read. A FAILED read is `CONTEXT_UNAVAILABLE`, not `''`: the content and the timestamp are fetched independently, and collapsing an unreachable database into "empty document" reported a healthy `ok` for a read that never happened. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
 | `pr_feed_health` | Per-feed failure streaks (bulletin footer). **`fail_streak` never counted** — `recordFeedHealth` wrote a literal `1` on every failure, so a feed dead three weeks read like one that hiccuped once. It cannot be a read-then-write: the 15-min poll and the 05:00 run OVERLAP on the ten brand feeds, so two writers read the same number and both write value+1. PostgREST cannot express `set x = x + 1` either, so the increment goes through **`pr_bump_feed_failure`** (`migrations/2026-08-07-pr-feed-failure-streak.sql`, **NOT yet applied**) — one `INSERT..ON CONFLICT DO UPDATE`, atomic by construction. Without it the fallback records the error and **leaves the count alone** rather than resetting it to 1: stale is honest, `1` actively asserts something false. `last_ok_at` is never touched by a failure — it is what `brokenFeeds()` actually reads. Pinned by `verify-feed-streak` |
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
 | `pr_subscribers.whatsapp` | **Applied 3 Aug** via Supabase MCP with user approval, from `migrations/2026-08-03-pr-subscribers-whatsapp.sql` |
 | `pr_schema_migrations` | **Which migrations this database has.** Nothing recorded it before, which is how this file spent a week asserting `reset_requested_at` was un-applied when it was live — a wrong belief about schema state sends a reader hunting a bug in correct code. `lib/migrations.js` holds the code's side (`MIGRATIONS`, id = filename without `.sql`); the table is the DB's side; Admin → Health shows them together. **READ-ONLY to the app** — a migration is a human action taken with approval, and an app that can record or perform its own schema changes changes production while nobody watches. **NOT yet applied** (`migrations/2026-08-07-pr-schema-migrations.sql`); it BACKFILLS on evidence (each pre-ledger entry is inserted only if its object actually exists), so applying it states what is true rather than assuming a clean slate |
-| `pr_runs` | **Did the job actually RUN?** Every "did it run?" check on Health was an INFERENCE from an outcome, and "no new stories in 20h" is equally consistent with a quiet night, with every story being a duplicate (the 15-min poll writes nothing then), and with the cron never firing. One row per run: start, finish, status, duration, counts, first line of any error, and the `git_sha` that ran it. A row left `running` with a null `completed_at` is a run the **function timeout killed** — the one failure no outcome-based check can see, since it writes nothing and throws nothing. **NOT yet applied** (`migrations/2026-08-07-pr-runs.sql`) |
+| `pr_runs` | **Did the job actually RUN?** Every "did it run?" check on Health was an INFERENCE from an outcome, and "no new stories in 20h" is equally consistent with a quiet night, with every story being a duplicate (the 15-min poll writes nothing then), and with the cron never firing. One row per run: start, finish, status, duration, counts, first line of any error, and the `git_sha` that ran it. A row left `running` with a null `completed_at` is a run the **function timeout killed** — the one failure no outcome-based check can see, since it writes nothing and throws nothing. `job` is the plain name for the CRON and `<job>:manual` for anyone else (`runJob`), so an admin's diagnostic run cannot reset an overdue clock. **NOT yet applied** (`migrations/2026-08-07-pr-runs.sql`) |
 | `pr_users.reset_requested_at` | Forgot-password queue: set when someone taps "Forgot password?", cleared by EVERY path that sets a password, so the queue empties itself. **APPLIED — live-verified 7 Aug** (this file previously said "NOT yet applied"; the column and its partial index are both present). The code still degrades gracefully without it, and that fallback is still tested |
 
 RLS is ON with **no policies**: only the service-role key reads/writes; anon
@@ -358,7 +358,14 @@ gets nothing. All queries live in `lib/db.js`.
   whole question — which is how "template APPROVED, display name cleared,
   credentials set" read as healthy while every send failed on the +1 555 test
   sender. Rungs 3 and 4 can only be answered by ASKING Meta, so without a probe
-  they report **unverified**, never fine. The check is never CRIT: WhatsApp is
+  they report **unverified**, never fine. Rung 5 counts the **resolved** list
+  (`whatsappRecipientCount()` = env ∪ subscribers, and it THROWS rather than
+  under-reporting) — `whatsappStatus().recipients` is `WHATSAPP_TO` alone, and
+  in the documented normal setup that var is EMPTY because it needs a Vercel
+  edit and a redeploy, so counting it reported "nobody to page" for a channel
+  that would have paged five people. With no resolved count a populated
+  `WHATSAPP_TO` is a floor (ok); an empty one is **unknown**, never zero.
+  The check is never CRIT: WhatsApp is
   the side channel, email is the one that must work, and a red page over a
   secondary channel blocked for a week trains its reader to ignore red. Pinned
   by `verify-readiness-checks`.
@@ -1053,7 +1060,22 @@ gets nothing. All queries live in `lib/db.js`.
   question the ledger exists to answer. Both ledgers degrade to **`unknown`**,
   never to an alarm: "the table is absent" and "nothing ran" are opposite facts,
   and guessing the alarming one puts the page permanently red on the very
-  database it should reassure you about. Pinned by `verify-ledgers`.
+  database it should reassure you about.
+  Two things the overdue clock gets wrong if you build it the obvious way.
+  **It cannot read a windowed query**: "what ran lately" (`recentRuns`, 9 days)
+  is the wrong question for "when did X last run", because a job dead longer
+  than the window has no row in it, reads as never-recorded, and is SKIPPED —
+  so the outage cures itself and a cron stopped for a fortnight goes quiet
+  instead of red. `latestRuns(jobs)` is a separate, horizon-free
+  `limit=1`-per-job read (indexed; the 15-min poll writes 96 rows a day, so any
+  row cap is minutes of urgent runs), and it is what seeds the clock.
+  **And a MANUAL run is not the schedule.** Every one of these endpoints is
+  `requireOperator`-gated, which admits signed-in admins — so one interactive
+  `/api/geo` click wrote the same `geo` key and reset an eight-day overdue
+  clock. `runJob(job, who)` files anything but the cron's own service principal
+  under **`<job>:manual`**, which the clock ignores and the completion check
+  still reads, so a manual run that stalls is still reported. Pinned by
+  `verify-ledgers`.
 - **A parked story is invisible everywhere except Admin → Health.** When the
   classifier returns no verdict, `classify.js` stores the item
   `category:'unclassified', confidence:0, summary:null, is_relevant:false` —

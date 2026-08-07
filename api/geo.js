@@ -15,7 +15,7 @@
 import { runGeoCheck, renderGeoEmail } from '../lib/geo.js';
 import { sendBulletin } from '../lib/email.js';
 import { requireOperator } from '../lib/auth.js';
-import { startRun, JOBS } from '../lib/runs.js';
+import { startRun, JOBS, runJob } from '../lib/runs.js';
 
 export const config = { maxDuration: 60 };
 
@@ -24,7 +24,11 @@ export default async function handler(req, res) {
   const who = await requireOperator(req, res);
   if (!who) return;   // 401/403 already sent
 
-  const run = await startRun(JOBS.geo);
+  // A MANUAL run gets its own ledger key. requireOperator admits signed-in
+  // admins, so an interactive diagnostic hit would otherwise write the same
+  // `geo` key Health reads as "the Monday cron fired" — one click resetting an
+  // eight-day overdue clock and hiding a dead job for another week.
+  const run = await startRun(runJob(JOBS.geo, who));
   let result;
   try {
     result = await runGeoCheck();
