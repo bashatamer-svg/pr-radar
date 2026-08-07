@@ -14,6 +14,7 @@ import { authorFromEntry, fetchAuthor, cleanAuthor, resetAuthorAiBudget } from '
 import { resolveUrl, isGoogleNews, isNonArticlePage } from '../lib/resolve.js';
 import { safeExternalUrl } from '../lib/safe-url.js';
 import { requireOperator, auditReq } from '../lib/auth.js';
+import { startRun, JOBS } from '../lib/runs.js';
 
 export const config = { maxDuration: 60 };
 
@@ -308,6 +309,19 @@ export default async function handler(req, res) {
     return res.status(200).json({ backfillAuthors: true, ...result });
   }
 
+  // OPEN THE RUN LEDGER (pr_runs). Only for runs that actually DO something:
+  // ?dry=1 and ?debug=1 are diagnostics, and recording them would pollute the
+  // one question the ledger exists to answer — "when did the scheduled job last
+  // run?". Fail-soft: `run.id` is null when the table is absent and every
+  // method is a no-op, so an un-migrated database behaves exactly as before.
+  //
+  // There is deliberately no try/catch around the pipeline below. A run that
+  // THROWS, or that is killed by the 60-second function timeout, leaves its row
+  // `status:'running'` with a null completed_at — and the stalled-run health
+  // check reports that. A catch would record the throw and miss the timeout,
+  // which is the failure mode this app is actually near.
+  const run = dry || debug ? null : await startRun(urgentOnly ? JOBS.radarUrgent : JOBS.radar);
+
   // 1. Fetch feeds in parallel. A dead feed yields [] and is logged.
   //    Urgent-only crisis polls (every 15 min) hit ONLY the brand-targeted
   //    queries — a tight, fast net over the four operators — so the poll stays
@@ -402,6 +416,10 @@ export default async function handler(req, res) {
   // bulletin silently stopped going out. Fall through instead; classify([]) is
   // a no-op (0 batches, 0 calls) and the digest is rebuilt from the DB.
   if (!candidates.length && urgentOnly) {
+    // A poll that found only stories it had already stored IS a successful run.
+    // Recording it is the whole point: without a ledger this is indistinguishable
+    // from the cron never having fired.
+    await run?.ok({ stored: 0, relevant: 0, alerts: 0 });
     return res.status(200).json({ scanned: raw.length, new: 0, note: 'nothing new' });
   }
 
@@ -996,6 +1014,12 @@ export default async function handler(req, res) {
       if (stale.length) console.log(`stored-author backfill: filled ${filled}/${stale.length} (unresolved ${breakdown.unresolved}, fetch-failed ${breakdown.fetchFailed}, no-byline ${breakdown.noByline}, write-fail ${breakdown.writeFailed})`);
     } catch (e) { console.error('stored-author backfill skipped (non-fatal)', e.message); }
   }
+
+  await run?.ok({
+    stored: classified.length,
+    relevant: classified.filter((i) => i.is_relevant !== false).length,
+    alerts: urgent.length,
+  });
 
   return res.status(200).json({
     scanned: raw.length,

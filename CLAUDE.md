@@ -117,6 +117,8 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
 | `pr_subscribers.whatsapp` | **Applied 3 Aug** via Supabase MCP with user approval, from `migrations/2026-08-03-pr-subscribers-whatsapp.sql` |
+| `pr_schema_migrations` | **Which migrations this database has.** Nothing recorded it before, which is how this file spent a week asserting `reset_requested_at` was un-applied when it was live — a wrong belief about schema state sends a reader hunting a bug in correct code. `lib/migrations.js` holds the code's side (`MIGRATIONS`, id = filename without `.sql`); the table is the DB's side; Admin → Health shows them together. **READ-ONLY to the app** — a migration is a human action taken with approval, and an app that can record or perform its own schema changes changes production while nobody watches. **NOT yet applied** (`migrations/2026-08-07-pr-schema-migrations.sql`); it BACKFILLS on evidence (each pre-ledger entry is inserted only if its object actually exists), so applying it states what is true rather than assuming a clean slate |
+| `pr_runs` | **Did the job actually RUN?** Every "did it run?" check on Health was an INFERENCE from an outcome, and "no new stories in 20h" is equally consistent with a quiet night, with every story being a duplicate (the 15-min poll writes nothing then), and with the cron never firing. One row per run: start, finish, status, duration, counts, first line of any error, and the `git_sha` that ran it. A row left `running` with a null `completed_at` is a run the **function timeout killed** — the one failure no outcome-based check can see, since it writes nothing and throws nothing. **NOT yet applied** (`migrations/2026-08-07-pr-runs.sql`) |
 | `pr_users.reset_requested_at` | Forgot-password queue: set when someone taps "Forgot password?", cleared by EVERY path that sets a password, so the queue empties itself. **APPLIED — live-verified 7 Aug** (this file previously said "NOT yet applied"; the column and its partial index are both present). The code still degrades gracefully without it, and that fallback is still tested |
 
 RLS is ON with **no policies**: only the service-role key reads/writes; anon
@@ -893,6 +895,19 @@ gets nothing. All queries live in `lib/db.js`.
   because ~42% of relevant cards have no author and never will — Egyptian wire
   and desk copy is unsigned, so a raw count is meaningless.
   Pinned by `verify-health-checks` + `render-health-tab`.
+- **A ledger must never be able to fail the job it watches** (`lib/runs.js`).
+  A monitoring table that can take down the ingest it monitors is a worse bug
+  than the blindness it was added to fix — so every function there swallows
+  everything, and the caller cannot tell "recorded" from "not recorded". There
+  is deliberately **no try/catch around the radar pipeline**: a run that throws,
+  or is killed at the 60s function cap, leaves its row `running`, and the
+  stalled-run check reports that. A catch would record the throw and MISS the
+  timeout, which is the failure this app is actually near. `?dry=1`/`?debug=1`
+  are not recorded — they are diagnostics, and they would pollute the one
+  question the ledger exists to answer. Both ledgers degrade to **`unknown`**,
+  never to an alarm: "the table is absent" and "nothing ran" are opposite facts,
+  and guessing the alarming one puts the page permanently red on the very
+  database it should reassure you about. Pinned by `verify-ledgers`.
 - **A parked story is invisible everywhere except Admin → Health.** When the
   classifier returns no verdict, `classify.js` stores the item
   `category:'unclassified', confidence:0, summary:null, is_relevant:false` —
@@ -966,9 +981,12 @@ never once been sufficient.
   it should answer "Request sent", put a row in Admin → Requests and mail
   `ADMIN_EMAILS`. Before the migration is applied it answers the same and
   records nothing, which is the designed degradation, not a failure.
-7. **Admin → Health** — 13 live checks + 14-day alert history, computed on
-  open. The first names the **deployed build** (running commit vs
-  `origin/main`). Five answer "did it run?" (brief freshness vs stories waiting, ingest
+7. **Admin → Health** — up to 16 live checks + 14-day alert history, computed
+  on open. The first three answer "what am I even looking at": the **deployed
+  build** (running commit vs `origin/main`), the **schema migrations** this
+  database has, and whether the **scheduled jobs actually ran** (recorded, not
+  inferred — plus a completion check that catches a run killed by the function
+  timeout). Five answer "did it run?" by outcome" (brief freshness vs stories waiting, ingest
   volume, parked stories, recipients, dead feeds). Seven answer harder
   questions: **screening quality** (7d relevance rate vs the prior 3 weeks),
   **byline backfill** (share, not count), **weekly report** (reads `off`, not

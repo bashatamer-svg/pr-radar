@@ -22,17 +22,29 @@ assert.strictEqual((await call({ t: 'nope' })).code, 401, 'no bearer is challeng
 assert.strictEqual((await call({}, { authorization: 'Bearer tok' })).code, 403,
   'the read-only RADAR_TOKEN cannot run the geo check');
 
-// GEO_ENABLED unset → feature off, zero external calls
+// GEO_ENABLED unset → feature off, zero ENGINE calls.
+//
+// The run ledger (pr_runs) writes a row whenever this endpoint is hit, so the
+// count below is of ENGINE calls specifically — a weekly cron that fires and
+// returns "disabled" is a successful run worth recording, and recording it is
+// the difference between "the geo cron is off" and "the geo cron is broken".
+// The ledger insert must never be able to fail the job, so it is answered here
+// rather than thrown at.
 let calls = 0;
-globalThis.fetch = async () => { calls++; throw new Error('should not be called'); };
+const ledgerOnly = async (u) => {
+  if (String(u).includes('pr_runs')) return { ok: true, status: 200, text: async () => '[{"id":1}]' };
+  calls++; throw new Error('should not be called');
+};
+globalThis.fetch = ledgerOnly;
 let r = await call({}, { authorization: 'Bearer cron' });
 assert.strictEqual(r.code, 200);
 assert.strictEqual(r.body.enabled, false, 'disabled by default');
-assert.strictEqual(calls, 0, 'no external calls when disabled');
+assert.strictEqual(calls, 0, 'no answer-engine calls when disabled');
 
 // enabled but NO engine keys → idle, still no calls
 process.env.GEO_ENABLED = '1';
 calls = 0;
+globalThis.fetch = ledgerOnly;
 r = await call({}, { authorization: 'Bearer cron' });
 assert.strictEqual(r.body.enabled, true);
 assert.strictEqual(r.body.checked, 0);

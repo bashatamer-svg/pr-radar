@@ -16,6 +16,7 @@
 import { buildReport, buildReportRange, parseCairoRange, renderReport } from '../lib/report.js';
 import { sendBulletin } from '../lib/email.js';
 import { requireRole } from '../lib/auth.js';
+import { startRun, JOBS } from '../lib/runs.js';
 
 export const config = { maxDuration: 30 };
 
@@ -52,6 +53,9 @@ export default async function handler(req, res) {
   // Opt-in email: default OFF; admin/cron only; needs REPORT_EMAIL_ENABLED=1.
   if (wantSend) {
     if (who.role !== 'admin') return res.status(403).json({ error: 'sending the report is admin-only' });
+    // Only the SEND path is the Monday job. Viewing or exporting a report is a
+    // person reading a page, and recording it would bury the weekly fire.
+    const run = await startRun(JOBS.report);
     const enabled = process.env.REPORT_EMAIL_ENABLED === '1';
     let sent = false, note = null;
     if (enabled) {
@@ -62,6 +66,9 @@ export default async function handler(req, res) {
     } else {
       note = 'REPORT_EMAIL_ENABLED not set — email skipped (printable report still returned)';
     }
+    // A dormant flag is a SUCCESSFUL run of a job that is switched off, not a
+    // failure — the cron fired, did what it is configured to do, and returned.
+    await run?.ok({ stored: data.totals.items, relevant: data.totals.negatives, alerts: sent ? 1 : 0 });
     return res.status(200).json({ period: opts.period, days: data.days, items: data.totals.items, negatives: data.totals.negatives, sent, note });
   }
 

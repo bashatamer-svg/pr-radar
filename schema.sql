@@ -213,3 +213,44 @@ alter table pr_users   enable row level security;
 alter table pr_audit   enable row level security;
 alter table pr_alerts  enable row level security;
 alter table pr_usage   enable row level security;
+
+-- ── The two operational ledgers ────────────────────────────────────────────
+-- NOT yet applied to production (2026-08-07). They are here because this file
+-- is what a FRESH database is built from, and a rebuild should get the whole
+-- intended schema; migrations/2026-08-07-*.sql are the incremental path for the
+-- existing one. Both are optional by design — the code degrades to "feature
+-- absent" without either, and Admin → Health reports which are missing.
+
+-- Which migrations this database has. Nothing recorded it before, which is how
+-- the repo spent a week believing pr_users.reset_requested_at was un-applied
+-- when it was live. Written by HAND (the SQL file), read by the app.
+create table if not exists pr_schema_migrations (
+  id          text primary key,      -- the migrations/*.sql filename, without .sql
+  applied_at  timestamptz not null default now(),
+  note        text
+);
+
+-- Did the scheduled job actually RUN? Every "did it run?" answer on Health was
+-- an inference from an outcome, and "no new stories in 20h" is equally
+-- consistent with a quiet night, with every story being a duplicate, and with
+-- the cron never firing. A row left `running` with a null completed_at is a run
+-- the function timeout KILLED — the one failure no outcome-based check can see.
+create table if not exists pr_runs (
+  id             bigint generated always as identity primary key,
+  job            text        not null,           -- radar | radar-urgent | health | report | geo
+  started_at     timestamptz not null default now(),
+  completed_at   timestamptz,
+  status         text        not null default 'running'
+                             check (status in ('running', 'ok', 'error')),
+  duration_ms    int,
+  stored_count   int,
+  relevant_count int,
+  alert_count    int,
+  error_summary  text,       -- first line only; never a payload
+  git_sha        text        -- which build ran it
+);
+create index if not exists pr_runs_job_started_idx on pr_runs (job, started_at desc);
+create index if not exists pr_runs_started_idx     on pr_runs (started_at desc);
+
+alter table pr_schema_migrations enable row level security;
+alter table pr_runs              enable row level security;

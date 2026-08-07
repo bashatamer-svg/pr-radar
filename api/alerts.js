@@ -16,7 +16,7 @@
 // only — it exposes operational internals, not team content.
 
 import {
-  recentAlerts, parkedItemCount, lastItemSeenAt, ingestSummary, brokenFeeds,
+  recentAlerts, recentRuns, parkedItemCount, lastItemSeenAt, ingestSummary, brokenFeeds,
   getStateTime, relevanceBaseline, authorBacklog, digestEligibleCount,
   activeSubscribers, monthToDateUsage, databaseSizeBytes,
 } from '../lib/db.js';
@@ -25,6 +25,8 @@ import { sendOpsAlert } from '../lib/email.js';
 import { recentDeliveryStatus } from '../lib/deliverability.js';
 import { requireRole } from '../lib/auth.js';
 import { buildInfo, buildCheck } from '../lib/build.js';
+import { migrationStatus, migrationCheck } from '../lib/migrations.js';
+import { startRun, JOBS, runChecks } from '../lib/runs.js';
 
 export const config = { maxDuration: 20 };
 
@@ -66,6 +68,11 @@ export default async function handler(req, res) {
   if (!who) return;   // 401/403 already sent
   if (req.method !== 'GET') return res.status(405).json({ error: 'method not allowed' });
 
+  // Only the SCHEDULED push is a job. Opening the page is not a run, and
+  // recording every admin page-load would bury the daily fire it exists to
+  // confirm.
+  const run = req.query?.notify === '1' ? await startRun(JOBS.health) : null;
+
   const checks = [];
   const add = (c) => checks.push(c);
 
@@ -75,6 +82,19 @@ export default async function handler(req, res) {
   // and dependency-free — it reads environment variables, so it cannot fail.
   const build = buildInfo();
   add(buildCheck(build));
+
+  // WHICH SCHEMA IT IS RUNNING AGAINST. Second, for the same reason: a check
+  // below reporting "usage tracking not available" is a missing migration, not
+  // a fault, and until now the only way to tell them apart was to go and look.
+  const migrations = await migrationStatus().catch(() => ({ available: false, applied: [], missing: [], unknown: [] }));
+  add(migrationCheck(migrations));
+
+  // DID THE JOB RUN? Recorded, not inferred. Every other "did it run" check on
+  // this page reads an OUTCOME — and "no new stories in 20h" is equally
+  // consistent with a quiet night, with every story being a duplicate, and with
+  // the cron never firing. Null when the ledger is absent, which reads as
+  // 'unknown' rather than as "nothing ran".
+  for (const c of runChecks(await recentRuns({ days: 9 }).catch(() => null))) add(c);
 
   // Run every probe in parallel; each settles independently so one missing
   // table can't blank the page.
@@ -443,6 +463,11 @@ export default async function handler(req, res) {
     }
   }
 
+  // alert_count is what the push actually SENT, not how many checks are red —
+  // "3 checks failing, 0 alerts sent" is the dedupe working, and conflating the
+  // two would hide it.
+  await run?.ok({ alerts: notified?.sent ? 1 : 0 });
+
   res.setHeader('Cache-Control', 'no-store');
   return res.status(200).json({
     ...(notified ? { notified } : {}),
@@ -451,6 +476,7 @@ export default async function handler(req, res) {
     // production against `git rev-parse origin/main` reads one field instead of
     // parsing a human sentence. Never fabricated: absent values are null.
     build,
+    migrations,
     status,
     checks,
     logAvailable: Array.isArray(log),

@@ -59,6 +59,7 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
+| Migration + run ledgers: read-only, fail-soft, unavailable ≠ alarm | `verify-ledgers` |
 | schema.sql defines every table/column lib/db.js queries | `verify-schema-baseline` |
 | Which commit is deployed — reported, never invented; preview warns | `verify-build-identity` |
 | The release gate itself — a skipped browser test fails under CI | `verify-ci-gate` |
