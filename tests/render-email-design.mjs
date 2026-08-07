@@ -26,6 +26,25 @@ assert.strictEqual(THEME.CANVAS.toLowerCase(), BOARD.bg, 'email CANVAS = board -
 assert.strictEqual(THEME.HAIRLINE.toLowerCase(), BOARD.hair, 'email HAIRLINE = board --hair');
 assert.strictEqual(THEME.RED.toLowerCase(), BOARD.red, 'email RED = board --red');
 
+// 1b. So is the brand chip. This is the same object in the inbox and on the
+// board, so its colour must not change under a reader who taps through.
+// Two had silently drifted (market #6d605d vs #6c7480, WE #6a1b9a vs #7b1fa2)
+// and survived for months because no email test rendered either brand — the
+// market colour was even on the retired-palette blocklist below. Comparing the
+// whole map, rather than the brands that happen to be in a fixture, is what
+// makes that impossible rather than unlikely.
+{
+  const m = board.match(/const BRAND_COLOR\s*=\s*\{([^}]*)\}/);
+  assert.ok(m, 'board defines BRAND_COLOR');
+  const boardBrands = {};
+  for (const b of m[1].matchAll(/'?([A-Za-z&]+)'?\s*:\s*'(#[0-9a-f]{3,8})'/gi)) boardBrands[b[1]] = b[2].toLowerCase();
+  assert.ok(Object.keys(boardBrands).length >= 5, 'parsed the board brand map');
+  for (const [brand, colour] of Object.entries(boardBrands)) {
+    assert.strictEqual((THEME.BRAND_COLOR[brand] || '').toLowerCase(), colour,
+      `email BRAND_COLOR.${brand} = board BRAND_COLOR.${brand}`);
+  }
+}
+
 const now = new Date().toISOString();
 const item = {
   id: 1, brand: 'Vodafone', headline: 'Cash outage', summary: 's', sentiment: 'negative',
@@ -37,7 +56,12 @@ const item = {
 // One item per lane, so all three section headers actually render.
 const win = { id: 2, brand: 'Vodafone', headline: 'Top employer', summary: 's', sentiment: 'positive', importance: 3, category: 'brand', source: 'DNE', published_at: now, seen_at: now };
 const rival = { id: 3, brand: 'e&', headline: 'Rival revenue up', summary: 's', sentiment: 'negative', importance: 2, category: 'competitor', source: 'Capital', published_at: now, seen_at: now };
-const bulletin = renderBulletin({ items: [item, win, rival], broken: [], scanned: 5, greetingName: 'Team' });
+// Every brand chip must actually RENDER here, or the retired-palette scan below
+// passes for the wrong reason. `market` and `WE` were the two never exercised,
+// and they were the two that had drifted.
+const sector = { id: 4, brand: 'market', headline: 'Sector KYC failures', summary: 's', sentiment: 'negative', importance: 3, category: 'market', source: 'Al Mal', published_at: now, seen_at: now };
+const we = { id: 5, brand: 'WE', headline: 'WE maintenance window', summary: 's', sentiment: 'neutral', importance: 2, category: 'network', source: 'Youm7', published_at: now, seen_at: now };
+const bulletin = renderBulletin({ items: [item, win, rival, sector, we], broken: [], scanned: 5, greetingName: 'Team', variant: 'admin' });
 const urgent = renderUrgent(item, 'https://pr-radar.example.com/');
 // The sign-in email is a third surface on the same tokens — a person's first
 // sight of the product, so it must not be the one that drifts.

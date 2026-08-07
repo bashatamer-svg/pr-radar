@@ -75,7 +75,8 @@ const call = async (body) => {
   assert.deepStrictEqual(to, [ADMIN], `the test goes only to the requesting admin (got ${JSON.stringify(to)})`);
   assert.ok(!to.some((a) => /sub1|sub2|thewholeteam/.test(a)), 'never the subscriber list, never RADAR_TO');
   assert.ok(/^URGENT — /.test(sent[0].subject), `Impact 5 is subjected URGENT (got ${sent[0].subject})`);
-  assert.ok(/● URGENT/.test(sent[0].html), 'and badged URGENT in the body');
+  // The badge lost its ● bullet in the 2026-08 redesign; match the pill.
+  assert.ok(/letter-spacing:\.28em;[^"]*">URGENT<\/span>/.test(sent[0].html), 'and badged URGENT in the body');
   assert.ok(/please ignore/i.test(sent[0].subject), 'the subject says it is a test, so a recipient does not act on it');
   assert.ok(audits.some((a) => JSON.stringify(a).includes('alert.test')), 'the send is audited');
 

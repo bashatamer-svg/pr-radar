@@ -30,8 +30,17 @@ const idxRisk = html.indexOf('Needs a response');
 const idxWins = html.indexOf('Wins to amplify');
 const idxMkt  = html.indexOf('Market &amp; noted');
 assert.ok(idxRisk >= 0 && idxWins >= 0 && idxMkt >= 0, 'all three email sections present, named like the board lanes');
-// section order in source is negative, positive, neutral
-const sliceRisk = html.slice(idxRisk, idxWins);
+// section order in source is negative, positive, neutral.
+// The needs-a-response REGION starts at the top of the body, not at the lane
+// heading: the highest-Impact story in that lane is lifted out as the "Read
+// this first" hero and printed ABOVE the heading, which then reads "N more,
+// after the one above". Slicing from idxRisk would put the hero outside its own
+// lane and this test would pass only for stories that were not promoted.
+assert.ok(html.indexOf('Read this first') >= 0 && html.indexOf('Read this first') < idxRisk,
+  'the hero sits above the lane headings');
+assert.ok(html.slice(0, idxRisk).includes(H.vodNeg),
+  'the hero is the highest-Impact needs-a-response story');
+const sliceRisk = html.slice(0, idxWins);
 const sliceWins = html.slice(idxWins, idxMkt);
 const sliceMkt  = html.slice(idxMkt);
 assert.ok(sliceRisk.includes(H.vodNeg), 'Vodafone negative is under Needs a response');

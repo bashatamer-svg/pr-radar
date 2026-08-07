@@ -42,6 +42,7 @@ sends email + WhatsApp alerts. Pure ESM Node on Vercel serverless + Supabase
 | `npm test -- <substr>` | Only tests whose filename matches |
 | `node --check <file>` | Syntax-check every changed file before commit |
 | `node scripts/make-og.mjs` | Regenerate OG card + favicon (only after redesigning them) |
+| `node scripts/render-emails.mjs [dir]` | Render all four emails (brief × team/subscriber, alert × ALERT/URGENT) from live code on a pinned clock. Sends nothing, needs no credentials |
 
 Browser tests need Chromium (`CHROMIUM_PATH`, default sandbox path) and skip
 gracefully without it. `tests/README.md` maps what covers what. Every shipped
@@ -56,7 +57,7 @@ behaviour gets a regression test in the same commit.
 | `public/*.html` | Self-contained pages (inline CSS/JS) for everything a page OWNS — its markup, styles and behaviour. API downloads must go fetch→blob (links can't carry the header) |
 | `public/assets/session.js` | The ONE session implementation: `session`, `saveSession`, `signOut`, `captureSessionFromHash`, `authConfig`, `refreshSession`, `afetch`. Loaded as a classic script BEFORE each page's inline block (not `defer` — the inline code calls into it at parse time). Authentication is not something a page owns |
 | `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
-| `scripts/` | One-off generators run manually (OG images) |
+| `scripts/` | Run manually, never in CI: `make-og.mjs` (OG images), `render-emails.mjs` (renders all four emails from live code on a pinned clock, to eyeball or diff against a design target) |
 | `tests/*.mjs` | The suite. `narr-fixture.mjs` (captured production data) and `byline-cases.mjs` (the byline ledger) are DATA, not tests — both are in the runner's `EXCLUDE` |
 
 New shared behaviour goes in `lib/` and is imported by `api/`; never duplicate
@@ -230,12 +231,19 @@ gets nothing. All queries live in `lib/db.js`.
 
 - **The daily brief has TWO independent recipient lists**, and only one of them
   is in the repo's reach. `RADAR_TO` (Vercel env, CSV of `Name <email>`) gets the
-  team copy — "Hi *Name*," header, `, N negative` subject tail, the ⚠ unclassified
-  footer, `RADAR_BCC`. `pr_subscribers` (Admin → Subscribers) gets the same
-  `renderBulletin` output with a per-subscriber category filter and a
-  `, N needing attention` subject. Same stories, same feed-health footer; the
-  `variant: 'admin'` argument is vestigial — `renderBulletin` doesn't destructure
-  it. Subscribers are the better list: self-serve, filterable, no redeploy.
+  team copy — "Good morning, *Name*." header, `, N negative` subject tail, the ⚠
+  unclassified footer, `RADAR_BCC`. `pr_subscribers` (Admin → Subscribers) gets
+  the same `renderBulletin` output with a per-subscriber category filter and a
+  `, N needing attention` subject. Same stories, same feed-health sentence.
+  **`variant:'admin'` is what separates them, and it is no longer vestigial** —
+  it was passed and never destructured until the 2026-08 redesign gave it the
+  two team-only jobs: the "Private — please don't forward" line and the footer
+  diagnostics that name internal feed ids (a subscriber has no use for
+  `Youm7 (SectionRss)`). The GREETING does not separate them — a subscriber can
+  have a name too, and now gets it. But BOTH copies carry the feed-health
+  clause in the summary sentence: it is the only place a reader is told the
+  radar was partially blind. Pinned by `render-email-digest`.
+  Subscribers are the better list: self-serve, filterable, no redeploy.
   `daily_bulletin_sent` is stamped when the brief reached **anyone** — gating it
   on the `RADAR_TO` send alone left the marker frozen for ten days while mail
   went out daily, so the `!dailyAlreadySent` guard in front of the subscriber
@@ -899,6 +907,59 @@ gets nothing. All queries live in `lib/db.js`.
   (`render-email-design` reads `:root` and asserts on all three templates). Card vocabulary is shared too: Impact,
   "What to do with this", and the lane names Needs a response / Wins to
   amplify / Market & noted.
+  **A token nothing renders is a token that drifts.** `BRAND_COLOR.market` was
+  `#6d605d` here against the board's `#6c7480`, and `WE` was `#6a1b9a` against
+  `#7b1fa2` — for months, because no email test used a `market` or `WE` item, so
+  the chips never rendered. The market value was even on this test's own
+  retired-warm-palette blocklist and passed anyway. Both corrected 7 Aug and the
+  test now compares the WHOLE board map against `THEME.BRAND_COLOR` and renders
+  all five chips, rather than trusting whichever brands a fixture happens to
+  contain. Same lesson as `render-final-sweep`: assert over the set, not the
+  sample.
+- **The emails are a "morning digest" (redesigned 7 Aug), and four things carry
+  the design.** (1) **The action leads.** Each card's tinted panel opens with
+  the `pr_angle` Action line at 15px/600; Read and Audience are demoted below a
+  hairline as `Why:` / `Audience:`. The hero and the alert keep the classifier's
+  own three labels under the shared "What to do with this" heading. The parser
+  stays GENERIC — a fourth angle label renders rather than being dropped.
+  (2) **Impact is five 16×7px dashes, not 9px dots**, and it is stated in words
+  too (`Impact 4 · High`): a colour ramp alone fails a colour-blind reader, and
+  orange-vs-red at 7px is exactly the pair that goes. **The BOARD still draws
+  dots** — the redesign covered the emails only, so the two surfaces now differ
+  on this one mark. Worth closing in either direction; until it is, do not
+  "fix" one to match the other by accident. (3) **One hero.** The
+  highest-Impact story in `Needs a response` (ties broken by recency,
+  `pickHero`) is lifted above the lanes. Its lane heading then reads "N more,
+  after the one above" — the counts MUST still add up to the total the intro
+  states, or a reader hunts for a card already on screen. A lane the hero
+  EMPTIES still prints its heading ("just the one above"): the lane names are
+  shared with the board and the guide, and on a one-story day "Needs a response"
+  would otherwise never appear. (4) **Phone-scale type** — body copy never below
+  15px, CTAs full-width and ≥52px.
+  **The byline rule differs from the board ON PURPOSE**: the email shows
+  `By {person}` and otherwise NOTHING, because its meta line already opens with
+  the outlet and the board's `<Outlet> · newsroom` fallback printed it twice
+  ("Masrawy · 2d ago · Masrawy · newsroom"). The board keeps the fallback, where
+  `.by` is a field of its own. Neither surface invents a name, which is the
+  actual rule.
+  **Gmail clips past ~102KB** and the footer goes with it. Measured 7 Aug: the
+  brief crosses that at **~24 stories** (5 → 26KB, 20 → 85KB). Live volume is
+  1–15 relevant a day, so there is headroom, but `render-email-digest` fails at
+  20 stories as an early warning if per-card markup grows.
+  `node scripts/render-emails.mjs [outDir]` renders all four from live code with
+  a PINNED clock, so two runs are byte-identical and a diff against a design
+  target shows only what the renderer changed. Pinned by `render-email-digest`
+  (hero, counts, dashes, action, bidi, team-vs-subscriber, size) +
+  `render-email-design` + `render-lanes-email-report` + `verify-urgent-recipients`.
+- **`dir="auto"` fences ONE language run, never a joined line.** It takes the
+  FIRST strong character and sets the direction of the whole node, so
+  `<span dir="auto">تليجراف مصر · 1d ago · By إيناس</span>` reorders and the
+  separators land at the wrong end. Wrap each run and leave separators outside:
+  `<span dir="auto">تليجراف مصر</span> · 1d ago`. `By {name}` is deliberately
+  one run — the Latin "By" fixes the base direction and an Arabic name renders
+  RTL inside it. Headlines, summaries and each angle line are single-run and
+  keep `dir="auto"` on the node itself. `render-email-digest` fails any
+  `dir="auto"` span containing a `·`.
 - **Inline styles sit inside `style="…"`** — never use double quotes within a
   declaration (a `"Segoe UI"` in the font stack truncated every property after
   it and silently killed colours). Single quotes only; the test guards it.
