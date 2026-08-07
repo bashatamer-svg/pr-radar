@@ -59,6 +59,8 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
+| Security headers — every CSP directive, HSTS, COOP, and the app fitting them | `verify-security-headers` |
+| The CSP proven live — eight pages served under the real header, no violations | `render-csp` |
 | One URL scheme allowlist — board, emails, /api/go redirect, ingest, rel=noopener | `render-safe-url` |
 | RADAR_TOKEN reads and cannot operate; CRON_SECRET/admins can | `verify-token-privilege` |
 | Source prefilter + feed-candidate hygiene | `render-prefilter` |

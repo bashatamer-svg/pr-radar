@@ -526,6 +526,35 @@ gets nothing. All queries live in `lib/db.js`.
   arbitrary hosts) and has no production secrets. Verify via Supabase/Vercel/
   Resend MCPs, or ship an admin diagnostic (pattern: Tools → "Verify
   verdicts") and let production prove it.
+- **The browser security posture lives in `vercel.json` and nowhere else** —
+  no framework, no middleware, so it is invisible in code review and silently
+  deletable. **CSP**: `default-src 'self'`, `base-uri 'none'` (a `<base>`
+  silently repoints every relative URL including `/api/*`), `object-src 'none'`,
+  `frame-ancestors 'none'`, `frame-src 'none'`, `form-action 'self'` (the
+  sign-in form posts passwords), `img-src 'self' data: blob:`, `connect-src
+  'self' https://*.supabase.co`. Two allowances are load-bearing and easy to
+  break by "tightening": **`blob:` in img-src** — the card snapshot previews a
+  canvas as `<img src="blob:…">`, and without it the sheet shows a broken image
+  with nothing in the console; **`https://*.supabase.co` in connect-src** —
+  every page's `refreshSession()` POSTs to `${supabaseUrl}/auth/v1/token`, so
+  dropping it signs every user out the moment their access token expires. The
+  wildcard is the PROVIDER, never the project ref (tracked-file rule).
+  **`script-src`/`style-src` keep `'unsafe-inline'` ON PURPOSE, and that is the
+  remaining weakness**: pages are self-contained by design, the board and admin
+  carry ~55 inline `onclick` attributes, and the PDF export opens a `blob:`
+  document that INHERITS this policy and prints from an inline handler.
+  Removing it means de-inlining all of that FIRST — declaring it before then
+  ships a blank board. `'unsafe-eval'` is refused outright.
+  **`upgrade-insecure-requests` is deliberately absent**: it rewrites outgoing
+  navigations, and the http-only Egyptian outlet links `safe-url.js` keeps on
+  purpose would break. **HSTS** is a year + includeSubDomains, **without
+  `preload`** — preload is effectively irreversible and binds the registrable
+  domain, which is the owner's call. Plus COOP `same-origin`.
+  Pinned two ways, and both are needed: `verify-security-headers` asserts every
+  directive AND that the pages fit it (no remote subresource, no `<base>`, no
+  `eval`), and `render-csp` SERVES the real header and loads all eight pages in
+  a browser, failing on any violation — a directive one token too narrow
+  produces a page that renders and then quietly does nothing.
 - **An `href` is a destination, and `esc()` does not vet one** (`lib/safe-url.js`).
   Article URLs are third-party all the way down — a feed supplies them,
   `resolveUrl` rewrites them from whatever Google News returns, they are stored,
