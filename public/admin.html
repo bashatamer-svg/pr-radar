@@ -957,9 +957,28 @@ function renderHealth(){
     </div>`).join('');
   }
 
+  // WHICH BUILD SAID ALL THIS. A push to main is not proof of a deploy — the
+  // webhook has silently missed one before, leaving the live site on the
+  // previous commit while git showed the new SHA. Printing the running commit
+  // turns that from a dashboard reading into `git rev-parse origin/main`
+  // against a number on this page. Absent values render as "unknown"; nothing
+  // here is ever guessed.
+  const b=d.build||{};
+  const bwhere=[b.environment,b.region].filter(Boolean).join(' · ');
+  const buildHtml=`<div class="nm" style="line-height:1.6">
+    <b>Running commit</b> <code>${esc(b.shortSha||'unknown')}</code>${b.ref?` on <b>${esc(b.ref)}</b>`:''}${bwhere?` — ${esc(bwhere)}`:''}
+    ${b.known?`<div style="margin-top:6px">Compare with <code>git rev-parse origin/main</code>. If they differ, the push did not produce a production build — re-trigger with an empty commit (Vercel needs a new SHA).</div>`
+      :`<div style="margin-top:6px">No commit SHA is available here, so this is not a Vercel deployment (or system environment variables are not exposed). Nothing is guessed in its place.</div>`}
+    ${b.instanceStartedAt?`<div style="margin-top:6px" class="chint">This server instance started ${esc(hwhen(b.instanceStartedAt))} Cairo — that is when the lambda woke, not when the code shipped.</div>`:''}
+  </div>`;
+
   $('#content').innerHTML=`
     <div class="hbanner s-${st}">${esc(HLABEL[st]||'Unknown')}
       <span class="when">checked ${esc(hwhen(d.generatedAt))} Cairo</span></div>
+    <div class="card">
+      <h2>Deployed build</h2>
+      ${buildHtml}
+    </div>
     <div class="card">
       <h2>Right now</h2>
       <div id="hChecks">${checks||'<div class="empty">No checks returned.</div>'}</div>

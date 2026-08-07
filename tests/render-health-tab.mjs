@@ -25,9 +25,17 @@ let health = {
   generatedAt: '2026-08-02T09:00:00Z',
   status: 'crit',
   logAvailable: true,
+  // Which build answered. A push to main is not proof of a deploy — the webhook
+  // has silently missed one — so the running commit is printed for comparison
+  // against `git rev-parse origin/main`.
+  build: { sha: '9e3fcc7a1b2c3d4e5f60718293a4b5c6d7e8f900', shortSha: '9e3fcc7', ref: 'main',
+           environment: 'production', region: 'fra1', deploymentId: 'dpl_x', url: 'pr.example',
+           instanceStartedAt: '2026-08-02T08:40:00Z', known: true },
   log: [{ kind: 'ops', severity: 'critical', title: 'PR Radar health: Classification, Brief recipients',
           detail: 'Classification: 25 story(s) parked unclassified in 48h', created_at: iso }],
   checks: [
+    { id: 'build', label: 'Deployed build', state: 'ok', detail: '9e3fcc7 on main — production · fra1',
+      hint: 'Compare with `git rev-parse origin/main`.' },
     { id: 'bulletin', label: 'Daily brief', state: 'ok', detail: 'last sent 4.0h ago · 4 story(s) currently clear the Impact-2 bar' },
     { id: 'ingest', label: 'Feed ingest', state: 'ok', detail: 'last new story 1.0h ago · 69 stored / 2 relevant in 24h' },
     { id: 'classify', label: 'Classification', state: 'crit', detail: '25 story(s) parked unclassified in 48h',
@@ -85,7 +93,7 @@ await page.waitForSelector('#tabs:not([hidden])', { timeout: 5000 });
   await page.waitForSelector('.chk', { timeout: 5000 });
 
   const n = await page.$$eval('.chk', (els) => els.length);
-  assert.strictEqual(n, 12, `all twelve checks render (got ${n})`);
+  assert.strictEqual(n, 13, `all thirteen checks render (got ${n})`);
 
   const states = await page.$$eval('.chk', (els) => els.map((e) => ({
     name: e.querySelector('.cname').textContent,
@@ -123,7 +131,39 @@ await page.waitForSelector('#tabs:not([hidden])', { timeout: 5000 });
   await page.click('#hRefresh');
   await page.waitForFunction(() => document.querySelectorAll('#hChecks .chk').length === 1, null, { timeout: 5000 });
   assert.strictEqual(await page.evaluate(() => window.__pwned), undefined, 'check text is escaped, never parsed as HTML');
-  assert.match(await page.textContent('.chint'), /onerror/, 'and is shown literally instead of being dropped');
+  // Scoped to the checks list: the Deployed-build card above it carries a
+  // .chint of its own, so an unscoped selector reads the wrong element.
+  assert.match(await page.textContent('#hChecks .chint'), /onerror/, 'and is shown literally instead of being dropped');
+}
+
+/* 3b ── the running build is printed, for comparison against origin/main ── */
+{
+  // A push to main is not proof of a deploy: the webhook silently missed one on
+  // 3 Aug, leaving the live site on the previous commit while git showed the new
+  // SHA. Nothing in the app could say what production was running.
+  health = { ...health, build: { sha: '9e3fcc7a1b2c3d4e5f60718293a4b5c6d7e8f900', shortSha: '9e3fcc7',
+    ref: 'main', environment: 'production', region: 'fra1', instanceStartedAt: '2026-08-02T08:40:00Z', known: true },
+    checks: [{ id: 'build', label: 'Deployed build', state: 'ok', detail: '9e3fcc7 on main — production · fra1' }] };
+  await page.click('#hRefresh');
+  await page.waitForFunction(() => /9e3fcc7/.test(document.querySelector('#content')?.textContent || ''), null, { timeout: 5000 });
+  const txt = await page.textContent('#content');
+  assert.match(txt, /9e3fcc7/, 'the running commit is on screen');
+  assert.match(txt, /main/, 'with its branch');
+  assert.match(txt, /production/, 'and its environment');
+  assert.match(txt, /git rev-parse origin\/main/, 'and says what to compare it against — otherwise the number is trivia');
+  assert.match(txt, /lambda woke, not when the code shipped/,
+    'the instance start time is labelled for what it is, never presented as a deploy time');
+
+  // Unknown must read as unknown. A fabricated or blank-but-confident SHA on
+  // the page whose job is telling you what is deployed is worse than a gap.
+  health = { ...health, build: { sha: null, shortSha: null, ref: null, environment: null,
+    region: null, instanceStartedAt: null, known: false }, checks: [] };
+  await page.click('#hRefresh');
+  await page.waitForFunction(() => /unknown/i.test(document.querySelector('#content')?.textContent || ''), null, { timeout: 5000 });
+  const t2 = await page.textContent('#content');
+  assert.match(t2, /unknown/i, 'an absent SHA renders as unknown');
+  assert.match(t2, /Nothing is guessed/i, 'and says so out loud');
+  assert.ok(!/[0-9a-f]{7}\b/.test(t2.replace(/\d{2}:\d{2}/g, '')), 'and no hash-shaped value is invented');
 }
 
 /* 4 ── history distinguishes "off" from "nothing wrong" ──────────────────── */
@@ -167,5 +207,5 @@ await page.waitForSelector('#tabs:not([hidden])', { timeout: 5000 });
 assert.deepStrictEqual(errs, [], `no page errors: ${errs.join(' | ')}`);
 await browser.close();
 server.close();
-console.log('HEALTH-TAB OK — 12 checks render with their state, the badge surfaces failures from another tab, '
+console.log('HEALTH-TAB OK — 13 checks render (build identity first) with their state, the badge surfaces failures from another tab, '
   + 'unknown is never dressed as ok, history separates "not switched on" from "nothing wrong", and re-opening re-checks');

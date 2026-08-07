@@ -1,4 +1,4 @@
-// Admin → Health (/api/alerts): the twelve live pipeline checks.
+// Admin → Health (/api/alerts): the thirteen live pipeline checks.
 //
 // Three properties are load-bearing, and all three are ways a health page can
 // be worse than none:
@@ -29,6 +29,14 @@ process.env.RADAR_FROM = 'radar@example.com';
 process.env.OPS_ALERT_TO = 'ops@example.com';
 delete process.env.RADAR_TO;               // production's actual state
 delete process.env.REPORT_EMAIL_ENABLED;
+// The build check reads Vercel's system environment variables. The healthy
+// world below IS production, so give it production's: without them the check
+// correctly reports 'unknown' (see the explicit case at the end), and an
+// unknown outranks ok in the page badge.
+process.env.VERCEL = '1';
+process.env.VERCEL_ENV = 'production';
+process.env.VERCEL_GIT_COMMIT_SHA = '9e3fcc7a1b2c3d4e5f60718293a4b5c6d7e8f900';
+process.env.VERCEL_GIT_COMMIT_REF = 'main';
 
 const hoursAgo = (h) => new Date(Date.now() - h * 36e5).toISOString();
 
@@ -177,7 +185,12 @@ const byId = (out, id) => (out.checks || []).find((c) => c.id === id);
 
   const admin = await call();
   assert.strictEqual(admin.code, 200, 'the admin/cron bearer gets the page');
-  assert.strictEqual(admin.out.checks.length, 12, `all twelve checks report (got ${admin.out.checks.length})`);
+  assert.strictEqual(admin.out.checks.length, 13, `all thirteen checks report (got ${admin.out.checks.length})`);
+  // The build check leads: every number under it describes whatever code is
+  // running, and reading a preview deployment while believing it is production
+  // makes the whole page describe the wrong thing.
+  assert.strictEqual(admin.out.checks[0].id, 'build', 'the deployed build is reported first');
+  assert.strictEqual(admin.out.build.shortSha, '9e3fcc7', 'and rides the payload as a field for exact comparison');
   assert.strictEqual(admin.out.status, 'ok', `a healthy world reads ok (got ${admin.out.status}: ` +
     `${admin.out.checks.filter((c) => c.state !== 'ok').map((c) => `${c.id}=${c.state}`).join(', ')})`);
 }
@@ -355,5 +368,25 @@ const byId = (out, id) => (out.checks || []).find((c) => c.id === id);
   process.env.OPS_ALERT_TO = 'ops@example.com';
 }
 
-console.log('HEALTH-CHECKS OK — 12 admin-only checks; a missing optional table degrades one check, not the page; '
+/* 9 ── off Vercel the build check is UNKNOWN, and only that check ─────────── */
+// Every developer sandbox is in this state. A check that goes amber there is a
+// check people stop reading — and it takes the eleven beside it with it.
+{
+  world = freshWorld();
+  for (const k of ['VERCEL', 'VERCEL_ENV', 'VERCEL_GIT_COMMIT_SHA', 'VERCEL_GIT_COMMIT_REF']) delete process.env[k];
+  const { out } = await call();
+  const build = out.checks.find((c) => c.id === 'build');
+  assert.strictEqual(build.state, 'unknown', 'no SHA available ⇒ unknown');
+  assert.notStrictEqual(build.state, 'warn', 'and never warn — this is the normal local state');
+  assert.strictEqual(out.build.known, false, 'the payload says so too');
+  assert.strictEqual(out.build.sha, null, 'and invents nothing');
+  // Everything else is unaffected: one check not knowing something must not
+  // colour the others.
+  assert.ok(out.checks.filter((c) => c.id !== 'build').every((c) => c.state === 'ok'),
+    'the other twelve are untouched by it');
+  process.env.VERCEL = '1'; process.env.VERCEL_ENV = 'production';
+  process.env.VERCEL_GIT_COMMIT_SHA = '9e3fcc7a1b2c3d4e5f60718293a4b5c6d7e8f900';
+}
+
+console.log('HEALTH-CHECKS OK — 13 admin-only checks (the deployed build first); a missing optional table degrades one check, not the page; '
   + 'a quiet day reads ok while a swallowed brief reads crit; the daily push mails on warn/crit only and suppresses a repeat within 22h');

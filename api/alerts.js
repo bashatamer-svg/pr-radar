@@ -24,6 +24,7 @@ import { totalCostUsd, cacheEfficiency } from '../lib/usage.js';
 import { sendOpsAlert } from '../lib/email.js';
 import { recentDeliveryStatus } from '../lib/deliverability.js';
 import { requireRole } from '../lib/auth.js';
+import { buildInfo, buildCheck } from '../lib/build.js';
 
 export const config = { maxDuration: 20 };
 
@@ -67,6 +68,13 @@ export default async function handler(req, res) {
 
   const checks = [];
   const add = (c) => checks.push(c);
+
+  // WHICH BUILD IS ANSWERING. First, because every other number below describes
+  // whatever code is running, and reading a preview deployment while believing
+  // it is production makes the whole page describe the wrong thing. Synchronous
+  // and dependency-free — it reads environment variables, so it cannot fail.
+  const build = buildInfo();
+  add(buildCheck(build));
 
   // Run every probe in parallel; each settles independently so one missing
   // table can't blank the page.
@@ -439,6 +447,10 @@ export default async function handler(req, res) {
   return res.status(200).json({
     ...(notified ? { notified } : {}),
     generatedAt: new Date().toISOString(),
+    // Surfaced beside the checks as well as inside them, so a caller comparing
+    // production against `git rev-parse origin/main` reads one field instead of
+    // parsing a human sentence. Never fabricated: absent values are null.
+    build,
     status,
     checks,
     logAvailable: Array.isArray(log),

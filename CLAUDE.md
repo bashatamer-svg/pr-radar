@@ -194,6 +194,17 @@ gets nothing. All queries live in `lib/db.js`.
   TWICE, once `target: null` (preview) and once `target: "production"`. One
   entry alone means it did not ship. Re-trigger with an empty commit pushed to
   `main` — Vercel needs a new SHA, so re-pushing the same one does nothing.
+  **The app now answers this itself**: `lib/build.js` reads Vercel's system env
+  vars and `Admin → Health` prints the RUNNING commit, so the check is
+  `git rev-parse origin/main` against a number on the page rather than a
+  dashboard reading. It is also the first check and rides the payload as
+  `build`. Nothing is fabricated — off Vercel it reads `unknown` (never amber:
+  that is every sandbox's normal state, and a permanently-amber check takes the
+  twelve beside it down with it), and a PREVIEW deployment WARNS, because
+  reading Health on a preview URL makes every other number describe the wrong
+  deployment. Deploy TIME is deliberately absent rather than approximated —
+  Vercel exposes none at runtime, and `instanceStartedAt` is the lambda's cold
+  start, labelled as such. Pinned by `verify-build-identity` + `render-health-tab`.
 - **Other sessions push here too.** Fetch before pushing and REBASE onto
   `origin/main` rather than forcing over it, then re-run the suite: the merged
   tree is what ships, and neither half was tested against the other. "Require
@@ -954,8 +965,9 @@ never once been sufficient.
   it should answer "Request sent", put a row in Admin → Requests and mail
   `ADMIN_EMAILS`. Before the migration is applied it answers the same and
   records nothing, which is the designed degradation, not a failure.
-7. **Admin → Health** — 12 live checks + 14-day alert history, computed on
-  open. Five answer "did it run?" (brief freshness vs stories waiting, ingest
+7. **Admin → Health** — 13 live checks + 14-day alert history, computed on
+  open. The first names the **deployed build** (running commit vs
+  `origin/main`). Five answer "did it run?" (brief freshness vs stories waiting, ingest
   volume, parked stories, recipients, dead feeds). Seven answer harder
   questions: **screening quality** (7d relevance rate vs the prior 3 weeks),
   **byline backfill** (share, not count), **weekly report** (reads `off`, not
