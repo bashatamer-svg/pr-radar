@@ -219,18 +219,14 @@
 
 <div class="tip" id="tip" role="status" aria-hidden="true"></div>
 
+<script src="/assets/session.js"></script>
 <script>
 const $=(s,r=document)=>r.querySelector(s);
 const esc=(s)=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const params=new URLSearchParams(location.search);
-let session=(()=>{ try{ return JSON.parse(localStorage.getItem('pr_session')||'null'); }catch(e){ return null; } })();
-let _cfg=null;
-async function authConfig(){ if(_cfg) return _cfg; try{ _cfg=await (await fetch('/api/auth?view=config')).json(); }catch(e){ _cfg={}; } return _cfg; }
-async function refreshSession(){ if(!session?.refresh_token) return false; const c=await authConfig(); if(!c.supabaseUrl||!c.anonKey) return false;
-  try{ const r=await fetch(`${c.supabaseUrl}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:c.anonKey,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:session.refresh_token})}); if(!r.ok) return false; const d=await r.json(); if(!d.access_token) return false; session={access_token:d.access_token,refresh_token:d.refresh_token||session.refresh_token}; try{ localStorage.setItem('pr_session',JSON.stringify(session)); }catch(e){} return true; }catch(e){ return false; } }
-async function afetch(path,opts={},_retried){ const o={...opts,headers:{...(opts.headers||{})}}; if(session) o.headers.Authorization=`Bearer ${session.access_token}`; const r=await fetch(path,o); if(r.status===401 && session && !_retried && await refreshSession()) return afetch(path,opts,true); return r; }
+// Session + afetch: /assets/session.js (shared by every page).
 
 // Brand series — FIXED order and entity-bound colors (never re-assigned when a
 // series is empty). e& uses #00897d for chart marks: the brand's #00857b sits a

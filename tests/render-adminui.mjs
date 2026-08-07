@@ -55,7 +55,10 @@ const server = createServer((req, res) => {
     if (req.method === 'DELETE') { const id = Number(u.searchParams.get('id')); if (resource === 'requests') { requests = requests.filter(x => x.id !== id); } else { users = users.filter(x => x.id !== id); } return nc(); }
   }
   const f = u.pathname === '/admin' ? '/admin.html' : (u.pathname === '/' ? '/index.html' : u.pathname);
-  try { const b = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(b); } catch { res.writeHead(404); res.end('nf'); }
+  try { const b = readFileSync(DIR + f);
+    // /assets/session.js is a real script now — serve it as one. A page whose
+    // shared session module arrives as text/html has no afetch at all.
+    res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' }); res.end(b); } catch { res.writeHead(404); res.end('nf'); }
 });
 await new Promise((r) => server.listen(8904, r));
 

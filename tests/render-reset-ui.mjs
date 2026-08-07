@@ -50,7 +50,10 @@ const server = createServer((req, res) => {
   // Read BEFORE writing the header: a missing asset (the page asks for
   // /icon.png) would otherwise throw with the 200 already sent, and the catch's
   // writeHead(404) crashes the server rather than serving a 404.
-  try { const b = readFileSync(DIR + f); res.writeHead(200, { 'content-type': 'text/html' }); res.end(b); }
+  try { const b = readFileSync(DIR + f);
+    // /assets/session.js is a real script now — serve it as one. A page whose
+    // shared session module arrives as text/html has no afetch at all.
+    res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' }); res.end(b); }
   catch { res.writeHead(404); res.end('nf'); }
 });
 await new Promise((r) => server.listen(8917, r));

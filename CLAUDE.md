@@ -53,7 +53,8 @@ behaviour gets a regression test in the same commit.
 |---|---|
 | `api/*.js` | Vercel functions only. `radar.js` = ingest pipeline (feeds → dedup → classify → store → alerts/bulletins/backfills); `stats.js` trends aggregation (narratives live in `lib/narratives.js`); `report.js` weekly/custom reports + Word export; `alerts.js` (pipeline health checks + the daily push); `admin.js`, `auth.js`, `go.js`, `geo.js`, `verify.js` |
 | `lib/*.js` | ALL shared logic. `xml.js` (the ONLY place `fast-xml-parser` is constructed — hostile-feed guards), `safe-url.js` (the ONE scheme allowlist for third-party links), `sources.js` (feeds + the direct-feed relevance prefilter), `feed-candidates.js` (STAGING only — probe before promoting), `db.js` (PostgREST `rest()` + every query), `auth.js` (roles/audit + `provisionUser`/`generateTempPassword`/`adminCreateUser`), `email.js` (email-client-safe renderer + `renderWelcome` + `sendOpsAlert`), `classify.js` (classifier prompt, cached system block), `author.js` (byline extraction), `author-backfill.js`, `resolve.js` (Google-News decode + `isNonArticlePage`), `dedupe.js` (shared tokenize/jaccard + the admin duplicate-finder), `dedupe-semantic.js`, `narratives.js` (two-stage narrative clustering), `report.js`, `surge.js`, `whatsapp.js`, `notify.js`, `geo.js`, `usage.js` (per-call token accounting), `deliverability.js` (provider-side send status) |
-| `public/*.html` | Self-contained pages (inline CSS/JS, no imports). Session = `pr_session` in localStorage + `afetch()` Bearer wrapper. API downloads must go fetch→blob (links can't carry the header) |
+| `public/*.html` | Self-contained pages (inline CSS/JS) for everything a page OWNS — its markup, styles and behaviour. API downloads must go fetch→blob (links can't carry the header) |
+| `public/assets/session.js` | The ONE session implementation: `session`, `saveSession`, `signOut`, `captureSessionFromHash`, `authConfig`, `refreshSession`, `afetch`. Loaded as a classic script BEFORE each page's inline block (not `defer` — the inline code calls into it at parse time). Authentication is not something a page owns |
 | `migrations/*.sql` | Optional, **manually applied**, each with a WHY/WHAT/SAFETY header. Never auto-applied — the code must work without them |
 | `scripts/` | One-off generators run manually (OG images) |
 | `tests/*.mjs` | The suite. `narr-fixture.mjs` (captured production data) and `byline-cases.mjs` (the byline ledger) are DATA, not tests — both are in the runner's `EXCLUDE` |
@@ -548,6 +549,27 @@ gets nothing. All queries live in `lib/db.js`.
   they carry a `.back` to the board, and PR Radar pages are self-contained, so a
   third copy would be three places to drift. Pinned by `render-account-menu`
   (320/390/560/900px, viewer AND admin) + `render-authui`.
+- **The session lives in ONE file** (`public/assets/session.js`). "Read
+  `pr_session`, refresh against GoTrue, attach a Bearer header, retry once on
+  401" was pasted into SIX pages character-for-character, plus a seventh partial
+  copy in `login.html` (which CREATES the session the others read). Six places
+  for a security-relevant fix to land, and the failure is silent — five pages
+  get it, the sixth keeps the bug until someone opens it. Rules the module
+  holds: the token travels in the `Authorization` header and nowhere else,
+  `saveSession` is the single writer of `pr_session`, a 401 buys exactly ONE
+  refresh (unbounded would loop on a dead session), and nothing there logs.
+  **Residual security debt, recorded not hidden**: access + refresh tokens are
+  in localStorage, so any successful XSS reads them. The real fix is Secure
+  HttpOnly SameSite cookies, which needs a server-side session exchange (GoTrue
+  hands tokens to the BROWSER), CSRF on every mutating endpoint, and a rewritten
+  refresh path — a half-migration would be worse than either end state. This
+  extraction is the preparation: one implementation to change instead of seven.
+  It is also what makes dropping `'unsafe-inline'` from the CSP reachable.
+  A page must not redefine any of it — `var` in the module and `let` in a page
+  is a hard SyntaxError that kills the whole inline block. Browser test servers
+  must serve `.js` as `text/javascript`; a shared module arriving as `text/html`
+  leaves the page with no `afetch` at all and it still renders. Pinned by
+  `render-session-shared`.
 - **Warm lambdas persist module state.** Any counter/cache at module scope
   survives between invocations — the AI byline budget must be reset per run
   (`resetAuthorAiBudget()`); think before adding module-level state.
