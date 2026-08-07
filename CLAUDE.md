@@ -167,14 +167,25 @@ gets nothing. All queries live in `lib/db.js`.
 
 ## Deploy flow
 
-- Develop on `claude/pr-radar-improvements-q2yxwr`. **"Merge" = push that
-  branch (preview) AND `main`** (production — auto-deploys via Vercel webhook,
-  ~1–2 min). A local `prradar/improvements` may linger from an older session;
-  it is not on the remote and nothing deploys from it.
-- **Other sessions push here too** — `claude/pr-radar-health-alerts-8dbe8c`
-  landed Admin → Health on `main` mid-session on 2 Aug. Fetch before pushing and
-  REBASE onto `origin/main` rather than forcing over it, then re-run the suite:
-  the merged tree is what ships, and neither half was tested against the other.
+**PR-based since the CI gate landed.** Feature branch → pull request → CI green
+→ merge to `main` → Vercel deploys production → verify the running SHA.
+
+- **Develop on a `claude/<topic>-<id>` branch.** Never push to `main` directly:
+  `main` deploys to production on push, with real users on the live board, so a
+  direct push is an unreviewed, untested production deploy. (Earlier sessions
+  did push both branch and `main`; that is what this flow replaces.)
+- **CI** (`.github/workflows/ci.yml`) runs on every PR and on pushes to `main`
+  and `claude/**`: `npm ci`, `node --check`, JSON validation, Chromium install,
+  `npm test` with **`CI=true`** — which makes a SKIPPED browser test a FAILED
+  run. Half the suite drives Chromium (every mobile-layout regression, the auth
+  UI, the CSP proof), and a green run that exercised none of them is worse than
+  a red one. Plus a runtime-only `npm audit` in a separate job, so a dev-only
+  advisory cannot block a correct change. Pinned by `verify-ci-gate`.
+- **CI running is not CI mattering.** Nothing in a repository forces a check to
+  pass or a change through a PR — that is branch protection, which lives in
+  GitHub settings and cannot be committed. The exact list is
+  **`docs/REPOSITORY_SETTINGS.md`**, flagged NOT VERIFIED until an owner ticks
+  it off. Do not claim protection is on without checking.
 - **A push to `main` is not proof of a deploy.** The webhook silently missed
   `9e3fcc7` (3 Aug): `git ls-remote` showed `main` at the new SHA, the BRANCH
   preview built, and no production build was ever created — so the live site
@@ -183,6 +194,10 @@ gets nothing. All queries live in `lib/db.js`.
   TWICE, once `target: null` (preview) and once `target: "production"`. One
   entry alone means it did not ship. Re-trigger with an empty commit pushed to
   `main` — Vercel needs a new SHA, so re-pushing the same one does nothing.
+- **Other sessions push here too.** Fetch before pushing and REBASE onto
+  `origin/main` rather than forcing over it, then re-run the suite: the merged
+  tree is what ships, and neither half was tested against the other. "Require
+  branches to be up to date" in the ruleset is the automated form of this.
 - Does NOT ship with a deploy: env vars (Vercel dashboard only), DB schema
   (manual SQL, ask first), OG images (committed PNGs; regenerate by script).
 

@@ -1,0 +1,131 @@
+# PR Radar release gate.
+#
+# There has never been CI here. The suite is strong — 80+ regression tests, most
+# of them pinning a bug that reached production once — but running it was a
+# habit rather than a rule, and `main` deploys to production on push. So the
+# only thing standing between a broken commit and the live board was somebody
+# remembering.
+#
+# Two things this workflow does that a default Node workflow would not:
+#
+#   1. `npm ci`, never `npm install`. The lockfile is tracked now (see
+#      .gitignore); installing it exactly is the point of tracking it.
+#   2. `CI=true` makes a SKIPPED browser test a FAILED run (tests/run.mjs).
+#      Roughly half the suite drives headless Chromium — every mobile-layout
+#      regression, the auth UI, the CSP proof. Those tests skip gracefully
+#      without a browser, which is right on a laptop and catastrophic in a
+#      release gate: the run would go green having exercised none of them.
+#      Chromium is installed below, and if that ever silently breaks, the gate
+#      goes red instead of quietly halving itself.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'claude/**']
+
+# A second push supersedes the first; there is nothing to learn from a run
+# against a commit that is already history.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 — current LTS, and what Vercel's Node runtime is on. Pinned to
+      # a major rather than 'lts/*' so the gate does not change under the app
+      # without anyone choosing it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (exact, from the lockfile)
+        run: npm ci
+
+      # Cheap and catches a whole class of mistake before 80 test processes
+      # spawn: an ESM syntax error in a file no test happens to import.
+      - name: Syntax-check every JavaScript file
+        run: |
+          shopt -s nullglob
+          files=(api/*.js lib/*.js scripts/*.mjs tests/*.mjs)
+          echo "checking ${#files[@]} files"
+          for f in "${files[@]}"; do node --check "$f" || exit 1; done
+
+      # vercel.json carries the crons, the rewrites and the whole security
+      # header set. A trailing comma there is a deploy-time failure with no
+      # local symptom at all.
+      - name: Validate vercel.json and package.json
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('vercel.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
+
+      # playwright-core ships no browser of its own. Install just Chromium plus
+      # its system libraries, and hand the runner the exact binary path.
+      #
+      # The CLI version is READ from the installed playwright-core rather than
+      # written here: the two must agree on the browser revision, and a hard
+      # -coded version silently drifts the day the lockfile bumps — installing
+      # one Chromium build while executablePath() points at another.
+      - name: Install Chromium for the browser tests
+        run: |
+          PW=$(node -p "JSON.parse(require('fs').readFileSync('node_modules/playwright-core/package.json','utf8')).version")
+          echo "playwright-core resolved to $PW"
+          npx --yes "playwright@$PW" install --with-deps chromium
+
+      - name: Locate the Chromium binary
+        id: chromium
+        run: |
+          P=$(node -p "require('playwright-core').chromium.executablePath()")
+          # Fail HERE with a clear cause. Without this the run reaches `npm test`,
+          # skips every browser test, and fails on the skip guard instead — same
+          # red, three steps later, pointing at the wrong thing.
+          test -x "$P" || { echo "::error::Chromium not found at $P after install"; exit 1; }
+          echo "path=$P" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        env:
+          CHROMIUM_PATH: ${{ steps.chromium.outputs.path }}
+        run: npm test
+
+      # Screenshots and rendered fixtures from the browser tests. The mobile
+      # regressions are about pixels, so when one fails the artefact is the
+      # fastest way to see what happened.
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: tests/out/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  audit:
+    # Separate job on purpose: a new advisory against a dependency is worth
+    # knowing about, but it is not a reason a correct change cannot merge, and
+    # a gate that goes red for reasons the author cannot fix is a gate people
+    # learn to ignore. Kept at `high` so it stays quiet until it matters.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high

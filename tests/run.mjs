@@ -5,10 +5,17 @@
 //   npm test -- lanes       → run only tests whose filename contains "lanes"
 //
 // Browser (Playwright) tests need a Chromium binary: set CHROMIUM_PATH, or the
-// default Vercel-sandbox path is tried. If Chromium or playwright-core is
-// missing, browser tests are SKIPPED (not failed) so the unit suite still runs
-// anywhere. No test touches the network or a real database — everything is
-// mocked — so the suite is safe to run against any checkout.
+// default Vercel-sandbox path is tried. No test touches the network or a real
+// database — everything is mocked — so the suite is safe to run against any
+// checkout.
+//
+// SKIPPING IS A LOCAL CONVENIENCE, NOT A CI OUTCOME. Without a browser those
+// tests are skipped so the unit suite still runs on a laptop that has no
+// Chromium — but roughly half this suite is browser tests, including every
+// mobile-layout regression and the CSP proof, and a green run that quietly
+// exercised none of them is worse than a red one. So when CI=true (which every
+// CI provider sets, and .github/workflows/ci.yml sets explicitly), a skip is a
+// FAILURE and the run exits non-zero naming what did not execute.
 import { readdirSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -29,11 +36,14 @@ if (havePw) {
   console.log(`note: Chromium not found at ${chrome} (set CHROMIUM_PATH) — browser tests will be skipped`);
 }
 
+// Truthy CI env var → a skipped browser test is a failed run.
+const STRICT = /^(1|true|yes)$/i.test(String(process.env.CI || ''));
+
 let pass = 0, fail = 0, skip = 0;
-const failed = [];
+const failed = [], skipped = [];
 for (const f of files) {
   const isBrowser = readFileSync(DIR + f, 'utf8').includes('playwright-core');
-  if (isBrowser && !havePw) { console.log(`SKIP  ${f}`); skip++; continue; }
+  if (isBrowser && !havePw) { console.log(`SKIP  ${f}`); skip++; skipped.push(f); continue; }
   const t0 = Date.now();
   const r = spawnSync('node', [DIR + f], { timeout: 180000, encoding: 'utf8' });
   const ok = r.status === 0;
@@ -46,4 +56,10 @@ for (const f of files) {
   }
 }
 console.log(`\n${pass} passed · ${fail} failed · ${skip} skipped · ${files.length} total`);
-if (failed.length) { console.log('failed:', failed.join(', ')); process.exit(1); }
+if (failed.length) console.log('failed:', failed.join(', '));
+if (skipped.length && STRICT) {
+  console.log(`\nCI=${process.env.CI}: ${skipped.length} browser test(s) did NOT run — ${skipped.join(', ')}`);
+  console.log('A release gate that silently skips half the suite is not a gate.');
+  console.log(`Install Chromium (or set CHROMIUM_PATH); the runner looked at ${chrome}.`);
+}
+if (failed.length || (skipped.length && STRICT)) process.exit(1);
