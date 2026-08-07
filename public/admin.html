@@ -223,8 +223,8 @@ function subEditRow(s){
         <input id="eName" type="text" value="${s.name?esc(s.name):''}" placeholder="Name (optional)" autocomplete="off">
         <input id="eCats" type="text" value="${esc(cats)}" placeholder="Categories, comma-sep (blank = all)" autocomplete="off">
         <input id="eWa" type="tel" value="${s.whatsapp?esc(s.whatsapp):''}" placeholder="WhatsApp — e.g. 201001234567 (blank = not paged)" autocomplete="off">
-        <button class="btn sm" type="button" onclick="saveSub(${s.id})">Save</button>
-        <button class="btn ghost sm" type="button" onclick="cancelEdit()">Cancel</button>
+        <button class="btn sm" type="button" data-act="sub-save" data-id="${s.id}">Save</button>
+        <button class="btn ghost sm" type="button" data-act="sub-cancel">Cancel</button>
         <div class="formmsg" id="eMsg" role="status" aria-live="polite"></div>
       </div>
     </div>
@@ -242,9 +242,9 @@ function subRow(s){
       <div class="cats">${cats}${s.whatsapp?`<span class="cat wa" title="Also paged on WhatsApp for urgent stories">✆ ${esc(maskWa(s.whatsapp))}</span>`:''}</div>
     </div>
     <div class="acts">
-      <button class="x edit" type="button" aria-label="Edit subscriber ${esc(s.email)}" title="Edit this subscriber" onclick="editSub(${s.id})">✎</button>
-      <button class="toggle" type="button" aria-pressed="${!!s.active}" title="${s.active?'Active — click to pause':'Paused — click to activate'}" onclick="toggleSub(${s.id},this)"></button>
-      <button class="x del" type="button" aria-label="Remove subscriber ${esc(s.email)}" title="Remove subscriber" onclick="removeSub(${s.id})">✕</button>
+      <button class="x edit" type="button" aria-label="Edit subscriber ${esc(s.email)}" title="Edit this subscriber" data-act="sub-edit" data-id="${s.id}">✎</button>
+      <button class="toggle" type="button" aria-pressed="${!!s.active}" title="${s.active?'Active — click to pause':'Paused — click to activate'}" data-act="sub-toggle" data-id="${s.id}"></button>
+      <button class="x del" type="button" aria-label="Remove subscriber ${esc(s.email)}" title="Remove subscriber" data-act="sub-remove" data-id="${s.id}">✕</button>
     </div>
   </div>`;
 }
@@ -331,7 +331,7 @@ function fbRow(f){
     <p class="msg" dir="auto">${esc(f.message)}</p>
     <div class="meta">${f.name?esc(f.name):'Anonymous'}${f.email?` · <a href="mailto:${esc(f.email)}">${esc(f.email)}</a>`:''}</div>
     <div class="acts">
-      <button class="btn ghost sm" type="button" onclick="toggleFb(${f.id},${f.resolved?'true':'false'},this)">${f.resolved?'Re-open':'Mark resolved'}</button>
+      <button class="btn ghost sm" type="button" data-act="fb-toggle" data-id="${f.id}" data-resolved="${f.resolved?'1':''}">${f.resolved?'Re-open':'Mark resolved'}</button>
     </div>
   </div>`;
 }
@@ -359,10 +359,10 @@ function userRow(u){
       <div class="nm">${u.name?esc(u.name):'—'} · added ${when(u.created_at)}${u.last_seen_at?` · seen ${when(u.last_seen_at)}`:''}</div>
     </div>
     <div class="acts">
-      <button class="btn ghost sm" type="button" title="Reset this user's password — generates a secure temporary one" onclick="setUserPassword(${u.id},'${esc(u.email)}')">Reset password</button>
-      <button class="btn ghost sm" type="button" title="Toggle admin/viewer" onclick="toggleRole(${u.id},'${esc(u.role)}','${esc(u.email)}',this)">${u.role==='admin'?'Make viewer':'Make admin'}</button>
-      <button class="toggle" type="button" aria-pressed="${!!u.active}" title="${u.active?'Active — click to block':'Blocked — click to allow'}" onclick="toggleUser(${u.id},'${esc(u.email)}',this)"></button>
-      <button class="x" type="button" aria-label="Remove user ${esc(u.email)}" title="Remove user" onclick="removeUser(${u.id},'${esc(u.email)}')">✕</button>
+      <button class="btn ghost sm" type="button" title="Reset this user's password — generates a secure temporary one" data-act="user-pw" data-id="${u.id}" data-email="${esc(u.email)}">Reset password</button>
+      <button class="btn ghost sm" type="button" title="Toggle admin/viewer" data-act="user-role" data-id="${u.id}" data-role="${esc(u.role)}" data-email="${esc(u.email)}">${u.role==='admin'?'Make viewer':'Make admin'}</button>
+      <button class="toggle" type="button" aria-pressed="${!!u.active}" title="${u.active?'Active — click to block':'Blocked — click to allow'}" data-act="user-toggle" data-id="${u.id}" data-email="${esc(u.email)}"></button>
+      <button class="x" type="button" aria-label="Remove user ${esc(u.email)}" title="Remove user" data-act="user-remove" data-id="${u.id}" data-email="${esc(u.email)}">✕</button>
     </div>
   </div>`;
 }
@@ -499,9 +499,9 @@ function reqRow(r){
   return `<div class="row" data-id="${r.id}">
     <div class="who"><div class="em">${esc(r.email)}</div><div class="nm">requested ${when(r.created_at)}</div></div>
     <div class="acts">
-      <button class="btn sm" type="button" title="Approve as a viewer" onclick="approveReq(${r.id},'${esc(r.email)}','viewer')">Approve</button>
-      <button class="btn ghost sm" type="button" title="Approve as an admin" onclick="approveReq(${r.id},'${esc(r.email)}','admin')">as admin</button>
-      <button class="x" type="button" aria-label="Reject the access request from ${esc(r.email)}" title="Reject request" onclick="rejectReq(${r.id},'${esc(r.email)}')">✕</button>
+      <button class="btn sm" type="button" title="Approve as a viewer" data-act="req-approve" data-id="${r.id}" data-email="${esc(r.email)}" data-role="viewer">Approve</button>
+      <button class="btn ghost sm" type="button" title="Approve as an admin" data-act="req-approve" data-id="${r.id}" data-email="${esc(r.email)}" data-role="admin">as admin</button>
+      <button class="x" type="button" aria-label="Reject the access request from ${esc(r.email)}" title="Reject request" data-act="req-reject" data-id="${r.id}" data-email="${esc(r.email)}">✕</button>
     </div>
   </div>`;
 }
@@ -515,8 +515,8 @@ function resetRow(r){
       <div class="nm">${r.name?esc(r.name)+' · ':''}asked ${when(r.reset_requested_at)}</div>
     </div>
     <div class="acts">
-      <button class="btn sm" type="button" title="Generate a new password for them" onclick="setUserPassword(${r.id},'${esc(r.email)}')">Reset password</button>
-      <button class="x" type="button" aria-label="Dismiss the password-reset request from ${esc(r.email)} without changing it" title="Dismiss without changing their password" onclick="dismissReset(${r.id},'${esc(r.email)}')">✕</button>
+      <button class="btn sm" type="button" title="Generate a new password for them" data-act="user-pw" data-id="${r.id}" data-email="${esc(r.email)}">Reset password</button>
+      <button class="x" type="button" aria-label="Dismiss the password-reset request from ${esc(r.email)} without changing it" title="Dismiss without changing their password" data-act="reset-dismiss" data-id="${r.id}" data-email="${esc(r.email)}">✕</button>
     </div>
   </div>`;
 }
@@ -1060,6 +1060,41 @@ async function boot(){
     loadFb(); loadReq(); loadUsers(); loadAudit(); loadHealth();
   }catch(e){ $('#content').innerHTML=`<div class="gate">Couldn't load admin.<br>${esc(e.message||e)}</div>`; }
 }
+/* ONE delegated listener for every generated control on this page.
+   These were `onclick="removeUser(${u.id},'${esc(u.email)}')"` attributes —
+   the half of `script-src 'unsafe-inline'` that cannot be hashed away, since
+   an inline <script> block has a stable SHA and an event-handler attribute
+   does not.
+   They were also a live bug, not only a CSP obstacle: `esc()` above escapes
+   < > & and " but NOT an apostrophe, and the arguments were JS source inside
+   an HTML attribute. So an address like o'brien@example.com produced
+   `removeUser(7,'o'brien@example.com')` — a syntax error, and a button that
+   silently did nothing. Six admin controls carried an email that way.
+   In a `data-` attribute, escaping " is sufficient, so the whole class is gone.
+   Delegated from the document because every panel re-renders its rows. */
+const ADMIN_ACTS = {
+  'sub-save':      (d) => saveSub(+d.id),
+  'sub-cancel':    () => cancelEdit(),
+  'sub-edit':      (d) => editSub(+d.id),
+  'sub-toggle':    (d, b) => toggleSub(+d.id, b),
+  'sub-remove':    (d) => removeSub(+d.id),
+  'fb-toggle':     (d, b) => toggleFb(+d.id, d.resolved === '1', b),
+  'user-pw':       (d) => setUserPassword(+d.id, d.email),
+  'user-role':     (d, b) => toggleRole(+d.id, d.role, d.email, b),
+  'user-toggle':   (d, b) => toggleUser(+d.id, d.email, b),
+  'user-remove':   (d) => removeUser(+d.id, d.email),
+  'req-approve':   (d) => approveReq(+d.id, d.email, d.role),
+  'req-reject':    (d) => rejectReq(+d.id, d.email),
+  'reset-dismiss': (d) => dismissReset(+d.id, d.email),
+};
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const fn = ADMIN_ACTS[b.dataset.act];
+  if (!fn) return;
+  fn(b.dataset, b, e);
+});
+
 boot();
 </script>
 </body>

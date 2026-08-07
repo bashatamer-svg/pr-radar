@@ -139,7 +139,30 @@ for (const t of ['Summary', 'Narratives', 'Journalists', 'Outlets']) {
 }
 assert.ok(out.pdf.includes('author 38'), 'the print page also carries every row, not just the visible page');
 assert.ok(/@page\{size:A4/.test(out.pdf), 'print page sets a page size');
-assert.ok(/window\.print\(\)/.test(out.pdf), 'the print dialog is triggered on open');
+// The print used to be an inline <script> INSIDE this generated document, and
+// this line asserted the call was in the markup. A blob: document INHERITS the
+// opener's CSP, so that script was the last thing keeping
+// `script-src 'unsafe-inline'` alive on the Trends page. It now runs from the
+// opener against the same-origin blob window, so the assertion moves with it:
+// the document must carry NO inline script, and exportPdf must drive the print.
+assert.ok(!/<script/i.test(out.pdf),
+  'the print document carries no inline script — it inherits the page CSP, so one would have to be hashed or allowed by unsafe-inline');
+{
+  // Prove the opener actually calls print() on the window it opened.
+  const printed = await page.evaluate(() => {
+    let called = false;
+    const realOpen = window.open;
+    const fake = {
+      focus() {},
+      print() { called = true; },
+      addEventListener(ev, fn) { if (ev === 'load') fn(); },
+    };
+    window.open = () => fake;
+    try { exportPdf('c-auth'); } finally { window.open = realOpen; }
+    return called;
+  });
+  assert.ok(printed, 'exportPdf drives the print from the opener, so the dialog still opens');
+}
 
 // ── a card's button downloads THAT card only, named after it ──
 const [download] = await Promise.all([
