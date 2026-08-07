@@ -402,7 +402,16 @@ const byId = (out, id) => (out.checks || []).find((c) => c.id === id);
 // check people stop reading — and it takes the eleven beside it with it.
 {
   world = freshWorld();
-  for (const k of ['VERCEL', 'VERCEL_ENV', 'VERCEL_GIT_COMMIT_SHA', 'VERCEL_GIT_COMMIT_REF']) delete process.env[k];
+  // EVERY source lib/build.js reads, not just the Vercel ones. It falls back to
+  // GITHUB_SHA on purpose (so the build identity works on a GitHub runner too),
+  // and clearing only VERCEL_* left this case asserting "no SHA available" in an
+  // environment that had one. It passed on every laptop and failed the moment it
+  // ran in CI — which is the environment that sets GITHUB_SHA, and exactly the
+  // kind of gap a release gate exists to find.
+  for (const k of ['VERCEL', 'VERCEL_ENV', 'VERCEL_REGION', 'VERCEL_URL', 'VERCEL_DEPLOYMENT_ID',
+    'VERCEL_GIT_COMMIT_SHA', 'VERCEL_GIT_COMMIT_REF', 'GIT_COMMIT_SHA', 'GITHUB_SHA', 'GITHUB_REF_NAME']) {
+    delete process.env[k];
+  }
   const { out } = await call();
   const build = out.checks.find((c) => c.id === 'build');
   assert.strictEqual(build.state, 'unknown', 'no SHA available ⇒ unknown');
