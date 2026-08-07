@@ -61,7 +61,23 @@
   /* One filter row above everything it scopes (never per-chart). */
   .bar2{position:sticky;top:var(--mh);z-index:30;background:rgba(241,242,245,.9);backdrop-filter:blur(12px);
         border-bottom:1px solid var(--hair);padding:11px 16px 10px}
-  .frow{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}
+  .frow{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;--edge:var(--bg)}
+  /* SCROLL HINT — a row that scrolls sideways with a hidden scrollbar gives no
+     sign that there is more. Seven admin tabs on a phone showed four, and the
+     other three simply did not exist as far as the reader was concerned.
+     Pure CSS, no JS and no extra markup: two `local` gradients scroll WITH the
+     content and mask two `scroll`-attached shadows, so a shadow appears only on
+     the side that has more to show and disappears when you reach that end.
+     `--edge` is the row's own background colour — the mask has to match what is
+     behind it, or the trick shows its seams. */
+  .scrollhint{
+    background:
+      linear-gradient(90deg, var(--edge) 40%, rgba(255,255,255,0)) left center / 28px 100% no-repeat local,
+      linear-gradient(-90deg, var(--edge) 40%, rgba(255,255,255,0)) right center / 28px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(20,23,28,.16), rgba(20,23,28,0)) left center / 12px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(20,23,28,.16), rgba(20,23,28,0)) right center / 12px 100% no-repeat scroll;
+  }
+
   .frow::-webkit-scrollbar{display:none}
   .flabel{flex:none;align-self:center;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding-right:2px}
   .chip{flex:none;cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--ink-2);
@@ -224,7 +240,7 @@
   </header>
 
   <div class="bar2">
-    <div class="frow" id="winRow"></div>
+    <div class="frow scrollhint" id="winRow"></div>
   </div>
 
   <main class="content" id="content"><div class="empty">Loading trends…</div></main>

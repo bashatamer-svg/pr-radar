@@ -46,7 +46,23 @@
      overflow-x on the container — so the document never grows wider than the
      viewport; without this the whole page panned sideways and the content
      cards slid off-screen. flex:none on .tab stops tabs shrinking/wrapping. */
-  .tabs{display:flex;gap:7px;padding:12px 16px 0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs{display:flex;gap:7px;padding:12px 16px 0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;--edge:var(--card)}
+  /* SCROLL HINT — a row that scrolls sideways with a hidden scrollbar gives no
+     sign that there is more. Seven admin tabs on a phone showed four, and the
+     other three simply did not exist as far as the reader was concerned.
+     Pure CSS, no JS and no extra markup: two `local` gradients scroll WITH the
+     content and mask two `scroll`-attached shadows, so a shadow appears only on
+     the side that has more to show and disappears when you reach that end.
+     `--edge` is the row's own background colour — the mask has to match what is
+     behind it, or the trick shows its seams. */
+  .scrollhint{
+    background:
+      linear-gradient(90deg, var(--edge) 40%, rgba(255,255,255,0)) left center / 28px 100% no-repeat local,
+      linear-gradient(-90deg, var(--edge) 40%, rgba(255,255,255,0)) right center / 28px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(20,23,28,.16), rgba(20,23,28,0)) left center / 12px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(20,23,28,.16), rgba(20,23,28,0)) right center / 12px 100% no-repeat scroll;
+  }
+
   .tabs::-webkit-scrollbar{display:none}
   .tab{flex:none;cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--ink-2);font-family:var(--sans);
        font-size:13px;font-weight:700;padding:8px 15px;border-radius:11px}
@@ -168,7 +184,7 @@
     <a class="back" id="backLink" href="/" title="Back to the board" aria-label="Back to the board">‹</a>
     <div class="ttl"><div class="h1">Admin</div><div class="sub">PR Radar by <b>Regulatory Affairs</b> · Vodafone Egypt</div></div>
   </header>
-  <div class="tabs" id="tabs" hidden>
+  <div class="tabs scrollhint" id="tabs" hidden>
     <button class="tab" type="button" data-tab="subs" aria-pressed="true">Subscribers <span class="n" id="nSubs"></span></button>
     <button class="tab" type="button" data-tab="fb" aria-pressed="false">Feedback <span class="n" id="nFb"></span></button>
     <button class="tab" type="button" data-tab="requests" aria-pressed="false">Requests <span class="n" id="nReq"></span></button>

@@ -113,7 +113,7 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_users` / `pr_audit` | Sign-in allowlist + roles; audit trail. **Live-only: missing from schema.sql** (see Drift). The row is only half an account — the PASSWORD lives in Supabase Auth, and Admin → Users writes both (see the provisioning Gotcha) |
 | `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency; `manual_alert_<id>` = the board's 🔔 already fired for that card) |
 | `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users). `whatsapp` NULL (never '') = not paged; `active` gates BOTH channels. `addSubscriber` UPSERTS every column, so ask `getSubscriberByEmail` first or you blank a live row's filter and crisis number |
-| `pr_context` | Admin-editable house knowledge injected into classification. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
+| `pr_context` | Admin-editable house knowledge injected into classification. **It decays, and now says so**: a line naming a live story is right for a fortnight and then steers unrelated news, and nothing ever prompted a prune. `houseContextCheck` warns on a **dated** entry (`[YYYY-MM-DD]` line prefix, an optional convention) older than 45 days, or on the whole doc going 60 days untouched. Undated lines are deliberately NOT flagged — flagging them would make the check permanently amber on the doc as it stands, which is how a check stops being read. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
 | `pr_feed_health` | Per-feed failure streaks (bulletin footer). **`fail_streak` never counted** — `recordFeedHealth` wrote a literal `1` on every failure, so a feed dead three weeks read like one that hiccuped once. It cannot be a read-then-write: the 15-min poll and the 05:00 run OVERLAP on the ten brand feeds, so two writers read the same number and both write value+1. PostgREST cannot express `set x = x + 1` either, so the increment goes through **`pr_bump_feed_failure`** (`migrations/2026-08-07-pr-feed-failure-streak.sql`, **NOT yet applied**) — one `INSERT..ON CONFLICT DO UPDATE`, atomic by construction. Without it the fallback records the error and **leaves the count alone** rather than resetting it to 1: stale is honest, `1` actively asserts something false. `last_ok_at` is never touched by a failure — it is what `brokenFeeds()` actually reads. Pinned by `verify-feed-streak` |
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
@@ -352,6 +352,16 @@ gets nothing. All queries live in `lib/db.js`.
   with every checkable field green. `whatsapp-check` now says so itself.
   Registering a real business number is the only fix. Pinned by
   `render-whatsapp` + `verify-whatsapp-check`.
+  **Readiness is a FIVE-RUNG LADDER, not a boolean** (`whatsappReadiness`):
+  credentials → a real sender → an approved template → a cleared display name →
+  recipients. `whatsappConfigured()` answers rung ONE, and Admin read it as the
+  whole question — which is how "template APPROVED, display name cleared,
+  credentials set" read as healthy while every send failed on the +1 555 test
+  sender. Rungs 3 and 4 can only be answered by ASKING Meta, so without a probe
+  they report **unverified**, never fine. The check is never CRIT: WhatsApp is
+  the side channel, email is the one that must work, and a red page over a
+  secondary channel blocked for a week trains its reader to ignore red. Pinned
+  by `verify-readiness-checks`.
   The WhatsApp message LEADS with the same `urgentTier()` label as the email
   subject (URGENT / ALERT) — the template's header line is static text and
   cannot vary per message, so the tier has to live inside `{{1}}`.
@@ -1095,7 +1105,7 @@ never once been sufficient.
   it should answer "Request sent", put a row in Admin → Requests and mail
   `ADMIN_EMAILS`. Before the migration is applied it answers the same and
   records nothing, which is the designed degradation, not a failure.
-7. **Admin → Health** — up to 16 live checks + 14-day alert history, computed
+7. **Admin → Health** — up to 18 live checks + 14-day alert history, computed
   on open. The first three answer "what am I even looking at": the **deployed
   build** (running commit vs `origin/main`), the **schema migrations** this
   database has, and whether the **scheduled jobs actually ran** (recorded, not

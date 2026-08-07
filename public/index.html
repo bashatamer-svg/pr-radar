@@ -202,7 +202,23 @@
         border-bottom:1px solid var(--hair);padding:11px 16px 10px;margin-top:12px}
   .status{font-size:12px;color:var(--muted);margin-bottom:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .status b{color:var(--ink);font-weight:700} .status .neg{color:var(--neg);font-weight:700} .status .sep{color:var(--faint)}
-  .frow{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}
+  .frow{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;--edge:var(--bg)}
+  /* SCROLL HINT — a row that scrolls sideways with a hidden scrollbar gives no
+     sign that there is more. Seven admin tabs on a phone showed four, and the
+     other three simply did not exist as far as the reader was concerned.
+     Pure CSS, no JS and no extra markup: two `local` gradients scroll WITH the
+     content and mask two `scroll`-attached shadows, so a shadow appears only on
+     the side that has more to show and disappears when you reach that end.
+     `--edge` is the row's own background colour — the mask has to match what is
+     behind it, or the trick shows its seams. */
+  .scrollhint{
+    background:
+      linear-gradient(90deg, var(--edge) 40%, rgba(255,255,255,0)) left center / 28px 100% no-repeat local,
+      linear-gradient(-90deg, var(--edge) 40%, rgba(255,255,255,0)) right center / 28px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(20,23,28,.16), rgba(20,23,28,0)) left center / 12px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(20,23,28,.16), rgba(20,23,28,0)) right center / 12px 100% no-repeat scroll;
+  }
+
   .frow::-webkit-scrollbar{display:none}
   .frow+.frow{margin-top:7px}
   .dfilter{display:none;align-items:center;justify-content:space-between;gap:10px;margin:12px 16px 2px;padding:9px 13px;
@@ -443,9 +459,9 @@
 
   <div class="bar2" id="bar2" hidden>
     <div class="status" id="status" role="status" aria-live="polite"></div>
-    <div class="frow" id="sentRow"></div>
-    <div class="frow" id="winRow"></div>
-    <div class="frow" id="sortRow"></div>
+    <div class="frow scrollhint" id="sentRow"></div>
+    <div class="frow scrollhint" id="winRow"></div>
+    <div class="frow scrollhint" id="sortRow"></div>
   </div>
 
   <div class="dfilter" id="dfilter" hidden></div>

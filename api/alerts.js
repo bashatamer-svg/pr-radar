@@ -17,6 +17,7 @@
 
 import {
   recentAlerts, recentRuns, parkedItemCount, lastItemSeenAt, ingestSummary, brokenFeeds,
+  getHouseKnowledge, houseKnowledgeUpdatedAt,
   getStateTime, relevanceBaseline, authorBacklog, digestEligibleCount,
   activeSubscribers, monthToDateUsage, databaseSizeBytes,
 } from '../lib/db.js';
@@ -27,6 +28,8 @@ import { requireRole } from '../lib/auth.js';
 import { buildInfo, buildCheck } from '../lib/build.js';
 import { migrationStatus, migrationCheck } from '../lib/migrations.js';
 import { startRun, JOBS, runChecks } from '../lib/runs.js';
+import { whatsappCheck } from '../lib/whatsapp.js';
+import { houseContextCheck } from '../lib/house-context.js';
 
 export const config = { maxDuration: 20 };
 
@@ -95,6 +98,21 @@ export default async function handler(req, res) {
   // the cron never firing. Null when the ledger is absent, which reads as
   // 'unknown' rather than as "nothing ran".
   for (const c of runChecks(await recentRuns({ days: 9 }).catch(() => null))) add(c);
+
+  // The crisis SIDE channel, as a ladder rather than a boolean. Credentials
+  // present is rung one of five, and reading it as "ready" is how a channel
+  // with an approved template and a test-number sender looked healthy while
+  // every send failed.
+  add(whatsappCheck());
+
+  // The living-knowledge doc is injected into EVERY classification and marked
+  // authoritative, so a line whose story has ended keeps steering unrelated
+  // news. Nothing ever prompted anyone to prune it.
+  const [ctxText, ctxAt] = await Promise.all([
+    getHouseKnowledge().catch(() => ''),
+    houseKnowledgeUpdatedAt().catch(() => undefined),
+  ]);
+  add(houseContextCheck({ content: ctxText, updatedAt: ctxAt }));
 
   // Run every probe in parallel; each settles independently so one missing
   // table can't blank the page.

@@ -59,6 +59,8 @@ are **skipped**, the unit suite still runs.
 | Vodafone-standpoint wording (no bare "negative" on mixed-brand surfaces) | `render-trends-wording`, `render-lanes` |
 | Email/board design-token parity + inline-style quoting | `render-email-design` |
 | Hostile feed XML — size cap, entity-declaration refusal, one parser | `verify-xml-hardening` |
+| WhatsApp readiness ladder + house-knowledge staleness | `verify-readiness-checks` |
+| Sideways-scrolling rows show there is more, without panning the page | `render-scroll-hint` |
 | Trends "So what?" strip — derived arithmetic, honest bars, no model | `render-exec-strip` |
 | Icon controls have accessible names; result regions are polite live regions | `render-a11y` |
 | One session implementation across all seven pages, refresh + sign-out proven | `render-session-shared` |
