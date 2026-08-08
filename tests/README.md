@@ -45,6 +45,7 @@ anywhere. A failure the log cannot explain gets re-run, not fixed. Pinned by
 | Admin email alert test reaches only the requesting admin | `verify-alert-test-tool` |
 | The board's 🔔 fires the real alert late, gated by the live rule | `verify-send-alert-tool` |
 | Deliverability scoped to PR Radar's sends, not the shared account | `verify-deliverability-scope` |
+| Email quota counted account-wide (the opposite scoping, deliberately), 80% warns, an unfinished walk is an honest floor | `verify-email-quota` |
 | WhatsApp account/template diagnostic (the 3 causes of #132001) | `verify-whatsapp-check` |
 | Subscriber editing + WhatsApp number on a subscriber | `render-adminui`, `render-whatsapp` |
 | Admin duplicate-finder (scan + merge) | `verify-dupe-tool`, `dedup-jaccard` |
