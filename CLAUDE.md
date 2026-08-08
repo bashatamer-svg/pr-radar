@@ -1069,7 +1069,18 @@ gets nothing. All queries live in `lib/db.js`.
   "· end days are partial" below 3 days; `c-sent` and the leaderboards are
   window AGGREGATES and are exactly right at any width, so they say nothing.
   `execInsights` needs `half>=2` and so self-suppresses here — that is the
-  designed degradation, not a gap. **Nine places name the window** (exec strip,
+  designed degradation, not a gap.
+  **The axis has to be built from the CUT, not from the calendar.** It was "the
+  last N calendar days ending today", which does not contain the day the rolling
+  window OPENS in — so items landing there were counted in every total (KPIs,
+  sentiment, leaderboards) and then dropped from the per-day series by
+  `dayIdx.get(...) === undefined`, and the bars quietly disagreed with the
+  numbers above them. One bar in thirty-one at a month; **half the chart at 24
+  hours** (at 14:00 Cairo the axis held only today, so 14:00→midnight yesterday
+  was in the totals and absent from the bars). `smoke-task3` had written the bug
+  down as an allowance — `sovSum >= items.length - 2`, commented "Cairo-edge
+  clamp"; it is exact now. A 30-day window is therefore **31 buckets**, not 30.
+  Pinned by `verify-stats-axis`, which asserts the series sum equals the totals. **Nine places name the window** (exec strip,
   KPI head, a KPI tile, the footnote, the export summary row, the export
   filename, and the PDF's title and sub-line); they all read `winLabel()` /
   `winShort()`, which source from the SERVER's `meta.days` rather than the chip

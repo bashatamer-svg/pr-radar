@@ -74,14 +74,21 @@ const sentSum = Object.values(body.sentimentByBrand).reduce((s, b) => s + b.tota
 assert.strictEqual(sentSum, items.length);
 assert.ok(body.sentimentByBrand.Market.total >= items.filter((i) => !i.brand).length);
 
-// sov day arrays are aligned with days and sum to ≤ items (Cairo-edge clamp)
-assert.strictEqual(body.days.length, 30);
+// sov day arrays are aligned with days, and now plot EVERY item the totals
+// count. The window is cut at a rolling `now - 30*864e5`, which opens part-way
+// through a Cairo day, so the axis spans 31 buckets — 30 whole days plus the
+// two part-days at the ends. It was built as 30 calendar days ending today,
+// which excluded the opening one: those items were counted in every total and
+// dropped from the series. The old `>= items.length - 2` tolerance here was
+// that bug, written down as an allowance. It is exact now.
+assert.ok(body.days.length === 30 || body.days.length === 31,
+  `a 30-day rolling window spans 30 or 31 Cairo buckets (got ${body.days.length})`);
 for (const b of ['Vodafone', 'Orange', 'WE', 'e&', 'Market']) {
-  assert.strictEqual(body.sov[b].mentions.length, 30);
-  assert.strictEqual(body.sov[b].negatives.length, 30);
+  assert.strictEqual(body.sov[b].mentions.length, body.days.length, `${b} mentions series matches the axis`);
+  assert.strictEqual(body.sov[b].negatives.length, body.days.length, `${b} negatives series matches the axis`);
 }
 const sovSum = Object.values(body.sov).reduce((s, b) => s + b.mentions.reduce((a, v) => a + v, 0), 0);
-assert.ok(sovSum <= items.length && sovSum >= items.length - 2, `sov ${sovSum} ≈ ${items.length}`);
+assert.strictEqual(sovSum, items.length, `every item is plotted (sov ${sovSum}, items ${items.length})`);
 
 // categories sorted by volume, series aligned
 assert.ok(body.categories.length >= 4);
