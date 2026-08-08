@@ -45,7 +45,17 @@
   input[type=date]:focus{outline:2px solid var(--red);outline-offset:1px;border-color:transparent}
   .hint{font-size:11px;color:var(--faint);margin-top:8px;line-height:1.5}
   .row{display:flex;gap:8px;margin-top:18px}
-  button.act{flex:1;cursor:pointer;border:0;font-weight:700;font-size:13.5px;padding:13px 10px;border-radius:11px;font-family:inherit}
+  /* A label that WRAPS is the fault this row had: "Open report · print / PDF"
+     broke after the slash on every phone, so the two buttons sat at different
+     heights and the primary one read as damaged. The formats are stated once
+     underneath instead of twice inside the labels — the row shares its width
+     evenly (flex:1), so the LONGER label is what sets whether either fits. */
+  /* min-height, because the fix must not shrink the target: these were 56px on
+     a phone only by ACCIDENT — the label wrapped to two lines. Unwrapping them
+     would have dropped the primary action to 41px, below the 44px a thumb
+     needs, so the height is now stated rather than inherited from a defect. */
+  button.act{flex:1;cursor:pointer;border:0;font-weight:700;font-size:13.5px;padding:13px 10px;min-height:44px;border-radius:11px;font-family:inherit;white-space:nowrap}
+  .formats{margin-top:8px}
   .pdf{background:var(--red);color:#fff}
   .doc{background:#1b5faa;color:#fff}
   button.act:disabled{opacity:.55;cursor:default}
@@ -82,10 +92,11 @@
         <div><label for="to">To</label><input type="date" id="to"></div>
       </div>
       <div class="hint">Days run midnight-to-midnight <b>Cairo time</b>, both dates included · up to 92 days per report.</div>
-      <div class="row">
-        <button type="button" class="act pdf" id="btnPdf">Open report · print / PDF</button>
-        <button type="button" class="act doc" id="btnDoc">Download Word (.doc)</button>
+      <div class="row" id="actions">
+        <button type="button" class="act pdf" id="btnPdf">Open report</button>
+        <button type="button" class="act doc" id="btnDoc">Download Word</button>
       </div>
+      <div class="hint formats">Opens a print-ready page you save as PDF · the Word file downloads straight away.</div>
       <div class="msg" id="msg" role="status" aria-live="polite"></div>
       <div class="backrow">
         <a class="back" href="/">‹ Back to the board</a>

@@ -589,9 +589,19 @@ gets nothing. All queries live in `lib/db.js`.
   the board's original `.ttl{flex:1}` fault too: 342px of content at 320px,
   panning the page 22px and truncating "Trends" itself; the clock now hides
   below 560px, the same call `index.html` makes at the same width. Pinned by
-  `render-leaderboard-mobile`. **Reports (`reports.html`) was measured over the
-  same widths and is clean** — its `.row` of two `flex:1` action buttons shares
-  the shortfall evenly and only grows taller below 360px; don't "fix" it.
+  `render-leaderboard-mobile`. **Reports (`reports.html`)**: its `.row` of two
+  `flex:1` action buttons shares the shortfall evenly, and THAT part is right —
+  don't "fix" the flex. But the claim that it only grew taller below 360px was
+  wrong: `Open report · print / PDF` wrapped after the slash at EVERY phone
+  width, so the primary button sat two lines tall beside a one-line neighbour
+  and read as damaged (user-reported, 8 Aug). Because the row shares its width
+  evenly, the LONGER label decides whether either fits — so a wording change to
+  one silently breaks the other. Both labels are short now (`Open report` /
+  `Download Word`) with the formats stated ONCE underneath instead of twice.
+  The 56px height was an ACCIDENT of that wrap: unwrapping dropped the primary
+  action to 41px, under the 44px a thumb needs, so `min-height` states it.
+  Pinned by `render-reports-page`, which counts real line boxes — height ÷
+  line-height lies once a button has padding.
   **And the wrap fixed the FIT, not the LOAD** (7 Aug): eight equally-weighted
   controls still asked a reader to scan all eight to find one. The four
   lower-frequency admin actions (Pin, Hide, Useful, Not useful) moved into a
