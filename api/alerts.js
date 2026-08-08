@@ -24,6 +24,7 @@ import {
 import { totalCostUsd, cacheEfficiency } from '../lib/usage.js';
 import { sendOpsAlert, opsChannelCheck } from '../lib/email.js';
 import { recentDeliveryStatus } from '../lib/deliverability.js';
+import { countRecentSends, emailQuotaCheck } from '../lib/quota.js';
 import { requireRole } from '../lib/auth.js';
 import { buildInfo, buildCheck } from '../lib/build.js';
 import { migrationStatus, migrationCheck } from '../lib/migrations.js';
@@ -138,7 +139,7 @@ export default async function handler(req, res) {
   // Run every probe in parallel; each settles independently so one missing
   // table can't blank the page.
   const [bulletinAt, lastSeen, ingest, parked, broken, log, quality, authors,
-    digestable, digestableAtDue, subs, usage, inboxed, dbBytes] = await Promise.all([
+    digestable, digestableAtDue, subs, usage, inboxed, dbBytes, quota] = await Promise.all([
       getStateTime('daily_bulletin_sent').catch(() => null),
       lastItemSeenAt().catch(() => undefined),
       ingestSummary({ hours: 24 }).catch(() => null),
@@ -155,6 +156,11 @@ export default async function handler(req, res) {
       monthToDateUsage().catch(() => null),
       recentDeliveryStatus({ hours: 26 }).catch(() => null),
       databaseSizeBytes().catch(() => null),
+      // The only multi-request probe on this page: the provider has no usage
+      // endpoint, so month-to-date is a paginated walk. It rides this
+      // Promise.all so its latency overlaps every other probe rather than
+      // adding to them, and it is bounded and fail-soft inside lib/quota.js.
+      countRecentSends().catch(() => null),
     ]);
 
   // 1. DAILY BRIEF — the signal the team actually feels. Read together with the
@@ -466,6 +472,15 @@ export default async function handler(req, res) {
           : '',
     });
   }
+
+  // 13. EMAIL QUOTA — the provider's send ceiling. Past it, sends are REFUSED,
+  //     and with the urgent poll running every 15 minutes the next refusal is
+  //     whatever fires next. Nothing else on this page can see it coming: the
+  //     brief would throw, pr_alerts would record the attempt, and every check
+  //     above would stay green. Counted ACCOUNT-WIDE, unlike the deliverability
+  //     check above — the ceiling is shared with the other app, so the shared
+  //     number is the one that will refuse our sends. See lib/quota.js.
+  add(emailQuotaCheck(quota));
 
   // Worst check wins for the page-level badge.
   const rank = { ok: 0, unknown: 1, warn: 2, crit: 3 };

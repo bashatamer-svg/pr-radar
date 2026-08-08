@@ -208,12 +208,15 @@ const byId = (out, id) => (out.checks || []).find((c) => c.id === id);
 
   const admin = await call();
   assert.strictEqual(admin.code, 200, 'the admin/cron bearer gets the page');
-  assert.strictEqual(admin.out.checks.length, 19, `all nineteen checks report (got ${admin.out.checks.length})`);
+  assert.strictEqual(admin.out.checks.length, 20, `all twenty checks report (got ${admin.out.checks.length})`);
   // Pinned by ID as well as by count, so a check cannot be swapped for another
   // and still satisfy the number. This one reports on the channel that DELIVERS
   // this page's warnings — nothing covered it, because `recipients` below counts
   // the daily BRIEF's audience, which is a different list for a different job.
   assert.ok(byId(admin.out, 'opschannel'), 'the alert channel itself is checked');
+  // The provider's send CEILING, which no other check can see coming: past it
+  // sends are refused, and the brief throwing is the first anyone would know.
+  assert.ok(byId(admin.out, 'quota'), 'the email quota is checked');
   // The build check leads: every number under it describes whatever code is
   // running, and reading a preview deployment while believing it is production
   // makes the whole page describe the wrong thing.

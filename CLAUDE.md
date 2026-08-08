@@ -100,7 +100,11 @@ to groups, DMs only. Recipients = `pr_subscribers.whatsapp` ∪ `WHATSAPP_TO`).
 
 Optional tuning vars (sane defaults, set only to override): `CLASSIFIER_MODEL`,
 `NARRATIVE_MODEL` (falls back to `CLASSIFIER_MODEL`), `NARRATIVE_TIMEOUT_MS`
-(12000 — the ceiling on the Trends LLM pass, since /api/stats is a page load).
+(12000 — the ceiling on the Trends LLM pass, since /api/stats is a page load),
+`RESEND_DAILY_CAP`/`RESEND_MONTHLY_CAP` (100/3000 — the free tier, since the
+provider exposes no plan endpoint; set them to your real plan),
+`RESEND_COUNT_BUDGET_MS`/`RESEND_COUNT_MAX_PAGES` (5000/34 — the two budgets on
+the quota walk).
 
 Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 `SURGE_ALERTS_ENABLED`, `SURGE_ROLLING`, `GEO_ENABLED`.
@@ -1354,6 +1358,42 @@ gets nothing. All queries live in `lib/db.js`.
   because ~42% of relevant cards have no author and never will — Egyptian wire
   and desk copy is unsigned, so a raw count is meaningless.
   Pinned by `verify-health-checks` + `render-health-tab`.
+- **The email QUOTA is counted account-wide; DELIVERABILITY is scoped to us.
+  That contradiction is deliberate and load-bearing** (`lib/quota.js`). The
+  provider enforces a hard send ceiling, and past it sends are simply REFUSED —
+  with the urgent poll running every 15 minutes, the next refusal is whatever
+  fires next, which on a bad day is a crisis alert. No other check can see it
+  coming: `sendBulletin` would throw, `pr_alerts` would record the attempt, and
+  every other row on Health would stay green. `deliverability` filters on
+  `RADAR_FROM` so the other app's bounce cannot redden our page; a QUOTA is the
+  opposite, because **the ceiling is shared** — filtering here would report
+  about half the usage that will actually refuse our sends. Same call the
+  storage check makes with `db_size_bytes()`. Do not "fix" either to match the
+  other; `verify-email-quota` fails the scoped version.
+  **The ceiling is CONFIGURATION, because the API has no usage endpoint** —
+  neither the plan nor the counters are exposed, only the list of sent
+  messages. So `RESEND_DAILY_CAP`/`RESEND_MONTHLY_CAP` default to the **free
+  tier (100/day, 3,000/30d — owner-confirmed 8 Aug)**, and the check SAYS it is
+  assuming them: under-estimating a ceiling warns early, over-estimating it
+  stays green while sends bounce. **Live numbers, and they are why this exists:
+  64 / 70 / 64 sends on 6–8 Aug, both apps together — ~68% of the daily cap
+  every single day.** Every alert is one email PER RECIPIENT by design and the
+  list is ten people, so ONE extra alert is 10% of the day's quota.
+  Windows are ROLLING 24h/30d, not calendar day/month: the provider does not
+  publish when its counters reset, and a calendar count reads near-zero just
+  after a reset while eighty messages went out in the hour before it — a
+  rolling window can only err toward warning early, which is the safe direction
+  for a tripwire. The count is ONE backward walk (the 24h figure settles on page
+  one, so it is free) with **two** budgets — pages, and a **wall clock**. The
+  clock is the one that matters: paging is sequential by construction, a month
+  is ~20 round trips, and `api/alerts.js` carries no `maxDuration` in
+  `vercel.json`, so it runs on the platform default rather than `radar.js`'s
+  60s. A quota check that times out the health page has destroyed more than the
+  blindness it fixed — the `lib/runs.js` rule, that a watcher may never fail the
+  job it watches. Out of budget it reports a **floor** (`≥N`), which can only
+  push the check UP, never down. Distinct message IDs are counted, not rows: a
+  provider that ignored the cursor would serve page one twice, and 100
+  duplicated messages is a quota crisis that is not happening.
 - **Nothing was checking the channel that delivers the checks** (`opsChannelCheck`,
   `lib/email.js`). Admin → Health has a `recipients` check, and it counts the
   daily BRIEF's audience — `RADAR_TO` + subscribers. The ops alert channel is a
@@ -1487,20 +1527,22 @@ never once been sufficient.
   it should answer "Request sent", put a row in Admin → Requests and mail
   `ADMIN_EMAILS`. Before the migration is applied it answers the same and
   records nothing, which is the designed degradation, not a failure.
-7. **Admin → Health** — up to 19 live checks + 14-day alert history, computed
+7. **Admin → Health** — up to 20 live checks + 14-day alert history, computed
   on open. The first three answer "what am I even looking at": the **deployed
   build** (running commit vs `origin/main`), the **schema migrations** this
   database has, and whether the **scheduled jobs actually ran** (recorded, not
   inferred — plus a completion check that catches a run killed by the function
   timeout). Five answer "did it run?" by outcome" (brief freshness vs stories waiting, ingest
-  volume, parked stories, recipients, dead feeds). Seven answer harder
+  volume, parked stories, recipients, dead feeds). Eight answer harder
   questions: **screening quality** (7d relevance rate vs the prior 3 weeks),
   **byline backfill** (share, not count), **weekly report** (reads `off`, not
   broken, while `REPORT_EMAIL_ENABLED` is unset), **API spend** (month-to-date +
   month-end projection), **deliverability** (the provider's own per-message
   status — everything else only knows the send was *accepted*; scoped to
   `RADAR_FROM`'s address because the Resend account is shared, so the other
-  app's ~18 daily sends neither pad nor redden this check), **storage
+  app's ~18 daily sends neither pad nor redden this check), **email quota**
+  (the provider's send ceiling — warn at 80%, crit at 95%; see the Gotcha),
+  **storage
   headroom** (shared DB, shared ceiling), **prompt-cache reuse** (broken caching
   raises the bill with no other symptom; reads `ok — not used` when every run was
   a single batch, which is the normal shape). `GET /api/alerts?notify=1` is the push
