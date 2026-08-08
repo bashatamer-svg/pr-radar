@@ -98,7 +98,11 @@
     clip:rect(0 0 0 0);white-space:nowrap;border:0}
   .rangerow input[type=date]{flex:1 1 0;min-width:108px;min-height:34px;font:inherit;font-size:13px;
     color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:9px;padding:5px 7px}
-  .rsep{flex:none;font-size:13px;color:var(--faint);line-height:1}
+  /* Negative side margins: the arrow BELONGS to the two fields it joins, so it
+     sits tight against them rather than taking a full gap on each side. That is
+     also what buys back the ~6px the OR label costs, keeping one line at 360px
+     without cramping the row's real gaps. */
+  .rsep{flex:none;font-size:13px;color:var(--faint);line-height:1;margin:0 -3px}
   /* flex:none so the one control that COMMITS the range keeps its tap target;
      the fields give way instead. */
   .rangerow .apply{flex:none}
@@ -281,6 +285,11 @@
          something to point at, and so its inputs keep their values while you
          flip back to a preset and return. -->
     <div class="rangerow" id="rangeRow" hidden>
+      <!-- Reuses the WINDOW row's own label style, so the two rows read as one
+           control: "WINDOW <presets>" / "OR <dates>". Deliberately NOT
+           aria-hidden — the word is what tells a screen-reader user these are
+           alternatives, not a second filter that narrows the first. -->
+      <span class="flabel">or</span>
       <label class="vh" for="rFrom">Range start date</label><input type="date" id="rFrom">
       <span class="rsep" aria-hidden="true">→</span>
       <label class="vh" for="rTo">Range end date</label><input type="date" id="rTo">

@@ -216,6 +216,31 @@ const apply = async (from, to) => {
   assert.deepStrictEqual(tiny.clipped, [], 'and still clips nothing at 320px');
   assert.ok(tiny.narrowest >= 108, 'the fields keep their floor rather than being shaved');
 
+  // The row says OR, so the dates read as an ALTERNATIVE to the preset chips
+  // above rather than a second filter narrowing them. It reuses the WINDOW
+  // row's own label style so the two read as one control.
+  {
+    // Checked for presence FIRST: a bare $eval on a missing node throws
+    // "failed to find element matching selector", which tells the next reader
+    // nothing about what the row is supposed to contain.
+    assert.ok(await page.$('#rangeRow .flabel'),
+      'the range row carries an "or" label marking it as an alternative to the preset chips');
+    const or = await page.$eval('#rangeRow .flabel', (e) => ({
+      text: e.textContent.trim(),
+      shown: getComputedStyle(e).textTransform,
+      hidden: e.getAttribute('aria-hidden'),
+      first: e.parentElement.firstElementChild === e,
+    }));
+    assert.match(or.text, /^or$/i, `the range row is introduced by "or" (got "${or.text}")`);
+    assert.ok(or.first, 'and it leads the row, where the WINDOW label sits on the row above');
+    assert.strictEqual(or.shown, 'uppercase', 'styled like the WINDOW label, not as body text');
+    // Not aria-hidden: the word is what tells a screen-reader user these are
+    // alternatives, not a second filter applied on top of the chips.
+    assert.notStrictEqual(or.hidden, 'true', 'a screen reader hears it too');
+    const winLabel = await page.$eval('#winRow .flabel', (e) => e.className);
+    assert.strictEqual(winLabel, 'flabel', 'the WINDOW row uses the same class, so the two cannot drift apart');
+  }
+
   // The words are HIDDEN, not deleted — this is the bit most likely to be
   // "tidied away" by a later change, and a bare date field tells a screen-reader
   // user nothing about which end of the range it is.
