@@ -91,17 +91,33 @@
      iOS Safari's ("30 Sept 2026" — Chromium's numeric form is much shorter, so
      measuring here alone would under-size it). A clipped date is not a rough
      reading, it is a WRONG one: "9 Mar" and "9 May" truncate alike. Below
-     ~360px the row wraps to two lines rather than shave the fields past that,
-     which is the same call the card footer makes. */
+     ~360px the fields cannot hold that at 13px, so the narrow block below
+     shrinks the TEXT rather than clipping it — a smaller font has a smaller
+     longest-string, which lowers the floor honestly instead of by wishing. */
   .rangerow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-top:9px}
   .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
     clip:rect(0 0 0 0);white-space:nowrap;border:0}
   .rangerow input[type=date]{flex:1 1 0;min-width:108px;min-height:34px;font:inherit;font-size:13px;
     color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:9px;padding:5px 7px}
-  .rsep{flex:none;font-size:13px;color:var(--faint);line-height:1}
+  /* Negative side margins: the arrow BELONGS to the two fields it joins, so it
+     sits tight against them rather than taking a full gap on each side. That is
+     also what buys back the ~6px the OR label costs, keeping one line at 360px
+     without cramping the row's real gaps. */
+  .rsep{flex:none;font-size:13px;color:var(--faint);line-height:1;margin:0 -3px}
   /* flex:none so the one control that COMMITS the range keeps its tap target;
      the fields give way instead. */
   .rangerow .apply{flex:none}
+  /* Under 360px the row still has to be ONE line — it is the narrowest phone
+     anyone actually uses, and a control that reflows there reads as broken.
+     Everything gives a little: 12px date text (which is what lets the floor
+     drop to 92 without truncating "30 Sept 2026"), a tighter Apply and smaller
+     gaps. Nothing is HIDDEN — the arrow and the OR both survive, because each
+     is the thing that explains what the row is. */
+  @media (max-width:359px){
+    .rangerow{gap:5px}
+    .rangerow input[type=date]{font-size:12px;min-width:92px;padding:5px 5px}
+    .rangerow .apply{padding-left:9px;padding-right:9px}
+  }
   .rmsg{flex:1 1 100%;font-size:12px;color:var(--red);min-height:0}
   .rmsg:empty{display:none}
   .flabel{flex:none;align-self:center;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding-right:2px}
@@ -281,6 +297,11 @@
          something to point at, and so its inputs keep their values while you
          flip back to a preset and return. -->
     <div class="rangerow" id="rangeRow" hidden>
+      <!-- Reuses the WINDOW row's own label style, so the two rows read as one
+           control: "WINDOW <presets>" / "OR <dates>". Deliberately NOT
+           aria-hidden — the word is what tells a screen-reader user these are
+           alternatives, not a second filter that narrows the first. -->
+      <span class="flabel">or</span>
       <label class="vh" for="rFrom">Range start date</label><input type="date" id="rFrom">
       <span class="rsep" aria-hidden="true">→</span>
       <label class="vh" for="rTo">Range end date</label><input type="date" id="rTo">

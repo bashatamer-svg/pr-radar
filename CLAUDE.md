@@ -1134,6 +1134,23 @@ gets nothing. All queries live in `lib/db.js`.
   clipped date is a WRONG reading, not a rough one, since "9 Mar" and "9 May"
   truncate alike. Below ~360px the row wraps rather than shave past that floor,
   the same call the card footer makes.
+  **The row opens with `OR`**, in the WINDOW row's own `.flabel` style, so the
+  two read as one control — presets, *or* dates — rather than the dates looking
+  like a second filter narrowing the chips. It is deliberately NOT
+  `aria-hidden`: that word is what tells a screen-reader user they are
+  alternatives and not cumulative. It costs ~24px, paid for by pulling the arrow
+  tight to the two fields it joins (`.rsep{margin:0 -3px}`) rather than
+  tightening the row's real gaps; revert that margin and 360px silently drops
+  back to two lines.
+  **It is ONE line at every width, 320 included** — a filter row that reflows on
+  the narrowest phone anyone uses reads as broken. Under 360px everything gives
+  a little (`@media (max-width:359px)`): 12px date text, a tighter Apply, 5px
+  gaps. The FONT shrinking is what matters — a smaller longest-string is what
+  lets the floor drop from 108 to 92 honestly, where narrowing the box alone
+  would clip `30 Sept 2026`. Nothing is hidden: the arrow and the OR both
+  survive, because each is what explains the row. `render-trends-range` asserts
+  the font EXACTLY (not as a range) at each width, because a bare floor number
+  passes happily while the text overflows it.
   **`render-final-sweep` had to learn a third measurement rule for this**: a
   visually-hidden label is 1px wide with its content clipped ON PURPOSE, so
   "narrower than its own content" says nothing about it. Matched on the
