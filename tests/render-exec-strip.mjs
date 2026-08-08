@@ -338,6 +338,58 @@ const load = async (data) => {
   await page.close();
 }
 
+/* ── 6b. every row lays out the same, linked or not ─────────────────────── */
+// Four of the five insights carry an href and render inside an <a>; "N
+// narratives still building" is the only one without one, and it took a
+// different branch. The CSS matched `.exrow>span` for that case — but a bare
+// row emits TWO spans (the dot and the text), so the selector hit each of them
+// instead of a wrapper: the dot became its own flex box on one line, the text a
+// block underneath, and the text's own inline content was laid out as flex
+// items so its word spacing went too. Reported from a screenshot, and no
+// existing assertion could see it — the strip still had the right rows, the
+// right words and no overflow. Geometry is what catches this class of bug.
+{
+  const { page, rows } = await load(base({
+    narratives: [{ name: 'خطوط المحمول', brand: 'Vodafone', total: 6, negative: 6, neutral: 0, positive: 0, rising: true, ids: [1, 2], idsTotal: 6, series: zeros() }],
+  }));
+  const bare = await page.$$eval('.exrow', (els) => els.filter((e) => !e.querySelector('a')).length);
+  assert.ok(bare >= 1, 'the fixture produces at least one row with no link, or this proves nothing');
+
+  const geo = await page.$$eval('.exrow', (els) => els.map((e) => {
+    const wrap = e.querySelector('a, .exbare');
+    const dot = e.querySelector('.exdot');
+    const text = wrap && [...wrap.children].find((c) => c !== dot);
+    if (!wrap || !dot || !text) return { broken: true, html: e.innerHTML.slice(0, 80) };
+    const d = dot.getBoundingClientRect(), t = text.getBoundingClientRect();
+    return {
+      linked: Boolean(e.querySelector('a')),
+      display: getComputedStyle(wrap).display,
+      textDisplay: getComputedStyle(text).display,
+      sameLine: t.top < d.bottom + 2,        // text starts beside the dot, not under it
+      textRightOfDot: t.left >= d.right,
+      height: Math.round(e.getBoundingClientRect().height),
+    };
+  }));
+
+  for (const g of geo) {
+    assert.ok(!g.broken, `every row has a single wrapper holding the dot and the text (got ${g.html})`);
+    assert.strictEqual(g.display, 'flex', 'the wrapper is the flex container');
+    // The text span must NOT be a flex container: that is what re-flowed the
+    // sentence's own words as flex items.
+    assert.notStrictEqual(g.textDisplay, 'flex', 'the text span is not itself a flex box');
+    assert.ok(g.sameLine, 'the text sits beside the bullet, not on the line below it');
+    assert.ok(g.textRightOfDot, 'and to the right of it');
+  }
+  // A linked and an unlinked row are the same shape, so neither reads as a
+  // rendering fault next to the other.
+  const linkedH = geo.filter((g) => g.linked).map((g) => g.height);
+  const bareH = geo.filter((g) => !g.linked).map((g) => g.height);
+  assert.ok(linkedH.length && bareH.length, 'the fixture has both shapes');
+  assert.ok(Math.min(...bareH) <= Math.max(...linkedH) * 1.6,
+    `an unlinked row is not dramatically taller than a linked one (linked ${linkedH}, bare ${bareH})`);
+  await page.close();
+}
+
 /* ── 7. it fits a phone ─────────────────────────────────────────────────── */
 {
   const { page } = await load(base({

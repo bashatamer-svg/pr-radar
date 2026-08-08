@@ -111,7 +111,15 @@
           letter-spacing:.1em;text-transform:uppercase;color:var(--red)}
   .exsub{font-size:10.5px;font-weight:600;letter-spacing:.02em;text-transform:none;color:var(--faint)}
   .exlist{list-style:none;margin:9px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
-  .exrow a,.exrow>span{display:flex;align-items:flex-start;gap:9px;padding:6px 6px;border-radius:9px;
+  /* Both row shapes are ONE element deep. `.exrow>span` used to be the
+     unlinked case, but an unlinked row emits TWO spans (dot + text), so the
+     selector matched each of them instead of a wrapper: the dot became its own
+     flex box on one line and the text a block below it, and the text's inline
+     content was laid out as flex items so its spacing went too. The only
+     insight without a href — "N narratives still building" — was the one that
+     showed it. Match the wrapper explicitly so a bare row cannot reintroduce
+     the shape. */
+  .exrow a,.exrow>.exbare{display:flex;align-items:flex-start;gap:9px;padding:6px 6px;border-radius:9px;
         color:var(--ink-2);text-decoration:none;font-size:13.5px;line-height:1.5}
   .exrow a:hover{background:var(--neu-bg);color:var(--ink)}
   .exrow a:focus-visible{outline:2px solid var(--red);outline-offset:-2px}
@@ -786,7 +794,7 @@ function execHtml(){
   return `<div class="exec"><div class="exhead">So what?<span class="exsub">derived from the numbers below · last ${winLabel()}</span></div>
     <ul class="exlist">${ins.slice(0,5).map(i=>{
       const body=`<span class="exdot ${i.tone}" aria-hidden="true"></span><span>${i.text}</span>`;
-      return `<li class="exrow">${i.href?`<a href="${esc(i.href)}">${body}</a>`:body}</li>`;
+      return `<li class="exrow">${i.href?`<a href="${esc(i.href)}">${body}</a>`:`<span class="exbare">${body}</span>`}</li>`;
     }).join('')}</ul></div>`;
 }
 
