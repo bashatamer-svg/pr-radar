@@ -145,6 +145,40 @@ export const REJECT = [
 
 export const ACCEPT = [
   {
+    id: 'co-authored-comma-latin',
+    reported: '2026-08-08',
+    outlet: 'Mada Masr',
+    // Found by sweeping pr_items, not reported by a reader — which is why it
+    // had lasted: the loss is SILENT, the card just reads "newsroom". Six Mada
+    // Masr investigations carry a comma-joined credit, all stored 17–31 Jul,
+    // i.e. under the code as it was BEFORE the funnel put NAME_SHAPE on the
+    // single-segment path. Since then the same feed's co-authored bylines have
+    // been dropped: a comma is not a separator, so the whole credit arrives as
+    // one segment and NAME_SHAPE rejects it as `not-name-shaped`.
+    why: 'A real two-person investigation credit. The board showed newsroom and the journalist leaderboard lost both writers.',
+    raw: 'Rana Mamdouh, Sara Seif Eddin',
+    expect: 'Rana Mamdouh',
+  },
+  {
+    id: 'co-authored-three-writers',
+    reported: '2026-08-08',
+    outlet: 'Mada Masr',
+    // The same story ran twice with the first two names swapped, so the joined
+    // string was TWO leaderboard entries for one team. Keeping the lead byline
+    // credits a real person; keeping the joined string invents one.
+    why: 'Three writers on one investigation. Credit the lead — never a name no person actually has.',
+    raw: 'Hassan Alnaser, Mohamed Alagra, Mashair Idris',
+    expect: 'Hassan Alnaser',
+  },
+  {
+    id: 'co-authored-arabic-comma',
+    reported: '2026-08-08',
+    outlet: 'الشروق',
+    why: 'Arabic copy joins co-authors with the Arabic comma «،», which is a different character from the ASCII one and must be split the same way.',
+    raw: 'أحمد سمير، محمد فتحي',
+    expect: 'أحمد سمير',
+  },
+  {
     id: 'dateline-byline-no-marker',
     reported: '2026-08-06',
     outlet: 'Ahram Online',

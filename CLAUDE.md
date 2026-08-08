@@ -875,6 +875,26 @@ gets nothing. All queries live in `lib/db.js`.
   model's answer). **Reported cases live in `tests/byline-cases.mjs` and the
   loop for adding one is the playbook below** — read it before touching this
   code. Pinned by `verify-byline-cases`.
+  **A byline arrives through TWO DOORS, and they had drifted** (8 Aug, found by
+  sweeping `pr_items`, not reported — the loss is silent, since a dropped byline
+  and an absent one both render "newsroom"). `cleanNameChecked` REIMPLEMENTED
+  the cheap half of the funnel and skipped the segment split, so the same string
+  got two different wrong answers depending on where it came from: Mada Masr's
+  RSS credit `Rana Mamdouh, Sara Seif Eddin` was stored **joined** (a journalist
+  nobody is — and the same three writers in another order became a second one),
+  while the identical string off the article page was **rejected** as
+  `not-name-shaped`, because the comma was not in `SEP`. Both halves fixed: the
+  ASCII and Arabic commas are separators, and `cleanNameChecked` now DELEGATES
+  to `judgeByline` with no context rather than duplicating it. A multi-person
+  credit resolves to the **lead byline** — `author` is one text column, so
+  keeping the joined string is what invents the phantom; crediting the lead
+  under-reports the others and never fabricates, which is the rule that
+  outranks it. Six live rows still carry the joined string (17–31 Jul, all
+  `madamasr-en`, all from before the funnel existed) and a stored byline is
+  never revisited — clearing them is a data write, so it needs a human.
+  `verify-byline-cases` now asserts **door parity**: every raw case must resolve
+  identically through `authorFromEntry` and through `judgeByline`. Neither door
+  had ever been tested against the other, which is exactly how they drifted.
   **And the SUBJECT of a story is not its author** (6 Aug, user-reported): an
   Ahram Online interview was filed with the byline of the CEO being interviewed,
   and two Arabic cards credited the person quoted in their own «X: quote»

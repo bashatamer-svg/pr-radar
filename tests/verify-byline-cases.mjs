@@ -8,7 +8,7 @@
 // stays deliberately thin — it is a runner, not a place to add prose.
 import assert from 'node:assert';
 import { REJECT, ACCEPT } from './byline-cases.mjs';
-import { extractAuthorFromHtml, judgeByline } from '../lib/author.js';
+import { extractAuthorFromHtml, judgeByline, authorFromEntry } from '../lib/author.js';
 
 let pass = 0;
 const ids = new Set();
@@ -45,6 +45,30 @@ for (const [group, cases] of [['REJECT', REJECT], ['ACCEPT', ACCEPT]]) {
     console.log(`  ✓ ${c.id.padEnd(32)} ${c.expect === null ? 'shows nothing' : `→ ${c.expect}`}${c.rule ? `  [${c.rule}]` : ''}`);
   }
 }
+
+// ── ONE FUNNEL MEANS ONE ANSWER, WHICHEVER DOOR THE NAME COMES THROUGH ──────
+// A byline arrives two ways: off the RSS entry (authorFromEntry, free) or off
+// the article page (the cascade, which ends at judgeByline). Those had drifted
+// apart in the quietest possible way — authorFromEntry reimplemented the cheap
+// half of the funnel and skipped the segment split, so "Rana Mamdouh, Sara Seif
+// Eddin" was STORED JOINED from the feed and REJECTED outright from the page.
+// Neither answer was right and no test could see either, because each door was
+// only ever tested on its own.
+//
+// Context is what legitimately differs — a feed entry has no article text and
+// no headline, so the story-subject rules cannot run — which is why the
+// comparison is against judgeByline with NO context, not the case's own.
+console.log('\nDOOR PARITY (RSS entry vs the page cascade)');
+for (const c of [...REJECT, ...ACCEPT]) {
+  if (!c.raw) continue;
+  const viaEntry = authorFromEntry({ 'dc:creator': c.raw });
+  const v = judgeByline(c.raw);
+  const viaJudge = v.ok ? v.name : null;
+  assert.strictEqual(viaEntry, viaJudge,
+    `${c.id}: a <dc:creator> must resolve exactly as the same string does from a page.\n` +
+    `    feed says ${JSON.stringify(viaEntry)}, page says ${JSON.stringify(viaJudge)}`);
+}
+console.log(`  ✓ ${[...REJECT, ...ACCEPT].filter((c) => c.raw).length} raw cases resolve identically from the feed and from the page`);
 
 const total = REJECT.length + ACCEPT.length;
 console.log(`\n${pass}/${total} CASES PASS — ${REJECT.length} reported mistakes stay fixed, ${ACCEPT.length} real bylines stay findable`);
