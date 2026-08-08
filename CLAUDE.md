@@ -1058,6 +1058,24 @@ gets nothing. All queries live in `lib/db.js`.
   copy is unsigned — so the journalist count is always far below the story
   count; `totals.itemsWithByline` powers the footnote that says so. Pinned by
   `render-leaderboard-pages` + `render-trends-wording`.
+- **The Trends window is ROLLING, but the charts bucket by Cairo DAY** — and at
+  the two short windows those two facts collide. `itemsForStats` cuts at
+  `Date.now() - N*864e5`, so `days=1` is a true rolling 24 hours, which is why
+  the chips added 8 Aug are named **24 hours / 48 hours** — the same words the
+  board already uses for `win=1|2`, not a second vocabulary for one window.
+  But a rolling 24h window straddles Cairo midnight, so `days[]` holds **two
+  PART-days**, and a half-day bar under a full date reads as a real fall in
+  volume. The two per-day cards (`c-sov`, `c-neg`) therefore append
+  "· end days are partial" below 3 days; `c-sent` and the leaderboards are
+  window AGGREGATES and are exactly right at any width, so they say nothing.
+  `execInsights` needs `half>=2` and so self-suppresses here — that is the
+  designed degradation, not a gap. **Nine places name the window** (exec strip,
+  KPI head, a KPI tile, the footnote, the export summary row, the export
+  filename, and the PDF's title and sub-line); they all read `winLabel()` /
+  `winShort()`, which source from the SERVER's `meta.days` rather than the chip
+  we asked with. Nine copies of `${fDays} days` is how "last 1 days" ships —
+  the footnote was exactly that, and the test caught it. Pinned by
+  `render-trends-windows`.
 - **Cairo days** (`Africa/Cairo`, DST via Intl) for every user-facing window;
   storage is UTC ISO. Board/stats/report windows must reconcile.
 - Vodafone-only action framing: needs-response/wins lanes + those KPIs are
