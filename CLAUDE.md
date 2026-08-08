@@ -1080,7 +1080,35 @@ gets nothing. All queries live in `lib/db.js`.
   was in the totals and absent from the bars). `smoke-task3` had written the bug
   down as an allowance — `sovSum >= items.length - 2`, commented "Cairo-edge
   clamp"; it is exact now. A 30-day window is therefore **31 buckets**, not 30.
-  Pinned by `verify-stats-axis`, which asserts the series sum equals the totals. **Nine places name the window** (exec strip,
+  Pinned by `verify-stats-axis`, which asserts the series sum equals the totals.
+- **A Trends CUSTOM range is `from`/`to`, validated by the REPORTS parser.**
+  `parseCairoRange` (`lib/report.js`) is the one implementation — same
+  `YYYY-MM-DD` shape, same Cairo day boundaries, same **92-day** ceiling (the
+  longest three calendar months), same error strings — now shared by
+  `/api/report`, `/api/stats` and `/api/items`. A second validator is how a
+  range Reports accepts becomes a range Trends rejects. The ceiling **REFUSES,
+  it never clamps**: a reader who asks for six months and silently gets ninety
+  days reads the answer as covering six. `stats.html` repeats the same checks in
+  the same order so a mistake is answered in place rather than as a 400, and
+  caps the inputs at today — there is no coverage in the future, and empty
+  trailing bars read as a collapse in volume.
+  **The window is named by its DATES**, not "last 43 days": the reader picked
+  two dates. `winLabel()`/`winShort()` handle both shapes, so all nine phrasings
+  and both export filenames follow.
+  **Deep links carry `from`/`to`, and the BOARD honours them** — `recentItems`
+  and `/api/items` take an explicit range, `public/index.html` parses one, no
+  Since chip reads as pressed while it is active, and the deep-link banner names
+  the dates (it is the only thing on screen saying the board is not showing its
+  usual window). Snapping to the nearest fixed window would open a different set
+  of cards than the row counted — the narrative-ids bug again. The nine
+  hand-built `win=${W}` links in `stats.html` now all route through
+  `boardWinQuery()` for the same reason the wording routes through one helper.
+  **It is deliberately NOT persisted.** "30 days" means the same thing tomorrow;
+  "1–15 July" does not, and a stale absolute range restored a week later reads
+  as live data. It lives in memory and in the URL, so a reload or a shared link
+  reproduces the view while a fresh visit returns to your last preset. Pinned by
+  `render-trends-range`, which also follows the link and asserts the board
+  refetches. **Nine places name the window** (exec strip,
   KPI head, a KPI tile, the footnote, the export summary row, the export
   filename, and the PDF's title and sub-line); they all read `winLabel()` /
   `winShort()`, which source from the SERVER's `meta.days` rather than the chip

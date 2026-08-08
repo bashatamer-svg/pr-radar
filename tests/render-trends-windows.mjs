@@ -58,7 +58,7 @@ await page.addInitScript(() => localStorage.setItem('pr_session', JSON.stringify
 await page.goto('http://localhost:8947/stats', { waitUntil: 'networkidle' });
 await page.waitForSelector('.cardc', { timeout: 5000 });
 
-const chips = () => page.$$eval('#winRow .chip', (els) => els.map((e) => ({ v: e.dataset.v, label: e.textContent.trim(), on: e.getAttribute('aria-pressed') === 'true' })));
+const chips = () => page.$$eval('#winRow .chip[data-v]', (els) => els.map((e) => ({ v: e.dataset.v, label: e.textContent.trim(), on: e.getAttribute('aria-pressed') === 'true' })));
 
 // ── 1. the chips exist, in ascending order, and are labelled like the board ──
 {

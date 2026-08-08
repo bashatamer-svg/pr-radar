@@ -638,10 +638,23 @@ let fIdsTotal=Number(params.get('n'))||0;
 if(params.get('brand')) fBrand=params.get('brand');
 if(params.get('sent')) fSent=params.get('sent');
 { const w=Number(params.get('win')); if([1,2,7,30].includes(w)) fWin=w; }
+// A Trends CUSTOM range arrives as from/to. The Since chips cannot express it,
+// so it rides alongside them: while a range is active the board asks the server
+// for exactly that span, and the chips are what you use to leave it. Without
+// this, a custom-range row on Trends would open its nearest fixed window and
+// show a different set of cards than the row counted.
+const DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
+let fFrom=params.get('from')||'', fTo=params.get('to')||'';
+if(!(DATE_RE.test(fFrom)&&DATE_RE.test(fTo))) { fFrom=fTo=''; }
+const ranged=()=>Boolean(fFrom&&fTo);
+const itemsQuery=()=>ranged()?`from=${encodeURIComponent(fFrom)}&to=${encodeURIComponent(fTo)}`:`days=${fWin}`;
 const itemHasOutlet=(it,o)=>Array.isArray(it.instances)&&it.instances.some(x=>x&&x.outlet===o);
 const itemHasAuthor=(it,a)=>(it.author===a)||(Array.isArray(it.instances)&&it.instances.some(x=>x&&x.author===a));
 function deepFilter(){ if(fIds.length) return{kind:'Narrative',val:fLabel||`${fIds.length} stories`}; if(fCat) return{kind:'Category',val:String(fCat).replace(/_/g,' ')}; if(fOutlet) return{kind:'Outlet',val:fOutlet}; if(fAuthor) return{kind:'Journalist',val:fAuthor}; return null; }
 function clearDeepFilter(){ fCat=fOutlet=fAuthor=''; fIds=[]; fLabel=''; fIdsTotal=0; try{ const u=new URL(location.href); ['cat','outlet','author','ids','label','n'].forEach(k=>u.searchParams.delete(k)); history.replaceState(null,'',u.pathname+(u.search||'')+u.hash); }catch(e){} render(); }
+// Leaving a custom range needs a REFETCH, not just a re-render: the rows for a
+// fixed window are a different set, not a filter over the ones already loaded.
+function clearRange(){ if(!ranged()) return false; fFrom=fTo=''; try{ const u=new URL(location.href); ['from','to'].forEach(k=>u.searchParams.delete(k)); history.replaceState(null,'',u.pathname+(u.search||'')+u.hash); }catch(e){} return true; }
 
 // team_share pins are SERVER state (shared with the team view), but pinned
 // items can be older than the current window — so we also remember pinned ids
@@ -1009,8 +1022,14 @@ function render(){
   $('#status').innerHTML=`<span><b>${ITEMS.length}</b> tracked</span><span class="sep">·</span><span class="neg" title="Stories that ran negative for the brand they are about, across all tracked brands">${neg} negative</span><span class="sep">·</span><span>${shown.length} shown${brandNote}</span>${sortNote}`;
   // Deep-link filter banner (arrived from Trends) with a one-click clear.
   const df=deepFilter(); const dfEl=$('#dfilter');
-  if(df){ const note=(fIds.length&&fIdsTotal>fIds.length)?` <span class="dfsub">top ${fIds.length} of ${fIdsTotal} by reach</span>`:'';
-    dfEl.innerHTML=`<span><span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}${note}</span><button class="dfx" type="button" data-act="clearfilter">✕ Clear filter</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
+  if(df||ranged()){ const note=(fIds.length&&fIdsTotal>fIds.length)?` <span class="dfsub">top ${fIds.length} of ${fIdsTotal} by reach</span>`:'';
+    // A custom range is not a filter over the loaded rows — it changed WHICH
+    // rows were fetched — so it is named even when no other deep filter is set,
+    // and its clear button says what it clears.
+    const rng=ranged()?`<span class="dk">Dates</span><b>${esc(fFrom)} → ${esc(fTo)}</b>`:'';
+    const body=df?`${rng?rng+' · ':''}<span class="dk">${esc(df.kind)}</span><b>${esc(df.val)}</b> · ${shown.length} card${shown.length===1?'':'s'}${note}`
+                 :`${rng} · ${shown.length} card${shown.length===1?'':'s'}`;
+    dfEl.innerHTML=`<span>${body}</span><button class="dfx" type="button" data-act="clearfilter">✕ ${ranged()&&!df?'Back to the usual window':'Clear filter'}</button>`; dfEl.classList.add('on'); dfEl.hidden=false; }
   else { dfEl.classList.remove('on'); dfEl.hidden=true; }
   const list=$('#list');
   if(!shown.length){ list.innerHTML=`<div class="empty">${df?`No cards for this ${esc(df.kind.toLowerCase())} in the current window.<br>Try a wider window, or clear the filter above.`:'Nothing matches this filter.<br>Clear the brand or widen the time window.'}</div>`; updateLaneLabel(); return; }
@@ -1098,8 +1117,10 @@ function buildFilters(){
   low.onclick=()=>{ fLowConf=fLowConf==='low'?'all':'low'; syncControls(); render(); };
   const win=$('#winRow');
   const wopts=[['1','24 hours'],['2','48 hours'],['7','Week'],['30','Month']];
-  win.innerHTML=`<span class="flabel">Since</span>`+wopts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fWin)===v}">${l}</button>`).join('');
-  win.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ fWin=Number(c.dataset.v); localStorage.setItem('pr_win',c.dataset.v); win.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===c.dataset.v))); load(); });
+  // While a custom range is active NO chip is pressed — one of them showing as
+  // selected would name a window the board is not showing.
+  win.innerHTML=`<span class="flabel">Since</span>`+wopts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${!ranged()&&String(fWin)===v}">${l}</button>`).join('');
+  win.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ clearRange(); fWin=Number(c.dataset.v); localStorage.setItem('pr_win',c.dataset.v); win.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===c.dataset.v))); load(); });
   // Sort is a re-order of what is already loaded — no refetch, and nothing is
   // ever hidden by it, which is why it sits apart from the filter rows above.
   const srt=$('#sortRow');
@@ -1153,7 +1174,7 @@ async function load(){
   if(!ITEMS.length) $('#list').innerHTML=skeletons();      // first paint: skeletons, not bare text
   else $('#list').style.opacity='.45';                     // refetch: hold the frame, don't flash
   try{
-    const r=await afetch(`/api/items?days=${fWin}`);
+    const r=await afetch(`/api/items?${itemsQuery()}`);
     if(r.status===401){ location.href='/login'; return; }   // session expired / rejected → sign in
     if(r.status===403){ $('#list').innerHTML=`<div class="gate">Your account isn't authorised for this board.<br>Ask an admin to add you.</div>`; return; }
     ITEMS=await r.json(); if(!Array.isArray(ITEMS)) ITEMS=[];
@@ -1191,7 +1212,7 @@ async function checkNew(){
   if(!session || document.hidden) return;           // don't poll a backgrounded tab
   if(fPin==='pinned' || fIds.length) return;         // skip the pinned view + narrative deep-links
   try{
-    const r=await afetch(`/api/items?days=${fWin}`);
+    const r=await afetch(`/api/items?${itemsQuery()}`);
     if(!r.ok) return;
     const fresh=await r.json(); if(!Array.isArray(fresh)) return;
     const cur=new Set(ITEMS.map(i=>i.id));
@@ -1318,7 +1339,9 @@ const ACTS = {
   down: (id, b) => vote(id, -1, b),
   more: (id, b, e) => toggleMore(b, e),
   snappulse: () => snapshotPulse(),
-  clearfilter: () => clearDeepFilter(),
+  // Leaving a custom range REFETCHES (different rows), leaving a deep filter
+  // only re-renders (same rows, fewer shown). Doing both when both are set.
+  clearfilter: () => { const wasRanged = clearRange(); clearDeepFilter(); if (wasRanged) { syncControls(); load(); } },
 };
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');

@@ -1,6 +1,8 @@
 // Server-aggregated trends for the /stats screen. Token-gated like api/items.js.
 //
 // GET /api/stats?days=N            (N clamped 1..90, default 30). Viewer+, Bearer only.
+// GET /api/stats?from=2026-06-01&to=2026-08-08   → explicit Cairo-day range,
+//     validated by the REPORTS parser (inclusive end day, ceiling 92 days).
 // GET /api/stats?view=narratives&days=N   → { narratives } and nothing else.
 //
 // WHY TWO CALLS. This endpoint used to `await buildNarratives()` inline, and
@@ -24,7 +26,12 @@
 // window predicate (is_relevant, published_at falling back to seen_at) so the
 // stats reconcile with what the board shows for the same window.
 
-import { itemsForStats, instancesForItems } from '../lib/db.js';
+import { itemsForStats, itemsBetween, instancesForItems } from '../lib/db.js';
+// The range parser is the REPORTS one, not a second copy: same YYYY-MM-DD
+// shape, same Cairo day boundaries, same 92-day ceiling, same error strings.
+// Two validators for one concept is how a range that Reports accepts becomes a
+// range Trends rejects.
+import { parseCairoRange } from '../lib/report.js';
 import { isOutletName } from '../lib/author.js';
 import { requireRole } from '../lib/auth.js';
 import { buildNarratives } from '../lib/narratives.js';
@@ -50,9 +57,19 @@ export default async function handler(req, res) {
   const who = await requireRole(req, res, 'viewer');
   if (!who) return;
 
-  const windowDays = Math.max(1, Math.min(Number(req.query.days) || 30, 90));
+  // An explicit range wins over `days`. Rejected loudly rather than silently
+  // clamped: a reader who asked for six months and got ninety days quietly
+  // would read the answer as covering six.
+  let range = null;
+  if (req.query.from || req.query.to) {
+    try { range = parseCairoRange(req.query.from, req.query.to); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+  }
+  const windowDays = range ? range.days : Math.max(1, Math.min(Number(req.query.days) || 30, 90));
   const narrativesOnly = req.query.view === 'narratives';
-  const items = await itemsForStats({ days: windowDays, withText: true });
+  const items = range
+    ? await itemsBetween({ fromIso: range.fromIso, toIso: range.toIso, cols: 'stats' })
+    : await itemsForStats({ days: windowDays, withText: true });
 
   // Continuous Cairo-day axis, oldest → today. Stepping UTC-24h through a DST
   // change can emit a duplicate local day; the Set dedupes it.
@@ -68,7 +85,11 @@ export default async function handler(req, res) {
   // between 14:00 yesterday and midnight was in the totals and absent from the
   // bars. Stepping from the cut itself is what makes the two agree.
   const nowMs = Date.now();
-  const sinceMs = nowMs - windowDays * 864e5;
+  // A range already names its own edges; `days` is cut rolling from now. The
+  // end is clamped to now so a range reaching into the future does not draw
+  // empty bars for days that have not happened.
+  const sinceMs = range ? range.fromMs : nowMs - windowDays * 864e5;
+  const untilMs = range ? Math.max(range.fromMs, Math.min(range.toMs - 1, nowMs)) : nowMs;
   const days = [];
   const seenDays = new Set();
   const pushDay = (ms) => {
@@ -77,8 +98,8 @@ export default async function handler(req, res) {
   };
   // Stepping in 24h hops can skip a local day across a DST change and always
   // lands short of `now`; the Set dedupes, and the final push closes the gap.
-  for (let t = sinceMs; t <= nowMs; t += 864e5) pushDay(t);
-  pushDay(nowMs);
+  for (let t = sinceMs; t <= untilMs; t += 864e5) pushDay(t);
+  pushDay(untilMs);
   const dayIdx = new Map(days.map((d, i) => [d, i]));
 
   // ── ?view=narratives — the LLM pass, on its own ──────────────────────────
@@ -93,7 +114,7 @@ export default async function handler(req, res) {
     catch (e) { console.error('narratives failed, section omitted —', e.message); }
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({
-      meta: { days: windowDays, generatedAt: new Date().toISOString(), items: items.length },
+      meta: { days: windowDays, ...(range ? { from: req.query.from, to: req.query.to } : {}), generatedAt: new Date().toISOString(), items: items.length },
       narratives,
     });
   }
@@ -212,7 +233,7 @@ export default async function handler(req, res) {
   catch (e) { console.error('narratives failed, section omitted —', e.message); }
 
   return res.status(200).json({
-    meta: { days: windowDays, generatedAt: new Date().toISOString(), items: items.length },
+    meta: { days: windowDays, ...(range ? { from: req.query.from, to: req.query.to } : {}), generatedAt: new Date().toISOString(), items: items.length },
     days,
     sov,                       // per-brand aligned arrays: mentions[] + negatives[] per day
     sentimentByBrand,
