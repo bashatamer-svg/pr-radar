@@ -216,7 +216,7 @@ gets nothing. All queries live in `lib/db.js`.
 - Does NOT ship with a deploy: env vars (Vercel dashboard only), DB schema
   (manual SQL, ask first), OG images (committed PNGs; regenerate by script).
 
-## Drift (repo ↔ live, verified 2026-08-02)
+## Drift (repo ↔ live — each row carries its own verification date; last swept 2026-08-08)
 
 | Where | Fact |
 |---|---|
