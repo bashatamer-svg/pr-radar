@@ -81,7 +81,14 @@ const audit = (page) => page.evaluate(() => {
   for (const el of document.querySelectorAll('body *')) {
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) continue;                 // hidden
-    if (getComputedStyle(el).overflowX === 'auto') continue;       // deliberately scrolls
+    const cs = getComputedStyle(el);
+    if (cs.overflowX === 'auto') continue;                         // deliberately scrolls
+    // A visually-hidden label is 1px wide with its content clipped ON PURPOSE —
+    // that IS the technique. It is not rendered, so "narrower than its own
+    // content" says nothing about it, while the name it gives a control is
+    // exactly what a screen reader needs. Matched on the clip idiom rather than
+    // a class name, so any page's implementation is covered.
+    if (cs.clip === 'rect(0px, 0px, 0px, 0px)') continue;
     // SVG has its own coordinate system, so scrollWidth on a <text> node is not
     // a width in CSS pixels and comparing the two is meaningless. Chart-label
     // legibility is measured properly by render-leaderboard-mobile.
@@ -97,7 +104,7 @@ const audit = (page) => page.evaluate(() => {
     // not a hit-target failure. What must not shrink is anything laid out as a
     // block, flex or grid item: those are the buttons and chips a thumb aims at.
     if (el.matches('button, a[href], input, select') && r.width > 0) {
-      const disp = getComputedStyle(el).display;
+      const disp = cs.display;
       if (disp === 'inline') continue;
       if (r.height < 24 || r.width < 18) small.push({ cls, txt: (el.textContent || '').trim().slice(0, 18), w: Math.round(r.width), h: Math.round(r.height) });
     }

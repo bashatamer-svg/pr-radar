@@ -1121,7 +1121,24 @@ gets nothing. All queries live in `lib/db.js`.
   as live data. It lives in memory and in the URL, so a reload or a shared link
   reproduces the view while a fresh visit returns to your last preset. Pinned by
   `render-trends-range`, which also follows the link and asserts the board
-  refetches. **Nine places name the window** (exec strip,
+  refetches.
+  **The date row is ONE line, and the FROM/TO words are what pay for it.** It
+  shipped as `FROM [date] TO [date] [Apply]` and broke onto two lines on a 390px
+  phone, clipping Apply (user-reported, 8 Aug). The words cost ~54px; an arrow
+  between the fields says the same thing in 12, and the labels stay for a screen
+  reader (`.vh`, not deleted — a bare date field tells a screen-reader user
+  nothing about which end it is). The fields are `flex:1 1 0` so they SHARE what
+  is left instead of each demanding a fixed width and pushing the button onto
+  its own line. Their **108px floor is sized for iOS Safari's long form**
+  (`30 Sept 2026`), not for the numeric one Chromium draws in the tests — a
+  clipped date is a WRONG reading, not a rough one, since "9 Mar" and "9 May"
+  truncate alike. Below ~360px the row wraps rather than shave past that floor,
+  the same call the card footer makes.
+  **`render-final-sweep` had to learn a third measurement rule for this**: a
+  visually-hidden label is 1px wide with its content clipped ON PURPOSE, so
+  "narrower than its own content" says nothing about it. Matched on the
+  `clip:rect(0,0,0,0)` idiom rather than a class name, so any page's
+  implementation is covered. **Nine places name the window** (exec strip,
   KPI head, a KPI tile, the footnote, the export summary row, the export
   filename, and the PDF's title and sub-line); they all read `winLabel()` /
   `winShort()`, which source from the SERVER's `meta.days` rather than the chip
