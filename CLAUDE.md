@@ -835,7 +835,19 @@ gets nothing. All queries live in `lib/db.js`.
   multi-segment split only. Hardening each regex would be whack-a-mole; the
   funnel's bottom holds for JSON-LD, metas, bylines, datelines and the AI alike.
   **A stored junk byline is never revisited** — the backfill selects
-  `author=is.null`, so a wrong name is permanent until someone NULLs it. Two
+  `author=is.null`, so a wrong name is permanent until someone NULLs it, and it
+  has to be cleared in `pr_instances` too or it stays on the leaderboard.
+  **A DATELINE WORD is not part of a name** (8 Aug, user-reported): the same
+  `datelineCandidates` walk-back that finds a real byline before a date stops at
+  an ALL-CAPS token or a role word, and Arabic copy has neither — so it ran back
+  through the story's own headline and kept the weekday it started from,
+  crediting a regulator story to `مواطنين دون علمهم السبت`. The existing
+  `in-headline` rule ALREADY caught that phrase; the trailing `السبت` is
+  precisely what defeated it, by making the candidate no longer match the
+  headline. `dateline-word` rejects any candidate containing a weekday or month
+  in either language — safe with no context at all, which is what a bare
+  `<dc:creator>` arrives with. It cleared six more stored rows of the same
+  shape (`خاص الجمعة`, `فن الأربعاء`, `نشر في الثلاثاء`). Two
   live rows carried residue; both cleared 6 Aug with user approval.
   Pinned by `verify-author-markup`.
   **This was the third byline bug in a week, each fixed somewhere different** —
@@ -1394,11 +1406,22 @@ report costs one ledger entry instead of an hour of regex archaeology.
    guard beside the pattern that leaked — that is the scattering this replaced.
    A coverage gap is the exception: add the pattern to `bylineCandidates`, which
    is safe precisely because everything it emits is vetted by the same funnel.
-4. **Sweep production for the same fault, then clear it.** A stored byline is
-   NEVER revisited — the backfill selects `author=is.null` — so a wrong name is
-   permanent. Read-only SQL over `pr_items` finds siblings (the Astro case had
-   one, at a different outlet); NULLing them is a data write, so **ask first**,
+4. **Sweep BOTH tables, then clear.** A stored byline is NEVER revisited — the
+   backfill selects `author=is.null` — so a wrong name is permanent. **`pr_items`
+   is only half of it: `pr_instances.author` is what the coverage list and the
+   Trends journalist leaderboard read**, and the two do not always agree. The
+   Astro residue reported on 8 Aug was in `pr_instances` ALONE, which is exactly
+   why the earlier sweep of `pr_items` missed it and it was still on screen two
+   days after the extractor was fixed. NULLing is a data write, so **ask first**,
    then let the nightly backfill re-resolve.
+   **Re-judging stored names is how you find them**: run every distinct stored
+   author through `judgeByline` and look at what fails. On the 8 Aug sweep that
+   was 16 of 138 — but **6 were real multi-author credits**
+   (`Rana Mamdouh, Sara Seif Eddin`), which `judgeByline` rejects as
+   `not-name-shaped` because `SEP` does not split on a comma. A blind "null
+   everything the funnel rejects" would have deleted six real journalists, so
+   the list is reviewed by a human, never applied wholesale. That comma case is
+   a known gap: a legitimate co-authored byline is currently dropped at ingest.
 5. `npm test -- byline` replays the ledger. Every earlier case must still pass —
    that is the actual guarantee being maintained.
 

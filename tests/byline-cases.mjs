@@ -38,6 +38,47 @@ export const REJECT = [
     expect: null,
   },
   {
+    id: 'headline-tail-plus-arabic-weekday',
+    reported: '2026-08-08',
+    outlet: 'الشرق الأوسط',
+    // Reported live. The dateline extractor walks BACK over tokens from a date
+    // and stops at an ALL-CAPS token or a role word — neither of which exists
+    // in Arabic copy, so it ran straight back through the headline. What it
+    // produced was four real words in a row, letters only, so NAME_SHAPE waved
+    // it through: "citizens without their knowledge Saturday".
+    why: 'The tail of the story\'s own headline plus the Arabic weekday that followed it. The board credited a regulator story to a fragment of its own title.',
+    raw: 'مواطنين دون علمهم السبت',
+    headline: '«تنظيم الاتصالات» يوضح معلومات مهمة حول تسجيل خطوط محمول بأسماء مواطنين دون علمهم',
+    // `dateline-word` is the honest reason: the existing `in-headline` rule
+    // ALREADY caught this phrase — the trailing weekday is precisely what
+    // defeated it, by making the candidate no longer match the headline. The
+    // case below pins that, so it stays clear which rule does which job.
+    rule: 'dateline-word',
+    expect: null,
+  },
+  {
+    id: 'headline-tail-no-date',
+    reported: '2026-08-08',
+    outlet: 'الشرق الأوسط',
+    why: 'The same overshoot with nothing datelike left on it. This half already worked — `in-headline` rejects it — and pinning it is what shows the weekday was the whole gap, not the headline matching.',
+    raw: 'مواطنين دون علمهم',
+    headline: '«تنظيم الاتصالات» يوضح معلومات مهمة حول تسجيل خطوط محمول بأسماء مواطنين دون علمهم',
+    rule: 'in-headline',
+    expect: null,
+  },
+  {
+    id: 'arabic-weekday-in-name',
+    reported: '2026-08-08',
+    outlet: 'الشرق الأوسط',
+    // The same fault with no headline to compare against — a caller holding a
+    // bare RSS <dc:creator> has none. A weekday is a DATELINE word: it is never
+    // part of a person's name, in either language, so this stands on its own.
+    why: 'A dateline weekday left on the end of a scraped name. Judged with no headline, the way a bare dc:creator arrives.',
+    raw: 'أحمد سمير السبت',
+    rule: 'dateline-word',
+    expect: null,
+  },
+  {
     id: 'headline-plus-tag-residue',
     reported: '2026-08-06',
     outlet: 'صدى البلد',
