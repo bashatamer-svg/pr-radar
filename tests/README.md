@@ -20,6 +20,17 @@ Browser tests drive headless Chromium. Set `CHROMIUM_PATH` to your Chromium
 binary if the default sandbox path doesn't exist; without a browser those tests
 are **skipped**, the unit suite still runs.
 
+## Reading a failure
+
+The runner prints, per failed file, the **last few lines of stdout** (how far
+the test got) and then the **head of stderr** — the error message, its diff and
+the source line. That order is deliberate and was bought with a real one: it
+used to print the last 12 lines of both streams concatenated, and Node puts the
+message at the top of stderr and a long object dump at the bottom, so a CI
+failure reached the log as `name: 'Error'` and a line number with no message
+anywhere. A failure the log cannot explain gets re-run, not fixed. Pinned by
+`verify-ci-gate`.
+
 ## What covers what
 
 | Area | Tests |
