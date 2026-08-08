@@ -1169,16 +1169,20 @@ gets nothing. All queries live in `lib/db.js`.
   we asked with. Nine copies of `${fDays} days` is how "last 1 days" ships —
   the footnote was exactly that, and the test caught it. Pinned by
   `render-trends-windows`.
-- **There is NO self-serve unsubscribe, and the emails deliberately do not
-  pretend otherwise.** The 2026-08 email design specified a `Board · Unsubscribe`
-  footer pair; the link was omitted because `/unsubscribe` does not exist in
-  `vercel.json` or anywhere else, and a dead unsubscribe link is worse than
-  none — it is the one link a reader uses when they are already annoyed.
-  `pr_subscribers.active` is admin-managed (Admin → Subscribers), so today the
-  only way off the list is to ask. Building it needs a signed token in the link,
-  or the URL becomes a way to unsubscribe someone else, and it needs a decision
-  nobody has taken: whether a colleague should be able to remove themselves from
-  a brief the team lead put them on. Until then, do not "restore" the link.
+- **There is NO self-serve unsubscribe. DECIDED — owner, 8 Aug — not an
+  omission.** The 2026-08 email design specified a `Board · Unsubscribe` footer
+  pair and the link was dropped, because `/unsubscribe` exists nowhere and a
+  dead unsubscribe link is worse than none: it is the one link a reader uses
+  when they are already annoyed. The question was then put to the owner —
+  should a colleague be able to remove themselves from a brief the team lead
+  put them on? — and the answer was no. This is an internal Vodafone Egypt
+  distribution, not a marketing list.
+  So the ONLY way off is Admin → Subscribers (`pr_subscribers.active`, which
+  gates email and WhatsApp together). **Do not add the link, the route, or a
+  token scheme**, and do not "restore" it from the design files — the handoff in
+  `design_handoff_pr_radar_emails` still shows it, so the next person to work
+  from those targets will think it was missed. Pinned by `render-email-digest`,
+  which fails on an `/unsubscribe` href in any of the four emails.
 - **The Trends window PERSISTS (`pr_stats_days`), the custom range does not.**
   Picking a chip makes it your default until you change it, which cuts
   differently for `24 hours` than for `Month`: a short window set once and
