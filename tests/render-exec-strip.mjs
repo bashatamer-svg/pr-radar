@@ -338,22 +338,46 @@ const load = async (data) => {
   await page.close();
 }
 
-/* ── 6b. every row lays out the same, linked or not ─────────────────────── */
-// Four of the five insights carry an href and render inside an <a>; "N
-// narratives still building" is the only one without one, and it took a
-// different branch. The CSS matched `.exrow>span` for that case — but a bare
-// row emits TWO spans (the dot and the text), so the selector hit each of them
-// instead of a wrapper: the dot became its own flex box on one line, the text a
-// block underneath, and the text's own inline content was laid out as flex
-// items so its word spacing went too. Reported from a screenshot, and no
-// existing assertion could see it — the strip still had the right rows, the
-// right words and no overflow. Geometry is what catches this class of bug.
+/* ── 6b. every row is a link, and every row lays out the same ───────────── */
+// "N narratives still building" used to be the ONE insight with no href, so it
+// took a different render branch — and the CSS matched `.exrow>span` for that
+// case, which hit the dot and the text separately instead of a wrapper: the dot
+// became its own flex box on one line, the text a block underneath, and the
+// text's inline content was laid out as flex items so its spacing went too.
+// Reported from a screenshot; no assertion could see it, because the strip had
+// the right rows, the right words and no overflow. Geometry catches it.
+// It now links to the biggest of the narratives it names, so EVERY row goes
+// somewhere. The bare branch survives as a fallback for a future insight with
+// nowhere to point, so its layout is still checked — by injecting one, rather
+// than by depending on an insight lacking a link.
 {
   const { page, rows } = await load(base({
     narratives: [{ name: 'خطوط المحمول', brand: 'Vodafone', total: 6, negative: 6, neutral: 0, positive: 0, rising: true, ids: [1, 2], idsTotal: 6, series: zeros() }],
   }));
-  const bare = await page.$$eval('.exrow', (els) => els.filter((e) => !e.querySelector('a')).length);
-  assert.ok(bare >= 1, 'the fixture produces at least one row with no link, or this proves nothing');
+  // Every row goes somewhere — the whole strip is actionable.
+  const unlinked = await page.$$eval('.exrow', (els) =>
+    els.filter((e) => !e.querySelector('a')).map((e) => e.innerText.trim().slice(0, 40)));
+  assert.deepStrictEqual(unlinked, [], 'every insight row is a link');
+
+  // The narratives row points at the narrative it NAMES, carrying that
+  // narrative's own ids — so the board opens the stories the line is about,
+  // not a whole-window filter that merely contains them.
+  const narrHref = await page.$$eval('.exrow a', (els) => {
+    const el = els.find((e) => /still building/.test(e.innerText));
+    return el && el.getAttribute('href');
+  });
+  assert.ok(narrHref, 'the narratives row is among them');
+  assert.match(narrHref, /[?&]ids=/, `it carries the narrative's ids (got ${narrHref})`);
+  assert.match(narrHref, /[?&]n=6\b/, 'and its true total, so the board can say "top N of M"');
+
+  // The unlinked branch is still reachable code; prove the CSS covers it.
+  await page.evaluate(() => {
+    const li = document.createElement('li');
+    li.className = 'exrow';
+    li.id = 'injected-bare';
+    li.innerHTML = '<span class="exbare"><span class="exdot bad"></span><span><b>Bare row</b> — no link</span></span>';
+    document.querySelector('.exlist').appendChild(li);
+  });
 
   const geo = await page.$$eval('.exrow', (els) => els.map((e) => {
     const wrap = e.querySelector('a, .exbare');
@@ -384,7 +408,8 @@ const load = async (data) => {
   // rendering fault next to the other.
   const linkedH = geo.filter((g) => g.linked).map((g) => g.height);
   const bareH = geo.filter((g) => !g.linked).map((g) => g.height);
-  assert.ok(linkedH.length && bareH.length, 'the fixture has both shapes');
+  assert.ok(linkedH.length, 'the strip has linked rows');
+  assert.ok(bareH.length, 'and the injected bare row is measured too');
   assert.ok(Math.min(...bareH) <= Math.max(...linkedH) * 1.6,
     `an unlinked row is not dramatically taller than a linked one (linked ${linkedH}, bare ${bareH})`);
   await page.close();
