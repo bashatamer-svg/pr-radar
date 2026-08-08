@@ -924,10 +924,19 @@ gets nothing. All queries live in `lib/db.js`.
   stays GENERIC — a fourth angle label renders rather than being dropped.
   (2) **Impact is five 16×7px dashes, not 9px dots**, and it is stated in words
   too (`Impact 4 · High`): a colour ramp alone fails a colour-blind reader, and
-  orange-vs-red at 7px is exactly the pair that goes. **The BOARD still draws
-  dots** — the redesign covered the emails only, so the two surfaces now differ
-  on this one mark. Worth closing in either direction; until it is, do not
-  "fix" one to match the other by accident. (3) **One hero.** The
+  orange-vs-red at 7px is exactly the pair that goes. **The BOARD now draws the
+  same mark** (closed 8 Aug): five dashes, `11×6px` there rather than the
+  email's `16×7` — a 600px email row carries nothing else, while a card header
+  shares its line with the brand chip, spread badge, category and age, and
+  `.metas` is the flexible child that absorbs any surplus. Measured at
+  320/360/390/430/768: one line, nothing crushed, no pan. The COUNT is what
+  carries the level, so the colour is redundant — five marks always render and
+  `n` are filled. Pinned by `render-lanes` (geometry, and no leftover ● glyphs)
+  and `render-email-design` (the ramps must be identical). **Impact 1 had
+  drifted** — board `#9aa2ad` vs email `#8a807d` — and survived because the
+  digest filters at `importance >= 2`, so the email never renders an Impact-1
+  card. Same shape as the brand-chip drift: a value nothing renders is a value
+  nobody checks. (3) **One hero.** The
   highest-Impact story in `Needs a response` (ties broken by recency,
   `pickHero`) is lifted above the lanes. Its lane heading then reads "N more,
   after the one above" — the counts MUST still add up to the total the intro

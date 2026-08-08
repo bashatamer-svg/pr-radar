@@ -26,6 +26,26 @@ assert.strictEqual(THEME.CANVAS.toLowerCase(), BOARD.bg, 'email CANVAS = board -
 assert.strictEqual(THEME.HAIRLINE.toLowerCase(), BOARD.hair, 'email HAIRLINE = board --hair');
 assert.strictEqual(THEME.RED.toLowerCase(), BOARD.red, 'email RED = board --red');
 
+// 1a2. So is the Impact ramp. `1` had drifted (board #9aa2ad vs email #8a807d)
+// and survived because the digest filters at importance >= 2, so the email
+// never renders an Impact-1 card — the same shape as the brand-chip drift
+// below: a value nothing renders is a value nobody checks.
+{
+  const m = board.match(/const IMP = \{([^}]*)\}/);
+  assert.ok(m, 'board defines its Impact ramp');
+  const boardImp = {};
+  for (const b of m[1].matchAll(/(\d)\s*:\s*'(#[0-9a-f]{3,8})'/gi)) boardImp[b[1]] = b[2].toLowerCase();
+  assert.strictEqual(Object.keys(boardImp).length, 5, 'all five levels parsed');
+  const emailSrc = readFileSync(new URL('../lib/email.js', import.meta.url).pathname, 'utf8');
+  const em = emailSrc.match(/const IMP = \{([^}]*)\}/);
+  assert.ok(em, 'email defines its Impact ramp');
+  const emailImp = {};
+  for (const b of em[1].matchAll(/(\d)\s*:\s*(?:'(#[0-9a-f]{3,8})'|RED)/gi)) emailImp[b[1]] = (b[2] || THEME.RED).toLowerCase();
+  for (const lvl of Object.keys(boardImp)) {
+    assert.strictEqual(emailImp[lvl], boardImp[lvl], `Impact ${lvl} is the same colour in the email and on the board`);
+  }
+}
+
 // 1b. So is the brand chip. This is the same object in the inbox and on the
 // board, so its colour must not change under a reader who taps through.
 // Two had silently drifted (market #6d605d vs #6c7480, WE #6a1b9a vs #7b1fa2)
