@@ -121,6 +121,36 @@ const dtip = await page.$eval('.dots', e => e.getAttribute('title'));
 assert.ok(/matters to us/.test(dtip), `the tooltip says what the score measures (got "${dtip}")`);
 
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+// Impact is five fat DASHES, the same mark the emails use — five 9px dots two
+// shades apart are one smudge at arm's length, and the board is where a reader
+// spends longer. The count is what carries the level; the colour is redundant,
+// which is why five marks always render and n of them are filled.
+{
+  const imp = await page.evaluate(() => {
+    const out = [];
+    for (const card of document.querySelectorAll('.card')) {
+      const marks = [...card.querySelectorAll('.dots .idash')];
+      const box = marks[0] && marks[0].getBoundingClientRect();
+      out.push({
+        id: card.id,
+        marks: marks.length,
+        filled: marks.filter((m) => getComputedStyle(m).backgroundColor !== getComputedStyle(document.body).getPropertyValue('--dot-empty')).length,
+        w: box ? Math.round(box.width) : 0,
+        h: box ? Math.round(box.height) : 0,
+        glyphs: /[●○]/.test(card.querySelector('.dots').textContent || ''),
+      });
+    }
+    return out;
+  });
+  assert.ok(imp.length, 'cards rendered');
+  for (const c of imp) {
+    assert.strictEqual(c.marks, 5, `${c.id}: always five Impact marks, filled and empty`);
+    assert.ok(c.w >= 9 && c.h >= 5, `${c.id}: the mark is a dash, not a dot (got ${c.w}x${c.h})`);
+    assert.ok(c.w > c.h, `${c.id}: wider than tall — that is what makes it legible at arm's length`);
+    assert.ok(!c.glyphs, `${c.id}: no ● / ○ glyphs left over from the dot version`);
+  }
+}
+
 await browser.close(); server.close();
 if (errors.length) { console.error('PAGE ERRORS:\n' + errors.join('\n')); process.exit(1); }
 if (overflow > 1) { console.error('overflow', overflow); process.exit(1); }
