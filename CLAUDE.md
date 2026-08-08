@@ -889,9 +889,13 @@ gets nothing. All queries live in `lib/db.js`.
   credit resolves to the **lead byline** — `author` is one text column, so
   keeping the joined string is what invents the phantom; crediting the lead
   under-reports the others and never fabricates, which is the rule that
-  outranks it. Six live rows still carry the joined string (17–31 Jul, all
+  outranks it. Six rows carried the joined string (17–31 Jul, all
   `madamasr-en`, all from before the funnel existed) and a stored byline is
-  never revisited — clearing them is a data write, so it needs a human.
+  never revisited, so they could not heal on their own; **corrected 8 Aug with
+  user approval** — 6 `pr_items` + 6 `pr_instances` set to the lead, each value
+  derived by running the shipped `cleanAuthor` over the stored string rather
+  than typed by hand, which is the difference between applying the fix and
+  approximating it.
   `verify-byline-cases` now asserts **door parity**: every raw case must resolve
   identically through `authorFromEntry` and through `judgeByline`. Neither door
   had ever been tested against the other, which is exactly how they drifted.
