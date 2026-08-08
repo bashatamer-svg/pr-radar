@@ -165,6 +165,69 @@ const apply = async (from, to) => {
   assert.ok(/last 7 days/.test(text), 'it returns to the last preset');
 }
 
+// ── 6b. the control is ONE line on a phone ──────────────────────────────────
+// It shipped as "FROM [date] TO [date] [Apply]" and broke onto two lines on a
+// 390px screen, clipping Apply (user-reported from a screenshot). The FROM/TO
+// words cost ~54px; an arrow between the fields says the same thing in 12, and
+// the labels stay for a screen reader. The fields share what is left rather
+// than each demanding a fixed width, so they shrink together instead of pushing
+// the button onto its own line.
+{
+  await page.click('#winCustom');
+  await page.fill('#rFrom', '2026-05-09');
+  await page.fill('#rTo', '2026-08-08');   // the longest common rendering
+
+  const measure = () => page.evaluate(() => {
+    const row = document.querySelector('#rangeRow');
+    const kids = [...row.children].filter((e) => !e.classList.contains('vh') && !e.classList.contains('rmsg'));
+    // Count LINES by vertical centre — the controls have different heights, so
+    // their `top` values differ even on a single row.
+    const lines = new Set(kids.map((e) => { const b = e.getBoundingClientRect(); return Math.round((b.top + b.bottom) / 2 / 6); }));
+    return {
+      lines: lines.size,
+      pan: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      clipped: kids.filter((e) => e.scrollWidth > Math.ceil(e.getBoundingClientRect().width) + 1).map((e) => e.id || e.className),
+      shortest: Math.min(...kids.filter((e) => e.tagName !== 'SPAN').map((e) => Math.round(e.getBoundingClientRect().height))),
+      narrowest: Math.min(...kids.filter((e) => e.tagName === 'INPUT').map((e) => Math.round(e.getBoundingClientRect().width))),
+    };
+  });
+
+  for (const w of [360, 390, 430, 768]) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await page.waitForTimeout(120);
+    const m = await measure();
+    assert.strictEqual(m.lines, 1, `the range row is one line at ${w}px (got ${m.lines})`);
+    assert.strictEqual(m.pan, 0, `and does not pan the page at ${w}px`);
+    assert.deepStrictEqual(m.clipped, [], `nothing is clipped at ${w}px`);
+    assert.ok(m.shortest >= 28, `every control keeps a usable tap target at ${w}px (shortest ${m.shortest}px)`);
+    // A clipped date is a WRONG reading, not a rough one — "9 Mar" and "9 May"
+    // truncate alike — so the fields have a floor sized for iOS Safari's long
+    // form, which is wider than the numeric one Chromium draws here.
+    assert.ok(m.narrowest >= 108, `the date fields keep their floor at ${w}px (narrowest ${m.narrowest}px)`);
+  }
+
+  // At 320px it WRAPS rather than shaving the fields past that floor — the same
+  // call the board's card footer makes. Still no pan, still nothing clipped.
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.waitForTimeout(120);
+  const tiny = await measure();
+  assert.ok(tiny.lines <= 2, `at 320px it wraps to at most two lines (got ${tiny.lines})`);
+  assert.strictEqual(tiny.pan, 0, 'and still does not pan the page at 320px');
+  assert.deepStrictEqual(tiny.clipped, [], 'and still clips nothing at 320px');
+  assert.ok(tiny.narrowest >= 108, 'the fields keep their floor rather than being shaved');
+
+  // The words are HIDDEN, not deleted — this is the bit most likely to be
+  // "tidied away" by a later change, and a bare date field tells a screen-reader
+  // user nothing about which end of the range it is.
+  const labels = await page.$$eval('#rangeRow label', (els) => els.map((e) => ({ htmlFor: e.htmlFor, text: e.textContent.trim(), painted: e.getBoundingClientRect().width > 2 })));
+  assert.deepStrictEqual(labels.map((l) => l.htmlFor), ['rFrom', 'rTo'], 'both fields still have a real associated label');
+  for (const l of labels) {
+    assert.ok(/start|end/i.test(l.text), `the label says which end of the range it is (got "${l.text}")`);
+    assert.ok(!l.painted, `and it is visually hidden, not shown (${l.text})`);
+  }
+  await page.setViewportSize({ width: 1100, height: 1400 });
+}
+
 // ── 7. following the deep link: the board honours the range end to end ──────
 // The whole point of carrying from/to. If the board ignored them it would show
 // its stored default window — a different set of cards than the row counted,
