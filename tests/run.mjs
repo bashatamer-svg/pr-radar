@@ -51,8 +51,28 @@ for (const f of files) {
   if (ok) pass++;
   else {
     fail++; failed.push(f);
-    const out = `${r.stdout || ''}\n${r.stderr || ''}`.trim().split('\n');
-    for (const line of out.slice(-12)) console.log('      ' + line);
+    // WHICH END OF THE OUTPUT YOU PRINT DECIDES WHETHER A CI FAILURE IS
+    // DIAGNOSABLE. This was the last 12 lines of stdout+stderr concatenated —
+    // and Node puts the error MESSAGE at the top of stderr and a long object
+    // dump (`generatedMessage`, `code`, `log: [...]`, `name`) at the bottom, so
+    // the tail is the one part that says nothing. A real CI failure (8 Aug,
+    // render-board-sort) logged `name: 'Error'` and a line number, with no
+    // message anywhere — undiagnosable from the log, which means re-run rather
+    // than fix, which is how a flake becomes permanent.
+    //
+    // So: the HEAD of stderr, where the message and its source line are, and
+    // the TAIL of stdout, which is how far the test actually got.
+    // Node's uncaught-exception preamble and its own internal stack frames are
+    // the same three or four lines every time and never name anything in this
+    // repo — dropping them is what makes room for the message itself.
+    const NOISE = /^(node:internal\/|\s*triggerUncaughtException\(|\s*\^\s*$|\s*at node:internal\/)/;
+    const lines = (s) => String(s || '').trimEnd().split('\n').filter((l) => l.trim());
+    for (const line of lines(r.stdout).slice(-4)) console.log('      · ' + line);
+    for (const line of lines(r.stderr).filter((l) => !NOISE.test(l)).slice(0, 18)) console.log('      ' + line);
+    // A test killed by the runner's own 180s cap exits with no output at all,
+    // which reads exactly like a test that printed nothing — say which it was.
+    if (r.error) console.log(`      runner: ${r.error.message}`);
+    if (r.signal) console.log(`      killed by ${r.signal} (the runner's 180s per-file cap)`);
   }
 }
 console.log(`\n${pass} passed · ${fail} failed · ${skip} skipped · ${files.length} total`);

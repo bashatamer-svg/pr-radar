@@ -7,7 +7,7 @@
 // gracefully when no browser is present. That is right on a laptop and
 // catastrophic in CI: the run goes green having exercised none of them.
 import assert from 'node:assert';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -77,6 +77,41 @@ const root = new URL('..', import.meta.url).pathname;
   assert.match(yml, /timeout-minutes:/, 'jobs have a timeout, so a hung browser cannot burn an hour');
   assert.match(yml, /npm audit/, 'a dependency audit runs');
   assert.match(yml, /--omit=dev/, 'scoped to runtime dependencies — a dev-only advisory is not a release blocker');
+}
+
+// ── 2b. a failure the log cannot explain is a failure nobody fixes ────────
+// The runner used to print the LAST 12 lines of stdout+stderr, and Node puts
+// the error message at the top of stderr and a long object dump at the bottom
+// — so the tail was the one part that said nothing. A real CI failure (8 Aug,
+// render-board-sort) reached the log as `name: 'Error'` and a line number, with
+// no message anywhere. Undiagnosable means re-run rather than fix, which is how
+// a flake becomes permanent, which is how a gate stops being read.
+//
+// Behaviour, not source inspection: write a test that fails the way a browser
+// test does — some progress on stdout, then a throw — and read what the runner
+// says about it. The file list is taken once at startup, so a file created here
+// cannot leak into the run that is executing this.
+{
+  const tmp = `${root}tests/zz-ci-gate-probe.mjs`;
+  const MSG = 'Protocol error (Page.captureScreenshot): Unable to capture screenshot';
+  writeFileSync(tmp, [
+    "console.log('reached the third assertion');",
+    `throw new Error(${JSON.stringify(MSG)});`,
+    '',
+  ].join('\n'));
+  try {
+    const r = spawnSync('node', [root + 'tests/run.mjs', 'zz-ci-gate-probe'],
+      { encoding: 'utf8', env: { ...process.env, CI: 'true' } });
+    assert.strictEqual(r.status, 1, 'a throwing test fails the run');
+    assert.ok(r.stdout.includes(MSG),
+      `the failure output carries the error MESSAGE, not just the tail of its object dump\n--- got ---\n${r.stdout}`);
+    assert.match(r.stdout, /zz-ci-gate-probe\.mjs:2/,
+      'and the source line that threw, so the log points at the code');
+    assert.match(r.stdout, /reached the third assertion/,
+      'and how far the test got before it died — which assertion was in flight');
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 }
 
 // ── 3. the settings only an owner can apply are written down ──────────────
