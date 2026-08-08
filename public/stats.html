@@ -79,6 +79,15 @@
   }
 
   .frow::-webkit-scrollbar{display:none}
+  /* Wraps rather than scrolls: these are inputs you must reach to use, and a
+     control you have to scroll sideways to find may as well not exist. */
+  .rangerow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding-top:9px}
+  .rangerow label{flex:none;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+  .rangerow input[type=date]{flex:0 1 150px;min-width:132px;min-height:34px;font:inherit;font-size:13px;
+    color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:9px;padding:5px 8px}
+  .rangerow .apply{flex:none}
+  .rmsg{flex:1 1 100%;font-size:12px;color:var(--red);min-height:0}
+  .rmsg:empty{display:none}
   .flabel{flex:none;align-self:center;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding-right:2px}
   .chip{flex:none;cursor:pointer;border:1px solid var(--hair);background:var(--card);color:var(--ink-2);
         font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:11px;white-space:nowrap;transition:all .12s}
@@ -244,6 +253,15 @@
 
   <div class="bar2">
     <div class="frow scrollhint" id="winRow"></div>
+    <!-- Revealed by the Custom chip. Hidden rather than absent so the chip has
+         something to point at, and so its inputs keep their values while you
+         flip back to a preset and return. -->
+    <div class="rangerow" id="rangeRow" hidden>
+      <label for="rFrom">From</label><input type="date" id="rFrom">
+      <label for="rTo">To</label><input type="date" id="rTo">
+      <button class="chip apply" type="button" id="rApply">Apply</button>
+      <span class="rmsg" id="rMsg" role="status" aria-live="polite"></span>
+    </div>
   </div>
 
   <main class="content" id="content"><div class="empty">Loading trends…</div></main>
@@ -289,16 +307,37 @@ const boardWin=()=>{ const d=fDays||30; return d<=1?1:d<=2?2:d<=7?7:30; };
 // Sourced from what the SERVER actually used (meta.days), not from the chip
 // we asked with — /api/stats clamps to 1..90, and a label describing the
 // request rather than the answer is the kind of thing nobody notices is wrong.
+// A CUSTOM range, when the reader picked one. Deliberately NOT persisted the
+// way the chips are: "30 days" means the same thing tomorrow, "1–15 July" does
+// not, and a stale absolute range restored a week later reads as live data.
+// It lives in memory and in the URL, so a reload or a shared link still works
+// but a fresh visit returns to your last preset.
+const DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
+const RANGE_MAX_DAYS=92;   // parseCairoRange's ceiling — the longest 3 calendar months
+let fRange=null;
+{ const u=new URLSearchParams(location.search), f=u.get('from')||'', t=u.get('to')||'';
+  if(DATE_RE.test(f)&&DATE_RE.test(t)) fRange={from:f,to:t}; }
+// ONE place builds the window half of every /api/stats query, so the main call
+// and the narrative upgrade cannot ask about different windows.
+const winQuery=()=>fRange?`from=${encodeURIComponent(fRange.from)}&to=${encodeURIComponent(fRange.to)}`:`days=${fDays}`;
+const dayCount=(f,t)=>Math.round((Date.parse(t+'T00:00:00Z')-Date.parse(f+'T00:00:00Z'))/864e5)+1;
 const WIN_LABEL={1:'24 hours',2:'48 hours'};
-const winDays=()=>Number((DATA&&DATA.meta&&DATA.meta.days)||fDays||30);
-const winLabel=()=>WIN_LABEL[winDays()]||`${winDays()} days`;
-const winShort=()=>{const d=winDays();return d<=2?`${d*24}h`:`${d}d`;};
+const winDays=()=>Number((DATA&&DATA.meta&&DATA.meta.days)||(fRange?dayCount(fRange.from,fRange.to):fDays)||30);
+// A range names ITSELF. "last 43 days" for 1 Jul–12 Aug is technically true and
+// useless — the reader picked two dates and wants to see them.
+const winLabel=()=>fRange?`${fRange.from} → ${fRange.to}`:(WIN_LABEL[winDays()]||`${winDays()} days`);
+const winShort=()=>{ if(fRange) return `${fRange.from}_${fRange.to}`; const d=winDays(); return d<=2?`${d*24}h`:`${d}d`; };
 // The rolling window is bucketed into Cairo CALENDAR days for the two per-day
 // charts, so a 24h window straddling midnight draws two PARTIAL bars — and a
 // half-day bar read as a whole day is a wrong conclusion, not a rough one.
 // Say so rather than let the axis date imply a full day.
 const partialEnds=()=>winDays()<=2;
-const boardLink=(key,val)=>`/?${key}=${encodeURIComponent(val)}&win=${boardWin()}`;
+// A custom range cannot be expressed as one of the board's four fixed windows,
+// so the link carries the DATES and the board honours them. Snapping to the
+// nearest chip would open a different set of cards than the row counted — the
+// same class of bug as a narrative opening 20 of its 27 stories.
+const boardWinQuery=()=>fRange?`from=${encodeURIComponent(fRange.from)}&to=${encodeURIComponent(fRange.to)}`:`win=${boardWin()}`;
+const boardLink=(key,val)=>`/?${key}=${encodeURIComponent(val)}&${boardWinQuery()}`;
 
 function clock(){
   const now=new Date();
@@ -564,7 +603,7 @@ function narrativeRows(list){
     // ids it received and says so when it can only show a subset — the failure
     // this replaced was a board that silently listed fewer cards than this row.
     const nTotal=n.idsTotal||n.total;
-    const href=n.ids&&n.ids.length?`/?ids=${n.ids.join(',')}&label=${encodeURIComponent(n.name)}&n=${nTotal}&win=${boardWin()}`:boardLink('brand',n.brand);
+    const href=n.ids&&n.ids.length?`/?ids=${n.ids.join(',')}&label=${encodeURIComponent(n.name)}&n=${nTotal}&${boardWinQuery()}`:boardLink('brand',n.brand);
     return `<a class="lrow narr" href="${href}" title="${esc(n.name)} — tap to show these ${n.total} stories on the board">
       <span class="nm" dir="auto">${esc(n.name)}${rise}${sub}</span>
       <span class="spark">${sparkSvg(n.series,72,20)}</span>
@@ -655,7 +694,7 @@ function leaderboardRows(list,kind){
      3. When nothing qualifies, it says so. A strip that always finds five
         things to say is a strip nobody believes by the second week. */
 function execInsights(){
-  const D=DATA, t=D.totals, W=boardWin(), out=[];
+  const D=DATA, t=D.totals, W=boardWinQuery(), out=[];
   const days=(D.days||[]).length;
   // Split the window in half and compare like with like. Needs at least two
   // days a side, or "up 100%" is one story against zero.
@@ -683,7 +722,7 @@ function execInsights(){
       const pctTxt=before>0&&diff!==0?` (${diff>0?'+':''}${Math.round((diff/before)*100)}%)`:'';
       out.push({tone,
         text:`<b>Vodafone negatives ${word}</b>${pctTxt} — ${now} in the last ${half}d, ${before} ${label}`,
-        href:`/?brand=Vodafone&sent=negative&win=${W}`});
+        href:`/?brand=Vodafone&sent=negative&${W}`});
     }
   }
 
@@ -701,7 +740,7 @@ function execInsights(){
     }
     if(best) out.push({tone:'flat',
       text:`<b>${esc(best.brand)} is louder</b> — ${best.now} mentions in the last ${half}d vs ${best.before} ${label} (+${best.gain}%)`,
-      href:`/?brand=${encodeURIComponent(best.brand)}&win=${W}`});
+      href:`/?brand=${encodeURIComponent(best.brand)}&${W}`});
   }
 
   // 3. Where the pressure is. Vodafone-negative by category — the one that
@@ -710,7 +749,7 @@ function execInsights(){
     const c=(D.categories||[]).filter(x=>x.vodNeg>0).sort((a,b)=>b.vodNeg-a.vodNeg)[0];
     if(c) out.push({tone:'bad',
       text:`<b>Most Vodafone criticism is ${esc(String(c.category).replace(/_/g,' '))}</b> — ${c.vodNeg} of ${t.vodafone.negatives} negative${t.vodafone.negatives===1?'':'s'}`,
-      href:`/?cat=${encodeURIComponent(c.category)}&brand=Vodafone&sent=negative&win=${W}`});
+      href:`/?cat=${encodeURIComponent(c.category)}&brand=Vodafone&sent=negative&${W}`});
   }
 
   // 4. Who is writing it. An outlet with a single negative is not a pattern,
@@ -719,11 +758,11 @@ function execInsights(){
     const o=(D.outlets||[]).filter(x=>x.vodNeg>=2).sort((a,b)=>b.vodNeg-a.vodNeg)[0];
     if(o) out.push({tone:'bad',
       text:`<b>${esc(o.outlet)} leads the negative coverage</b> — ${o.vodNeg} Vodafone-negative of ${o.mentions} stor${o.mentions===1?'y':'ies'}`,
-      href:`/?outlet=${encodeURIComponent(o.outlet)}&win=${W}`});
+      href:`/?outlet=${encodeURIComponent(o.outlet)}&${W}`});
     const a=(D.authors||[]).filter(x=>x.vodNeg>=2).sort((x,y)=>y.vodNeg-x.vodNeg)[0];
     if(a) out.push({tone:'bad',
       text:`<b>${esc(a.author)} is the most critical byline</b> — ${a.vodNeg} Vodafone-negative of ${a.mentions}`,
-      href:`/?author=${encodeURIComponent(a.author)}&win=${W}`});
+      href:`/?author=${encodeURIComponent(a.author)}&${W}`});
   }
 
   // 5. Threads still growing. Counted from the same `rising` flag the
@@ -754,17 +793,17 @@ function execHtml(){
 function kpiHtml(){
   const t=DATA.totals;
   const sovPct=pct(t.vodafone.mentions,t.items);
-  const W=boardWin();
+  const W=boardWinQuery();
   return `<div class="khead" id="c-kpi"><span class="ct">Summary</span><span class="cs">last ${winLabel()}</span>
     <span class="cacts">
       <button class="xp" type="button" data-sec="c-kpi" data-fmt="xls" title="Download these totals as a spreadsheet">⤓ XLS</button>
       <button class="xp" type="button" data-sec="c-kpi" data-fmt="pdf" title="Open these totals as a print-ready page, then save as PDF">⤓ PDF</button>
     </span></div>
   <div class="kpis">
-    <a class="kpi" href="/?win=${W}" title="Open all these cards on the board"><div class="kl">Tracked items</div><div class="kv">${t.items}</div><div class="ks">last ${winShort()} · board scope</div></a>
-    <a class="kpi" href="/?sent=negative&win=${W}" title="Show the Vodafone cards that need a response"><div class="kl">Needs response</div><div class="kv ${t.vodafone.negatives?'neg':''}">${t.vodafone.negatives}</div><div class="ks">Vodafone negative · of ${t.vodafone.mentions} mention${t.vodafone.mentions===1?'':'s'}</div></a>
-    <a class="kpi" href="/?brand=Vodafone&win=${W}" title="Show Vodafone cards"><div class="kl">Vodafone share of voice</div><div class="kv">${sovPct}%</div><div class="ks">${t.vodafone.mentions} mentions · ${t.vodafone.negatives} negative</div></a>
-    <a class="kpi" href="/?win=${W}" title="Open the board"><div class="kl">Outlets covering</div><div class="kv">${t.distinctOutlets}</div><div class="ks">distinct publications</div></a>
+    <a class="kpi" href="/?${W}" title="Open all these cards on the board"><div class="kl">Tracked items</div><div class="kv">${t.items}</div><div class="ks">last ${winShort()} · board scope</div></a>
+    <a class="kpi" href="/?sent=negative&${W}" title="Show the Vodafone cards that need a response"><div class="kl">Needs response</div><div class="kv ${t.vodafone.negatives?'neg':''}">${t.vodafone.negatives}</div><div class="ks">Vodafone negative · of ${t.vodafone.mentions} mention${t.vodafone.mentions===1?'':'s'}</div></a>
+    <a class="kpi" href="/?brand=Vodafone&${W}" title="Show Vodafone cards"><div class="kl">Vodafone share of voice</div><div class="kv">${sovPct}%</div><div class="ks">${t.vodafone.mentions} mentions · ${t.vodafone.negatives} negative</div></a>
+    <a class="kpi" href="/?${W}" title="Open the board"><div class="kl">Outlets covering</div><div class="kv">${t.distinctOutlets}</div><div class="ks">distinct publications</div></a>
   </div>`;
 }
 
@@ -1022,12 +1061,49 @@ function render(){
 function buildFilters(){
   const win=$('#winRow');
   const opts=[['1','24 hours'],['2','48 hours'],['7','Week'],['14','2 weeks'],['30','Month'],['60','2 months'],['90','Quarter']];
-  win.innerHTML=`<span class="flabel">Window</span>`+opts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fDays)===v}">${l}</button>`).join('');
-  win.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
+  // While a custom range is active NO preset is pressed, and Custom is — one of
+  // them showing as selected would name a window the page is not showing.
+  win.innerHTML=`<span class="flabel">Window</span>`
+    +opts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${!fRange&&String(fDays)===v}">${l}</button>`).join('')
+    +`<button class="chip" type="button" id="winCustom" aria-pressed="${!!fRange}" aria-expanded="${!!fRange}" aria-controls="rangeRow">Custom…</button>`;
+  win.querySelectorAll('.chip[data-v]').forEach(ch=>ch.onclick=()=>{
+    fRange=null; syncUrl();
     fDays=Number(ch.dataset.v); localStorage.setItem('pr_stats_days',ch.dataset.v);
-    win.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===ch.dataset.v)));
+    buildFilters();
     load();
   });
+
+  const row=$('#rangeRow'), custom=$('#winCustom'), from=$('#rFrom'), to=$('#rTo'), msg=$('#rMsg');
+  // No future dates: there is no coverage there, and an empty tail of bars
+  // reads as a collapse in volume rather than as days that have not happened.
+  const todayCairo=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  from.max=to.max=todayCairo;
+  if(fRange){ from.value=fRange.from; to.value=fRange.to; }
+  row.hidden=!fRange;
+  custom.onclick=()=>{ const open=row.hidden; row.hidden=!open; custom.setAttribute('aria-expanded',String(open)); if(open) from.focus(); };
+
+  // Validated HERE as well as on the server, in the same order and with the
+  // same ceiling — not to be trusted, but so a mistake is answered instantly
+  // and in place instead of as a 400 after a round trip.
+  $('#rApply').onclick=()=>{
+    const f=from.value, t=to.value;
+    msg.textContent='';
+    if(!DATE_RE.test(f)||!DATE_RE.test(t)) { msg.textContent='Pick both a From and a To date.'; return; }
+    if(t<f) { msg.textContent='The To date is before the From date.'; return; }
+    if(t>todayCairo) { msg.textContent='The To date is in the future.'; return; }
+    const n=dayCount(f,t);
+    if(n>RANGE_MAX_DAYS) { msg.textContent=`That is ${n} days — the range is limited to ${RANGE_MAX_DAYS} (three months).`; return; }
+    fRange={from:f,to:t}; syncUrl(); buildFilters(); load();
+  };
+}
+// The range rides the URL so a reload or a shared link reproduces the view.
+// localStorage deliberately does not carry it — see fRange.
+function syncUrl(){
+  try{ const u=new URL(location.href);
+    if(fRange){ u.searchParams.set('from',fRange.from); u.searchParams.set('to',fRange.to); }
+    else { u.searchParams.delete('from'); u.searchParams.delete('to'); }
+    history.replaceState(null,'',u.pathname+(u.search||'')+u.hash);
+  }catch(e){}
 }
 
 let loading=false;
@@ -1038,7 +1114,7 @@ async function load(){
   // refetch keeps the frame: fade the previous render, no skeleton flash
   const prev=$('#content'); if(DATA) prev.style.opacity='.45';
   try{
-    const r=await afetch(`/api/stats?days=${fDays}`);
+    const r=await afetch(`/api/stats?${winQuery()}`);
     if(r.status===401){ location.href='/login'; return; }
     if(r.status===403){ $('#content').innerHTML=`<div class="gate">Your account isn't authorised for this page.<br>Ask an admin to add you.</div>`; return; }
     DATA=await r.json();
@@ -1051,7 +1127,7 @@ async function load(){
     const seq=++narrSeq;
     // Not awaited: the page is complete without it, and blocking here would
     // put the 12-second ceiling straight back on the load.
-    if(DATA.narrativesPending) loadNarratives(fDays,seq);
+    if(DATA.narrativesPending) loadNarratives(winQuery(),seq);
   }catch(e){
     $('#content').innerHTML=`<div class="empty">Couldn't load trends.<br>${esc(e.message||e)}</div>`;
   }finally{ loading=false; prev.style.opacity=''; }
@@ -1071,9 +1147,9 @@ function markNarr(text){
   el.dataset.base=el.dataset.base||el.textContent;
   el.textContent=text?`${el.dataset.base} · ${text}`:el.dataset.base;
 }
-async function loadNarratives(days,seq){
+async function loadNarratives(q,seq){
   try{
-    const r=await afetch(`/api/stats?view=narratives&days=${days}`);
+    const r=await afetch(`/api/stats?view=narratives&${q}`);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const d=await r.json();
     // A window change (or a reload) started a newer request: drop this answer

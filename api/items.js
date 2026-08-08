@@ -1,4 +1,5 @@
 import { recentItems, itemsByIds, instancesForItems } from '../lib/db.js';
+import { parseCairoRange } from '../lib/report.js';
 import { requireRole, auditReq } from '../lib/auth.js';
 
 // Auth: viewers (and above) may read the board; only admins may mutate an item
@@ -41,9 +42,21 @@ export default async function handler(req, res) {
 
   // Fetch specific items by id (the board's "Saved" filter — starred items may
   // be older than the current window) or the recent window.
+  // A from/to pair is what a Trends custom-range deep link carries. Validated
+  // by the SAME parser Reports and /api/stats use, so a range one accepts is a
+  // range all three accept — and rejected loudly rather than falling back to a
+  // fixed window, which would show a different set than the row that linked
+  // here counted.
+  let range = null;
+  if (req.query.from || req.query.to) {
+    try { range = parseCairoRange(req.query.from, req.query.to); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+  }
   const rows = req.query.ids
     ? await itemsByIds(String(req.query.ids).split(','))
-    : await recentItems({ days: Math.min(Number(req.query.days) || 7, 30) });
+    : range
+      ? await recentItems({ fromIso: range.fromIso, toIso: range.toIso, limit: 400 })
+      : await recentItems({ days: Math.min(Number(req.query.days) || 7, 30) });
 
   // Attach coverage instances (outlet · author · url · date) per card so the
   // board can render the "who published it, everywhere it ran" list. Non-fatal:
