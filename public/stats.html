@@ -279,6 +279,25 @@ let pageOf={outlet:0,author:0};
 // Click a Trends row → land on the board showing exactly those cards. Board
 // windows are 1/2/7/30 days, so clamp the stats window to the nearest.
 const boardWin=()=>{ const d=fDays||30; return d<=1?1:d<=2?2:d<=7?7:30; };
+// ONE phrasing for the window — eight places name it (exec strip, KPI head, a
+// KPI tile, the export summary, both export filenames and the PDF's title and
+// sub-line), and eight copies of `${fDays} days` is how "last 1 days" ships.
+// Sub-3-day windows are named in HOURS because that is literally what they are:
+// itemsForStats cuts at Date.now() - N*864e5, a ROLLING window, not "since
+// Cairo midnight". The board already calls the same two windows 24/48 hours,
+// and the vocabulary is shared across surfaces.
+// Sourced from what the SERVER actually used (meta.days), not from the chip
+// we asked with — /api/stats clamps to 1..90, and a label describing the
+// request rather than the answer is the kind of thing nobody notices is wrong.
+const WIN_LABEL={1:'24 hours',2:'48 hours'};
+const winDays=()=>Number((DATA&&DATA.meta&&DATA.meta.days)||fDays||30);
+const winLabel=()=>WIN_LABEL[winDays()]||`${winDays()} days`;
+const winShort=()=>{const d=winDays();return d<=2?`${d*24}h`:`${d}d`;};
+// The rolling window is bucketed into Cairo CALENDAR days for the two per-day
+// charts, so a 24h window straddling midnight draws two PARTIAL bars — and a
+// half-day bar read as a whole day is a wrong conclusion, not a rough one.
+// Say so rather than let the axis date imply a full day.
+const partialEnds=()=>winDays()<=2;
 const boardLink=(key,val)=>`/?${key}=${encodeURIComponent(val)}&win=${boardWin()}`;
 
 function clock(){
@@ -725,7 +744,7 @@ function execHtml(){
     return `<div class="exec"><div class="exhead">So what?</div>
       <div class="exempty">Nothing in this window clears the bar for a callout — too little coverage, or no movement worth reporting.</div></div>`;
   }
-  return `<div class="exec"><div class="exhead">So what?<span class="exsub">derived from the numbers below · last ${DATA.meta.days} days</span></div>
+  return `<div class="exec"><div class="exhead">So what?<span class="exsub">derived from the numbers below · last ${winLabel()}</span></div>
     <ul class="exlist">${ins.slice(0,5).map(i=>{
       const body=`<span class="exdot ${i.tone}" aria-hidden="true"></span><span>${i.text}</span>`;
       return `<li class="exrow">${i.href?`<a href="${esc(i.href)}">${body}</a>`:body}</li>`;
@@ -736,13 +755,13 @@ function kpiHtml(){
   const t=DATA.totals;
   const sovPct=pct(t.vodafone.mentions,t.items);
   const W=boardWin();
-  return `<div class="khead" id="c-kpi"><span class="ct">Summary</span><span class="cs">last ${DATA.meta.days} days</span>
+  return `<div class="khead" id="c-kpi"><span class="ct">Summary</span><span class="cs">last ${winLabel()}</span>
     <span class="cacts">
       <button class="xp" type="button" data-sec="c-kpi" data-fmt="xls" title="Download these totals as a spreadsheet">⤓ XLS</button>
       <button class="xp" type="button" data-sec="c-kpi" data-fmt="pdf" title="Open these totals as a print-ready page, then save as PDF">⤓ PDF</button>
     </span></div>
   <div class="kpis">
-    <a class="kpi" href="/?win=${W}" title="Open all these cards on the board"><div class="kl">Tracked items</div><div class="kv">${t.items}</div><div class="ks">last ${DATA.meta.days}d · board scope</div></a>
+    <a class="kpi" href="/?win=${W}" title="Open all these cards on the board"><div class="kl">Tracked items</div><div class="kv">${t.items}</div><div class="ks">last ${winShort()} · board scope</div></a>
     <a class="kpi" href="/?sent=negative&win=${W}" title="Show the Vodafone cards that need a response"><div class="kl">Needs response</div><div class="kv ${t.vodafone.negatives?'neg':''}">${t.vodafone.negatives}</div><div class="ks">Vodafone negative · of ${t.vodafone.mentions} mention${t.vodafone.mentions===1?'':'s'}</div></a>
     <a class="kpi" href="/?brand=Vodafone&win=${W}" title="Show Vodafone cards"><div class="kl">Vodafone share of voice</div><div class="kv">${sovPct}%</div><div class="ks">${t.vodafone.mentions} mentions · ${t.vodafone.negatives} negative</div></a>
     <a class="kpi" href="/?win=${W}" title="Open the board"><div class="kl">Outlets covering</div><div class="kv">${t.distinctOutlets}</div><div class="ks">distinct publications</div></a>
@@ -775,9 +794,9 @@ function cardHtml(id,title,sub){
 }
 
 const CHARTS=[
-  {id:'c-sov',   title:'Share of voice',      sub:'mentions per brand per day', build:el=>sovChart(el)},
-  {id:'c-neg',   title:'Negative coverage', sub:'negative stories per brand, per day', build:el=>negChart(el)},
-  {id:'c-sent',  title:'Sentiment by brand',  sub:'negative ◂ neutral ▸ positive', build:el=>sentimentChart(el)},
+  {id:'c-sov',   title:'Share of voice',      sub:()=>'mentions per brand per day'+(partialEnds()?' · end days are partial':''), build:el=>sovChart(el)},
+  {id:'c-neg',   title:'Negative coverage', sub:()=>'negative stories per brand, per day'+(partialEnds()?' · end days are partial':''), build:el=>negChart(el)},
+  {id:'c-sent',  title:'Sentiment by brand',  sub:()=>'negative ◂ neutral ▸ positive', build:el=>sentimentChart(el)},
 ];
 
 function renderCharts(){
@@ -821,7 +840,7 @@ function exportSections(){
   // 'c-kpi' is the KPI row's own id — the tiles are not a .cardc, but they are
   // a section like any other and export the same way.
   out.push({id:'c-kpi',title:'Summary',headers:['Metric','Value'],rows:[
-    ['Window (days)',n(d.meta&&d.meta.days)],
+    ['Window',winLabel()],
     ['Generated',(()=>{try{return new Date(d.meta.generatedAt).toLocaleString('en-GB',{timeZone:'Africa/Cairo'});}catch(e){return '';}})()],
     ['Stories',n(d.totals.items)],['Negative',n(d.totals.negatives)],
     ['Neutral',n(d.totals.neutrals)],['Positive',n(d.totals.positives)],
@@ -851,7 +870,7 @@ function exportSections(){
   return out.filter(x=>x.rows.length);
 }
 const slug=(t)=>String(t).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-const expName=(ext,title)=>`pr-radar-${title?slug(title):'trends'}-${fDays}d-${new Date().toISOString().slice(0,10)}.${ext}`;
+const expName=(ext,title)=>`pr-radar-${title?slug(title):'trends'}-${winShort()}-${new Date().toISOString().slice(0,10)}.${ext}`;
 // One card = one section. `id` is the card's DOM id, which is also what each
 // section carries, so the button never has to know anything else about itself.
 const sectionsFor=(id)=>id?exportSections().filter((x)=>x.id===id):exportSections();
@@ -898,7 +917,7 @@ function printDoc(sections){
       ${tableHtml(s)}
     </section>`).join('');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>PR Radar — Trends (last ${fDays} days)</title>
+<title>PR Radar — Trends (last ${winLabel()})</title>
 <style>
   :root{--ink:#16191f;--ink-2:#3b434e;--muted:#6c7480;--faint:#9aa2ad;--hair:#e7e9ee;--hair-2:#eef0f3;
         --neg:#e60000;--pos:#0f9d58;--neu:#5b6675;--red:#e60000;
@@ -926,7 +945,7 @@ function printDoc(sections){
   @media print{body{padding:0}}
 </style></head><body>
 <h1>PR Radar — Trends</h1>
-<div class="sub">Vodafone Egypt · last ${fDays} days · generated ${esc(when)} (Cairo)</div>
+<div class="sub">Vodafone Egypt · last ${winLabel()} · generated ${esc(when)} (Cairo)</div>
 ${body}
 </body></html>`;
 }
@@ -973,12 +992,12 @@ function render(){
     // Summary numbers, then what they MEAN, then the detail. Above the charts
     // on purpose: the first question is "what changed and who do I talk to".
     +execHtml()
-    +CHARTS.map(x=>cardHtml(x.id,x.title,x.sub)).join('')
+    +CHARTS.map(x=>cardHtml(x.id,x.title,typeof x.sub==='function'?x.sub():x.sub)).join('')
     +cardHtml('c-narr','Narratives','same-theme stories grouped · rising flagged')
     +cardHtml('c-cat','Categories','volume · trend · negative share')
     +cardHtml('c-out','Outlet intelligence',countOf(DATA.outlets,DATA.totals.distinctOutlets,'outlet')+' · sentiment split · negative-leaning flagged')
     +cardHtml('c-auth','Journalist intelligence',countOf(DATA.authors,DATA.totals.distinctAuthors,'journalist')+' · sentiment split · repeat critics flagged')
-    +`<div class="footnote">Counts use the board's scope (relevant items, last ${fDays} days, Cairo days). Narratives group distinct stories that share a theme (same category + overlapping wording); outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. Journalist counts are lower than story counts because much Egyptian wire and desk copy carries no individual byline${DATA.totals.itemsWithByline!=null?` — ${DATA.totals.itemsWithByline} of ${DATA.totals.items} stories in this window are signed`:''}; the rest are shown as newsroom. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
+    +`<div class="footnote">Counts use the board's scope (relevant items, last ${winLabel()}, bucketed by Cairo day). Narratives group distinct stories that share a theme (same category + overlapping wording); outlet/author counts include every outlet that ran a story (coverage instances), so they can exceed the item count. Journalist counts are lower than story counts because much Egyptian wire and desk copy carries no individual byline${DATA.totals.itemsWithByline!=null?` — ${DATA.totals.itemsWithByline} of ${DATA.totals.items} stories in this window are signed`:''}; the rest are shown as newsroom. e&amp; marks use a validated chart-legible step of the brand teal.</div>`;
   renderCharts();
   $('#c-narr .cbody').innerHTML=`<div class="rows">${narr.rows}</div>`; $('#c-narr .tbl').innerHTML=narr.table();
   // The grouping on screen right now is the deterministic token clustering,
@@ -1002,7 +1021,7 @@ function render(){
 
 function buildFilters(){
   const win=$('#winRow');
-  const opts=[['7','Week'],['14','2 weeks'],['30','Month'],['60','2 months'],['90','Quarter']];
+  const opts=[['1','24 hours'],['2','48 hours'],['7','Week'],['14','2 weeks'],['30','Month'],['60','2 months'],['90','Quarter']];
   win.innerHTML=`<span class="flabel">Window</span>`+opts.map(([v,l])=>`<button class="chip" type="button" data-v="${v}" aria-pressed="${String(fDays)===v}">${l}</button>`).join('');
   win.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
     fDays=Number(ch.dataset.v); localStorage.setItem('pr_stats_days',ch.dataset.v);

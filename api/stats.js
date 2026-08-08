@@ -56,12 +56,29 @@ export default async function handler(req, res) {
 
   // Continuous Cairo-day axis, oldest → today. Stepping UTC-24h through a DST
   // change can emit a duplicate local day; the Set dedupes it.
+  // The axis must span the window the ITEMS came from. itemsForStats cuts at
+  // now - N*864e5, a rolling instant, so the window opens PART-WAY through a
+  // Cairo day — and an axis built as "the last N calendar days ending today"
+  // does not contain that opening day. Items landing in it were counted in
+  // every total (KPIs, sentiment split, leaderboards) and then silently
+  // dropped from the per-day series by `dayIdx.get(...) === undefined`, so the
+  // charts quietly disagreed with the numbers above them.
+  // Invisible at 30 days (one bar in thirty-one). At the 24-hour window it is
+  // half the chart: at 14:00 Cairo the axis held only today, so everything
+  // between 14:00 yesterday and midnight was in the totals and absent from the
+  // bars. Stepping from the cut itself is what makes the two agree.
+  const nowMs = Date.now();
+  const sinceMs = nowMs - windowDays * 864e5;
   const days = [];
   const seenDays = new Set();
-  for (let i = windowDays - 1; i >= 0; i--) {
-    const d = cairoDay.format(new Date(Date.now() - i * 864e5));
+  const pushDay = (ms) => {
+    const d = cairoDay.format(new Date(ms));
     if (!seenDays.has(d)) { seenDays.add(d); days.push(d); }
-  }
+  };
+  // Stepping in 24h hops can skip a local day across a DST change and always
+  // lands short of `now`; the Set dedupes, and the final push closes the gap.
+  for (let t = sinceMs; t <= nowMs; t += 864e5) pushDay(t);
+  pushDay(nowMs);
   const dayIdx = new Map(days.map((d, i) => [d, i]));
 
   // ── ?view=narratives — the LLM pass, on its own ──────────────────────────

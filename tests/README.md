@@ -46,6 +46,8 @@ are **skipped**, the unit suite still runs.
 | Scraped tag residue / URL slugs are never stored as the byline | `verify-author-markup` |
 | **Every byline mistake ever reported, replayed** (add new ones to `byline-cases.mjs` FIRST — see the playbook in CLAUDE.md) | `verify-byline-cases` |
 | Emails & webhooks (bulletin, urgent, report, no-token links) | `render-notoken`, `render-lanes-email-report`, `smoke-task2`, `render-whatsapp`, `send-guard` |
+| Trends per-day axis spans the rolling cut (series sum == totals; no items counted-but-unplotted) | `verify-stats-axis` |
+| Trends short windows (24h/48h chips, hour-vs-day wording across all nine surfaces, partial end-bucket caveat, board-matching labels + deep links) | `render-trends-windows` |
 | Email "morning digest" design (hero pick, lane counts reconcile, Impact dashes + word, action-first panel, `dir="auto"` single-run fencing, team vs subscriber copy, Gmail 102KB clip headroom) | `render-email-digest` |
 | No `?t=` token in any URL — emails, webhooks **and** every static page | `render-notoken` |
 | Custom date-range reports (exec summary, appendix, Word/PDF export) | `smoke-report-range` (backend), `render-reports-page` (browser) |
