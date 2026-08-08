@@ -189,10 +189,13 @@ const apply = async (from, to) => {
       clipped: kids.filter((e) => e.scrollWidth > Math.ceil(e.getBoundingClientRect().width) + 1).map((e) => e.id || e.className),
       shortest: Math.min(...kids.filter((e) => e.tagName !== 'SPAN').map((e) => Math.round(e.getBoundingClientRect().height))),
       narrowest: Math.min(...kids.filter((e) => e.tagName === 'INPUT').map((e) => Math.round(e.getBoundingClientRect().width))),
+      fontPx: parseFloat(getComputedStyle(kids.find((e) => e.tagName === 'INPUT')).fontSize),
     };
   });
 
-  for (const w of [360, 390, 430, 768]) {
+  // ONE line at EVERY width, 320 included — it is the narrowest phone anyone
+  // uses, and a filter row that reflows there reads as broken.
+  for (const w of [320, 360, 390, 430, 768]) {
     await page.setViewportSize({ width: w, height: 900 });
     await page.waitForTimeout(120);
     const m = await measure();
@@ -203,18 +206,18 @@ const apply = async (from, to) => {
     // A clipped date is a WRONG reading, not a rough one — "9 Mar" and "9 May"
     // truncate alike — so the fields have a floor sized for iOS Safari's long
     // form, which is wider than the numeric one Chromium draws here.
-    assert.ok(m.narrowest >= 108, `the date fields keep their floor at ${w}px (narrowest ${m.narrowest}px)`);
+    // The floor tracks the FONT: below 360px the date text drops to 12px, which
+    // is what lets the field shrink without truncating "30 Sept 2026". Shrinking
+    // the box while keeping 13px text would clip it, and a clipped date is a
+    // wrong reading rather than a rough one.
+    // A smaller floor is only HONEST if the text shrank with it. Narrowing the
+    // box while leaving 13px text is precisely how "30 Sept 2026" gets clipped,
+    // and it passes any floor check written as a bare number — so the font is
+    // asserted exactly, not as a range.
+    const [floor, font] = w < 360 ? [92, 12] : [108, 13];
+    assert.strictEqual(m.fontPx, font, `date text is ${font}px at ${w}px (got ${m.fontPx}px) — the floor below assumes it`);
+    assert.ok(m.narrowest >= floor, `the date fields keep their floor at ${w}px (need ${floor}, got ${m.narrowest})`);
   }
-
-  // At 320px it WRAPS rather than shaving the fields past that floor — the same
-  // call the board's card footer makes. Still no pan, still nothing clipped.
-  await page.setViewportSize({ width: 320, height: 900 });
-  await page.waitForTimeout(120);
-  const tiny = await measure();
-  assert.ok(tiny.lines <= 2, `at 320px it wraps to at most two lines (got ${tiny.lines})`);
-  assert.strictEqual(tiny.pan, 0, 'and still does not pan the page at 320px');
-  assert.deepStrictEqual(tiny.clipped, [], 'and still clips nothing at 320px');
-  assert.ok(tiny.narrowest >= 108, 'the fields keep their floor rather than being shaved');
 
   // The row says OR, so the dates read as an ALTERNATIVE to the preset chips
   // above rather than a second filter narrowing them. It reuses the WINDOW

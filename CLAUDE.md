@@ -1142,6 +1142,15 @@ gets nothing. All queries live in `lib/db.js`.
   tight to the two fields it joins (`.rsep{margin:0 -3px}`) rather than
   tightening the row's real gaps; revert that margin and 360px silently drops
   back to two lines.
+  **It is ONE line at every width, 320 included** — a filter row that reflows on
+  the narrowest phone anyone uses reads as broken. Under 360px everything gives
+  a little (`@media (max-width:359px)`): 12px date text, a tighter Apply, 5px
+  gaps. The FONT shrinking is what matters — a smaller longest-string is what
+  lets the floor drop from 108 to 92 honestly, where narrowing the box alone
+  would clip `30 Sept 2026`. Nothing is hidden: the arrow and the OR both
+  survive, because each is what explains the row. `render-trends-range` asserts
+  the font EXACTLY (not as a range) at each width, because a bare floor number
+  passes happily while the text overflows it.
   **`render-final-sweep` had to learn a third measurement rule for this**: a
   visually-hidden label is 1px wide with its content clipped ON PURPOSE, so
   "narrower than its own content" says nothing about it. Matched on the
