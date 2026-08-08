@@ -100,6 +100,44 @@ assert.ok(/Word document downloaded/.test(await page.textContent('#msg')), 'Word
 // no layout overflow on phones
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 assert.ok(overflow <= 1, `no horizontal overflow (got ${overflow})`);
+
+// ── the two action labels must fit on ONE line, at every phone width ────────
+// "Open report · print / PDF" broke after the slash on every phone, so the two
+// buttons sat at different heights and the primary one read as damaged
+// (user-reported from a screenshot, 8 Aug). The formats are stated once
+// underneath instead of twice inside the labels. Measured, because the row
+// shares its width evenly — the LONGER label decides whether either fits, so a
+// wording change to one silently breaks the other.
+for (const w of [320, 360, 390, 430, 768]) {
+  await page.setViewportSize({ width: w, height: 844 });
+  await page.waitForTimeout(120);
+  const m = await page.evaluate(() => {
+    // Real line boxes, not height ÷ line-height: padding makes that lie.
+    const lines = (el) => {
+      const t = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+      const rg = document.createRange(); rg.selectNodeContents(t);
+      return new Set([...rg.getClientRects()].map((r) => Math.round(r.top))).size;
+    };
+    const a = document.querySelector('#btnPdf'), b = document.querySelector('#btnDoc');
+    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    return {
+      lines: [lines(a), lines(b)],
+      heights: [Math.round(ra.height), Math.round(rb.height)],
+      sameRow: Math.abs(ra.top - rb.top) < 2,
+      clipped: [a, b].filter((el) => el.scrollWidth > Math.ceil(el.getBoundingClientRect().width) + 1).map((el) => el.id),
+      pan: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert.deepStrictEqual(m.lines, [1, 1], `both action labels fit one line at ${w}px (got ${m.lines})`);
+  assert.deepStrictEqual(m.clipped, [], `neither label is clipped at ${w}px`);
+  assert.strictEqual(m.heights[0], m.heights[1], `the two buttons match in height at ${w}px (got ${m.heights})`);
+  // A thumb needs 44px. They were 56px on a phone only BY ACCIDENT — the label
+  // wrapped — so unwrapping them without a floor would have shrunk the target.
+  assert.ok(m.heights[0] >= 44, `the action buttons keep a 44px tap target at ${w}px (got ${m.heights[0]})`);
+  assert.ok(m.sameRow, `the two actions stay on one row at ${w}px`);
+  assert.strictEqual(m.pan, 0, `no page pan at ${w}px`);
+}
+await page.setViewportSize({ width: 900, height: 900 });
 assert.strictEqual(errs.length, 0, 'no page errors: ' + errs.join('; '));
 
 await page.close(); await browser.close(); server.close();
