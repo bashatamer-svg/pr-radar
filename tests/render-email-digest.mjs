@@ -153,6 +153,29 @@ const mk = (o) => ({
     'the clause pluralises');
 }
 
+// ── no self-serve unsubscribe, by decision ──────────────────────────────────
+// The design handoff specifies a `Board · Unsubscribe` footer pair. The link is
+// deliberately absent: /unsubscribe exists nowhere, and the owner decided (8
+// Aug) that this internal distribution has no self-serve opt-out — the only way
+// off is Admin → Subscribers. A dead unsubscribe link is worse than none, since
+// it is the one link a reader uses when they are already annoyed.
+// This asserts the DECISION, not an accident: anyone rebuilding these emails
+// from the design targets will find that link in them.
+{
+  const item = mk({ id: 1, brand: 'Vodafone', sentiment: 'negative', importance: 4, headline: 'h' });
+  const surfaces = {
+    'team brief': renderBulletin({ items: [item], broken: [], scanned: 9, variant: 'admin', greetingName: 'Tamer' }),
+    'subscriber brief': renderBulletin({ items: [item], broken: [], scanned: 9 }),
+    alert: renderUrgent(item, 'https://pr.example/'),
+    urgent: renderUrgent({ ...item, importance: 5 }, 'https://pr.example/'),
+  };
+  for (const [name, html] of Object.entries(surfaces)) {
+    assert.ok(!/unsubscribe/i.test(html), `${name}: no unsubscribe link — there is no such route, and no self-serve opt-out by decision`);
+    // …but the footer still offers the way back IN, so it is not simply bare.
+    assert.ok(/>Board<\/a>/.test(html), `${name}: the footer still links to the board`);
+  }
+}
+
 // ── Gmail clips a message past ~102KB, and clipping hides the footer ─────────
 // Live volume is 1–15 relevant stories a day; 20 is well above the observed
 // maximum. Measured 2026-08: the brief crosses the threshold at ~24 stories, so
