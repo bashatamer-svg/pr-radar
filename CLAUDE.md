@@ -115,7 +115,7 @@ Dormant env flags (OFF until configured): `REPORT_EMAIL_ENABLED`,
 | `pr_state` | Key/timestamp markers (`daily_bulletin_sent` idempotency; `manual_alert_<id>` = the board's 🔔 already fired for that card) |
 | `pr_subscribers` | Daily-digest mailing list (categories[] filter; ≠ users). `whatsapp` NULL (never '') = not paged; `active` gates BOTH channels. `addSubscriber` UPSERTS every column, so ask `getSubscriberByEmail` first or you blank a live row's filter and crisis number |
 | `pr_context` | Admin-editable house knowledge injected into classification. **It decays, and now says so**: a line naming a live story is right for a fortnight and then steers unrelated news, and nothing ever prompted a prune. `houseContextCheck` warns on a **dated** entry (`[YYYY-MM-DD]` line prefix, an optional convention) older than 45 days, or on the whole doc going 60 days untouched. Undated lines are deliberately NOT flagged — flagging them would make the check permanently amber on the doc as it stands, which is how a check stops being read. A FAILED read is `CONTEXT_UNAVAILABLE`, not `''`: the content and the timestamp are fetched independently, and collapsing an unreachable database into "empty document" reported a healthy `ok` for a read that never happened. **In use since 5 Aug** (one `house_knowledge` row): an "ONGOING STORIES" list naming connections the headlines withhold — the توليت song is a Vodafone ad's music; the Inas Ezzeddin 5-lines case is against Vodafone. This is where story-specific facts belong; the PROMPT carries the general rules. Prune a line when its story dies, or it will eventually mis-tag unrelated news |
-| `pr_feed_health` | Per-feed failure streaks (bulletin footer). **`fail_streak` never counted** — `recordFeedHealth` wrote a literal `1` on every failure, so a feed dead three weeks read like one that hiccuped once. It cannot be a read-then-write: the 15-min poll and the 05:00 run OVERLAP on the ten brand feeds, so two writers read the same number and both write value+1. PostgREST cannot express `set x = x + 1` either, so the increment goes through **`pr_bump_feed_failure`** (`migrations/2026-08-07-pr-feed-failure-streak.sql`, **APPLIED — live-verified 7 Aug**: the function increments 1→2→3 on repeat calls, proved in a rolled-back transaction) — one `INSERT..ON CONFLICT DO UPDATE`, atomic by construction. Without it the fallback records the error and **leaves the count alone** rather than resetting it to 1: stale is honest, `1` actively asserts something false. `last_ok_at` is never touched by a failure — it is what `brokenFeeds()` actually reads. Pinned by `verify-feed-streak` |
+| `pr_feed_health` | Per-feed failure streaks (bulletin footer). **`fail_streak` never counted** — `recordFeedHealth` wrote a literal `1` on every failure, so a feed dead three weeks read like one that hiccuped once. It cannot be a read-then-write: the 15-min poll and the 05:00 run OVERLAP on the ten brand feeds, so two writers read the same number and both write value+1. PostgREST cannot express `set x = x + 1` either, so the increment goes through **`pr_bump_feed_failure`** (`migrations/2026-08-07-pr-feed-failure-streak.sql`, **APPLIED — live-verified 7 Aug**: the function increments 1→2→3 on repeat calls, proved in a rolled-back transaction) — one `INSERT..ON CONFLICT DO UPDATE`, atomic by construction. Without it the fallback records the error and **leaves the count alone** rather than resetting it to 1: stale is honest, `1` actively asserts something false. `last_ok_at` is never touched by a failure — it is what `brokenFeeds()` actually reads. **A row for a RETIRED feed is not a broken feed.** Nothing fetches it again, so its `last_ok_at` is frozen and it matches the staleness query forever — `site-newsrooms` was removed from `sources.js` on 5 Aug and kept naming itself in the brief's footer and on Health 85h later with `fail_streak:0` and no error: not failing, never attempted. `brokenFeeds()` filters against `ALL_FEEDS`, in ONE place rather than at its two call sites, and FILTERS rather than deletes — the row is honest history and deleting production data is a human's call. Pinned by `verify-feed-streak` |
 | `pr_feedback` | In-app feedback form |
 | `pr_alerts` / `pr_usage` | Alert history + per-call token accounting (Admin → Health). **Applied 2 Aug** via Supabase MCP with user approval, from `migrations/2026-08-02-*.sql` |
 | `pr_subscribers.whatsapp` | **Applied 3 Aug** via Supabase MCP with user approval, from `migrations/2026-08-03-pr-subscribers-whatsapp.sql` |
@@ -1162,6 +1162,24 @@ gets nothing. All queries live in `lib/db.js`.
   we asked with. Nine copies of `${fDays} days` is how "last 1 days" ships —
   the footnote was exactly that, and the test caught it. Pinned by
   `render-trends-windows`.
+- **There is NO self-serve unsubscribe, and the emails deliberately do not
+  pretend otherwise.** The 2026-08 email design specified a `Board · Unsubscribe`
+  footer pair; the link was omitted because `/unsubscribe` does not exist in
+  `vercel.json` or anywhere else, and a dead unsubscribe link is worse than
+  none — it is the one link a reader uses when they are already annoyed.
+  `pr_subscribers.active` is admin-managed (Admin → Subscribers), so today the
+  only way off the list is to ask. Building it needs a signed token in the link,
+  or the URL becomes a way to unsubscribe someone else, and it needs a decision
+  nobody has taken: whether a colleague should be able to remove themselves from
+  a brief the team lead put them on. Until then, do not "restore" the link.
+- **The Trends window PERSISTS (`pr_stats_days`), the custom range does not.**
+  Picking a chip makes it your default until you change it, which cuts
+  differently for `24 hours` than for `Month`: a short window set once and
+  forgotten quietly under-reports the week. That is the same argument the board
+  uses for NOT persisting its sort chip, and the two have deliberately landed on
+  opposite answers — the board's safe default is the one that must come back,
+  while a Trends reader is choosing a lens and expects it to stick. Recorded
+  because it is a live judgement call, not an oversight.
 - **Cairo days** (`Africa/Cairo`, DST via Intl) for every user-facing window;
   storage is UTC ISO. Board/stats/report windows must reconcile.
 - Vodafone-only action framing: needs-response/wins lanes + those KPIs are

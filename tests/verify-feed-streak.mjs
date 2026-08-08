@@ -135,20 +135,34 @@ globalThis.fetch = async (url, opts = {}) => {
 
 /* ── 5. brokenFeeds still answers, and now says HOW broken ──────────────── */
 {
+  // Real source ids, read from the live list: brokenFeeds() now filters against
+  // it, so synthetic names would be dropped as retired and this would pass for
+  // entirely the wrong reason.
+  const { ALL_FEEDS } = await import('../lib/sources.js');
+  const [dead, stale, fine] = ALL_FEEDS.slice(0, 3).map((f) => f.id);
+  assert.ok(dead && stale && fine && new Set([dead, stale, fine]).size === 3, 'three distinct live feed ids');
   reset({ rows: {
-    dead:  { feed_id: 'dead',  last_ok_at: null, last_error: 'http 404', fail_streak: 41 },
-    stale: { feed_id: 'stale', last_ok_at: new Date(Date.now() - 5 * 864e5).toISOString(), last_error: 'timeout', fail_streak: 6 },
-    fine:  { feed_id: 'fine',  last_ok_at: new Date().toISOString(), last_error: null, fail_streak: 0 },
+    dead:  { feed_id: dead,  last_ok_at: null, last_error: 'http 404', fail_streak: 41 },
+    stale: { feed_id: stale, last_ok_at: new Date(Date.now() - 5 * 864e5).toISOString(), last_error: 'timeout', fail_streak: 6 },
+    fine:  { feed_id: fine,  last_ok_at: new Date().toISOString(), last_error: null, fail_streak: 0 },
+    // A feed that was REMOVED from sources.js. Nothing fetches it again, so its
+    // last_ok_at is frozen and it matches the staleness query forever. It is a
+    // retired feed, not a broken one, and reporting it puts the daily brief's
+    // footer and the health check permanently amber — which is how a check
+    // stops being read. Live example: `site-newsrooms`, retired 5 Aug, still
+    // being named 85 hours later with fail_streak 0 and no error.
+    retired: { feed_id: 'site-newsrooms-retired', last_ok_at: new Date(Date.now() - 40 * 864e5).toISOString(), last_error: null, fail_streak: 0 },
   } });
   const broken = await brokenFeeds();
   const ids = broken.map((b) => b.feed_id).sort();
-  assert.deepStrictEqual(ids, ['dead', 'stale'], 'a healthy feed is not reported');
+  assert.deepStrictEqual(ids, [dead, stale].sort(), 'a healthy feed is not reported, and neither is a retired one');
+  assert.ok(!ids.includes('site-newsrooms-retired'), 'a feed no longer in sources.js is never called broken');
   // "failed 41 times in a row" and "has never worked since it was added" are
   // different problems with different fixes; the feed id alone distinguishes
   // neither, which is why the streak is now selected alongside it.
-  const dead = broken.find((b) => b.feed_id === 'dead');
-  assert.strictEqual(dead.fail_streak, 41, 'the streak rides along');
-  assert.strictEqual(dead.last_ok_at, null, 'and so does "never succeeded"');
+  const deadRow = broken.find((b) => b.feed_id === dead);
+  assert.strictEqual(deadRow.fail_streak, 41, 'the streak rides along');
+  assert.strictEqual(deadRow.last_ok_at, null, 'and so does "never succeeded"');
 }
 
 /* ── 6. the SQL is one atomic statement, and touches nothing else ───────── */
