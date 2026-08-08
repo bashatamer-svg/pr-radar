@@ -1032,8 +1032,9 @@ gets nothing. All queries live in `lib/db.js`.
   **≥2 Vodafone-negatives** (one negative is an article, not a stance). When
   nothing clears the bars it SAYS SO — a strip that always finds five things is
   one nobody believes by the second week. Pinned by `render-exec-strip`.
-  **Four of the five rows carry a board link; "N narratives still building" does
-  not** — and that lone unlinked row is why the strip shipped a layout bug
+  **Every row is a link, and that is now enforced.** "N narratives still
+  building" was the one exception, and that lone unlinked row is why the strip
+  shipped a layout bug
   (user-reported from a screenshot, 8 Aug). `.exrow a,.exrow>span` was meant to
   match one wrapper per row, but a bare row emits TWO spans — the dot and the
   text — so the selector hit each of them: the dot became its own flex box on
@@ -1045,6 +1046,12 @@ gets nothing. All queries live in `lib/db.js`.
   measures GEOMETRY: the text must start BESIDE the bullet rather than under it,
   and no text span may itself be a flex container. General rule: a bug that is
   purely where things sit needs a test that reads coordinates, not text.
+  It now links to the biggest of the narratives it names, via the SAME
+  `narrativeHref()` the Narratives card's rows use — so it opens that
+  narrative's own ids (with `&n=` for the "top N of M" banner) rather than a
+  brand filter that merely contains them. The bare branch survives for a future
+  insight with nowhere to point, so the test injects one to keep proving the CSS
+  covers it, rather than depending on an insight lacking a link.
 - **Trends exports are PER CARD** (⤓ XLS / ⤓ PDF next to each card's ⊞ Table),
   never a page-wide bar — you export the section you are looking at, and the
   filename is named after it. `sectionsFor(cardId)` maps a card's DOM id to its

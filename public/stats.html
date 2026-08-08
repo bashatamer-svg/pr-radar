@@ -384,6 +384,14 @@ const partialEnds=()=>winDays()<=2;
 // same class of bug as a narrative opening 20 of its 27 stories.
 const boardWinQuery=()=>fRange?`from=${encodeURIComponent(fRange.from)}&to=${encodeURIComponent(fRange.to)}`:`win=${boardWin()}`;
 const boardLink=(key,val)=>`/?${key}=${encodeURIComponent(val)}&${boardWinQuery()}`;
+// The board view of ONE narrative: its exact ids, with the TRUE story count
+// riding along as &n= so the banner can say "top N of M" when the id list was
+// capped. Shared by the Narratives card's rows and the "still building" line in
+// the exec strip — two copies of this is how one of them comes to open a
+// different set of cards than it counted.
+const narrativeHref=(n)=>(n.ids&&n.ids.length
+  ? `/?ids=${n.ids.join(',')}&label=${encodeURIComponent(n.name)}&n=${n.idsTotal||n.total}&${boardWinQuery()}`
+  : boardLink('brand',n.brand));
 
 function clock(){
   const now=new Date();
@@ -648,8 +656,7 @@ function narrativeRows(list){
     // &n= is the narrative's TRUE story count. The board compares it with the
     // ids it received and says so when it can only show a subset — the failure
     // this replaced was a board that silently listed fewer cards than this row.
-    const nTotal=n.idsTotal||n.total;
-    const href=n.ids&&n.ids.length?`/?ids=${n.ids.join(',')}&label=${encodeURIComponent(n.name)}&n=${nTotal}&${boardWinQuery()}`:boardLink('brand',n.brand);
+    const href=narrativeHref(n);
     return `<a class="lrow narr" href="${href}" title="${esc(n.name)} — tap to show these ${n.total} stories on the board">
       <span class="nm" dir="auto">${esc(n.name)}${rise}${sub}</span>
       <span class="spark">${sparkSvg(n.series,72,20)}</span>
@@ -814,10 +821,15 @@ function execInsights(){
   // 5. Threads still growing. Counted from the same `rising` flag the
   //    narrative rows show, so the strip and the card cannot disagree.
   {
-    const rising=(D.narratives||[]).filter(n=>n.rising);
+    const rising=(D.narratives||[]).filter(n=>n.rising).sort((a,b)=>b.total-a.total);
+    // Links to the BIGGEST of them, which is the one the line names — so the
+    // row's own words say where it goes. It was the only insight with nowhere
+    // to click, and that lone unlinked branch is what shipped the layout bug on
+    // 8 Aug; the branch survives as a fallback but nothing emits it now.
     if(rising.length) out.push({tone:'bad',
-      text:`<b>${rising.length} narrative${rising.length===1?'':'s'} still building</b> — biggest: ${esc(rising.sort((a,b)=>b.total-a.total)[0].name)}`,
-      href:null});
+      text:`<b>${rising.length} narrative${rising.length===1?'':'s'} still building</b> — biggest: ${esc(rising[0].name)}`,
+      title:`Show the ${rising[0].total} stories in "${rising[0].name}" on the board`,
+      href:narrativeHref(rising[0])});
   }
   return out;
 }
@@ -832,7 +844,8 @@ function execHtml(){
   return `<div class="exec"><div class="exhead">So what?<span class="exsub">derived from the numbers below · last ${winLabel()}</span></div>
     <ul class="exlist">${ins.slice(0,5).map(i=>{
       const body=`<span class="exdot ${i.tone}" aria-hidden="true"></span><span>${i.text}</span>`;
-      return `<li class="exrow">${i.href?`<a href="${esc(i.href)}">${body}</a>`:`<span class="exbare">${body}</span>`}</li>`;
+      const t=i.title?` title="${esc(i.title)}"`:'';
+      return `<li class="exrow">${i.href?`<a href="${esc(i.href)}"${t}>${body}</a>`:`<span class="exbare">${body}</span>`}</li>`;
     }).join('')}</ul></div>`;
 }
 
