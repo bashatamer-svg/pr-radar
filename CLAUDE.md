@@ -1032,6 +1032,19 @@ gets nothing. All queries live in `lib/db.js`.
   **≥2 Vodafone-negatives** (one negative is an article, not a stance). When
   nothing clears the bars it SAYS SO — a strip that always finds five things is
   one nobody believes by the second week. Pinned by `render-exec-strip`.
+  **Four of the five rows carry a board link; "N narratives still building" does
+  not** — and that lone unlinked row is why the strip shipped a layout bug
+  (user-reported from a screenshot, 8 Aug). `.exrow a,.exrow>span` was meant to
+  match one wrapper per row, but a bare row emits TWO spans — the dot and the
+  text — so the selector hit each of them: the dot became its own flex box on
+  one line, the text a block underneath, and the text's own words were then laid
+  out as flex items, so its spacing went too. Both branches now render a single
+  wrapper (`<a>` or `.exbare`) and the CSS names it explicitly rather than
+  matching "any child span". No existing assertion could see it — the strip had
+  the right rows, the right words, no overflow and nothing crushed — so the test
+  measures GEOMETRY: the text must start BESIDE the bullet rather than under it,
+  and no text span may itself be a flex container. General rule: a bug that is
+  purely where things sit needs a test that reads coordinates, not text.
 - **Trends exports are PER CARD** (⤓ XLS / ⤓ PDF next to each card's ⊞ Table),
   never a page-wide bar — you export the section you are looking at, and the
   filename is named after it. `sectionsFor(cardId)` maps a card's DOM id to its
