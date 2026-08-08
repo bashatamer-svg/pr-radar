@@ -47,6 +47,7 @@ are **skipped**, the unit suite still runs.
 | **Every byline mistake ever reported, replayed** (add new ones to `byline-cases.mjs` FIRST — see the playbook in CLAUDE.md) | `verify-byline-cases` |
 | Emails & webhooks (bulletin, urgent, report, no-token links) | `render-notoken`, `render-lanes-email-report`, `smoke-task2`, `render-whatsapp`, `send-guard` |
 | Trends per-day axis spans the rolling cut (series sum == totals; no items counted-but-unplotted) | `verify-stats-axis` |
+| Show-password eye toggles (login + change-password): each reveals ONLY its own field, swaps icon and aria, toggles back | `render-pweye` |
 | Trends custom date range (92-day cap refuses not clamps, client/server validation parity, dates-not-days labelling, from/to deep link the board honours, no persistence) | `render-trends-range` |
 | Trends short windows (24h/48h chips, hour-vs-day wording across all nine surfaces, partial end-bucket caveat, board-matching labels + deep links) | `render-trends-windows` |
 | Email "morning digest" design (hero pick, lane counts reconcile, Impact dashes + word, action-first panel, `dir="auto"` single-run fencing, team vs subscriber copy, Gmail 102KB clip headroom) | `render-email-digest` |
